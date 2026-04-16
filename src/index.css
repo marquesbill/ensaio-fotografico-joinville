@@ -1,0 +1,62 @@
+@import url('https://fonts.googleapis.com/css2?family=Noto+Serif:ital,wght@0,400;0,700;1,400&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap');
+@import "tailwindcss";
+
+@theme {
+  --font-headline: "Noto Serif", serif;
+  --font-body: "Plus Jakarta Sans", sans-serif;
+  
+  --color-primary: #843c9a;
+  --color-primary-dim: #772f8d;
+  --color-primary-container: #e8a2e8;
+  --color-secondary: #a46db5;
+  --color-secondary-container: #f5bfff;
+  --color-tertiary: #8b4931;
+  --color-tertiary-container: #fda688;
+  --color-surface: #f4f6ff;
+  --color-surface-container: #dee8ff;
+  --color-surface-container-low: #ebf1ff;
+  --color-on-surface: #172f50;
+  --color-on-surface-variant: #465c80;
+}
+
+@layer base {
+  body {
+    @apply bg-surface font-body text-on-surface;
+  }
+}
+
+.glass-card {
+  background: rgba(255, 255, 255, 0.45);
+  backdrop-filter: blur(25px);
+  -webkit-backdrop-filter: blur(25px);
+}
+
+.signature-gradient {
+  background: linear-gradient(135deg, #a46db5 0%, #e8a2e8 100%);
+}
+
+.sinuous-divider {
+  border-radius: 100% 100% 0 0 / 60px 60px 0 0;
+}
+
+.sinuous-divider-inv {
+  border-radius: 0 0 100% 100% / 0 0 60px 60px;
+}
+
+.logo-mask {
+  object-fit: contain;
+  width: 100%;
+  height: 100%;
+}
+
+.brand-logo-item {
+  background: white;
+  border-radius: 1.5rem;
+  padding: 1.5rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1);
+  overflow: hidden;
+  aspect-ratio: 1/1;
+}
