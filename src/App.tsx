@@ -78,7 +78,7 @@ export default function App() {
           <img
             alt="Hero Background"
             className="w-full h-full object-cover object-center"
-            src="/hero-bg.jpg?v=2"
+            src="/hero-bg-new.jpg"
           />
           <div className="absolute inset-0 bg-gradient-to-b from-surface/10 via-surface/40 to-surface"></div>
         </div>
