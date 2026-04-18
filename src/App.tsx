@@ -218,6 +218,7 @@ export default function App() {
           <motion.div
             id="cadastro"
             className="p-10 rounded-3xl border border-white/70 max-w-md mx-auto w-full bg-white/10 backdrop-blur-lg relative"
+            style={{ y: heroTextY }}
             initial={{ opacity: 0, scale: 0.9 }}
             animate={{
               opacity: 1,
@@ -267,12 +268,25 @@ export default function App() {
                   type="email" 
                 />
               </div>
-              <button 
-                className="w-full signature-gradient text-white font-bold py-5 rounded-full shadow-lg hover:scale-[1.02] active:scale-95 transition-all text-lg mt-4" 
+              <motion.button
+                className="w-full signature-gradient text-white font-bold py-5 rounded-full text-lg mt-4 hover:scale-[1.02] active:scale-95 transition-transform"
                 type="submit"
+                animate={{
+                  boxShadow: [
+                    "0 0 10px 2px rgba(196,79,130,0.30)",
+                    "0 0 22px 8px rgba(196,79,130,0.58)",
+                    "0 0 10px 2px rgba(196,79,130,0.30)"
+                  ]
+                }}
+                transition={{
+                  duration: 2,
+                  repeat: Infinity,
+                  ease: "easeInOut",
+                  delay: 0.9
+                }}
               >
                 Garantir minha Vaga
-              </button>
+              </motion.button>
             </form>
           </motion.div>
         </div>
