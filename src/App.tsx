@@ -104,8 +104,7 @@ export default function App() {
               <img
                 alt="A Essência do Movimento"
                 className="h-28 md:h-40 w-auto drop-shadow-[0_15px_25px_rgba(0,0,0,0.6)] relative z-10"
-                src="https://lh3.googleusercontent.com/aida/ADBb0ujoMnYvcm-YE6h8UORDS7e6dI6UoRHRiKvQLvm-qhCPUmx88ovWvHoAaxcDGISwCaUS3qamZ5a5V9pVkoZkg7fjciWK063JTU--hiewG7nHZTpmnzr4F13JXYEK-Vqc8zq6HcL5DNqK7s-g5QgIVkCFVc8gjU-D_4BMwtBgy47XyegowgZwPeCK15Nbzxj2u-7jv05ITACysdweX4CjuoPQ_pbTB-vtfPGAEwddBIflbFrBMnTAraizJ8sMjXk3IaMb61bVytWv_oA"
-                referrerPolicy="no-referrer"
+                src="/logo-w.png"
               />
             </motion.div>
             <motion.p 
@@ -688,11 +687,10 @@ export default function App() {
       <footer className="w-full flex flex-col items-center px-12 py-16 gap-8 bg-secondary-container/30 rounded-t-[4rem] border-t border-primary/10">
         <div className="container mx-auto flex flex-col md:flex-row justify-between items-center gap-12">
           <div className="flex flex-col items-center md:items-start gap-4">
-            <img 
-              alt="Ensaio Fotográfico em Joinville" 
-              className="h-12 w-auto brightness-0 opacity-80" 
-              src="https://lh3.googleusercontent.com/aida/ADBb0ujoMnYvcm-YE6h8UORDS7e6dI6UoRHRiKvQLvm-qhCPUmx88ovWvHoAaxcDGISwCaUS3qamZ5a5V9pVkoZkg7fjciWK063JTU--hiewG7nHZTpmnzr4F13JXYEK-Vqc8zq6HcL5DNqK7s-g5QgIVkCFVc8gjU-D_4BMwtBgy47XyegowgZwPeCK15Nbzxj2u-7jv05ITACysdweX4CjuoPQ_pbTB-vtfPGAEwddBIflbFrBMnTAraizJ8sMjXk3IaMb61bVytWv_oA"
-              referrerPolicy="no-referrer"
+            <img
+              alt="Ensaio Fotográfico em Joinville"
+              className="h-12 w-auto opacity-80"
+              src="/logo-b.png"
             />
             <p className="font-bold text-primary italic text-lg">André Ferreira Fotografia | Brasil</p>
             <p className="text-[10px] md:text-xs uppercase tracking-widest text-primary/60">
