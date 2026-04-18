@@ -273,9 +273,9 @@ export default function App() {
                 type="submit"
                 animate={{
                   boxShadow: [
-                    "0 0 10px 2px rgba(196,79,130,0.30)",
-                    "0 0 22px 8px rgba(196,79,130,0.58)",
-                    "0 0 10px 2px rgba(196,79,130,0.30)"
+                    "0 0 8px 2px rgba(255,255,255,0.18)",
+                    "0 0 18px 6px rgba(255,255,255,0.42)",
+                    "0 0 8px 2px rgba(255,255,255,0.18)"
                   ]
                 }}
                 transition={{
