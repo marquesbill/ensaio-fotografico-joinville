@@ -582,11 +582,10 @@ export default function App() {
               whileInView={{ opacity: 1, scale: 1 }}
               viewport={{ once: true }}
             >
-              <img 
-                alt="André Ferreira" 
-                className="w-full h-full object-cover" 
-                src="https://lh3.googleusercontent.com/aida-public/AB6AXuA6o-yah7WGeeUBXZewD0JLxVwGyBd-HN5Z0MYRffje-ycXPEHDTTBz9bSlPXWVC959zG8gXMmJDHplq5XhFf1lJ50V6lEPheQP8SkIvF7i-rmT3DYP4kNSiVHs6hUbOZskoszQanqMiqp0-NIGO6VSIbriq_5ttr-UQ0IoY-ekf-VAGL0vfS2L6qUm1CgyOPee-Yh6pKiDhwnDX-u8yUutkBDwwTf5Cjs1y6Wn3dXxegCJMmfRTe_8y5ZcPEftPM9vnfd5qLxZxpqY"
-                referrerPolicy="no-referrer"
+              <img
+                alt="André Ferreira"
+                className="w-full h-full object-cover object-top"
+                src="/andre.jpg"
               />
             </motion.div>
             <motion.div
