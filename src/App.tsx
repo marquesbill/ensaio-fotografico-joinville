@@ -407,8 +407,8 @@ export default function App() {
                 <h3 className="font-headline text-2xl text-on-surface mb-3">Completo</h3>
                 <div className="bg-amber-50 border border-amber-300 rounded-2xl px-4 py-3 mb-2">
                   <p className="text-gray-400 text-sm line-through">de R$ 2.800</p>
-                  <p className="text-green-600 font-black text-4xl leading-tight">R$ 2.500</p>
-                  <p className="text-amber-700 font-bold text-xs uppercase tracking-wide mt-1">🔥 Pré-venda — economize R$300</p>
+                  <p className="text-green-600 font-black text-4xl leading-tight">R$ 2.200</p>
+                  <p className="text-amber-700 font-bold text-xs uppercase tracking-wide mt-1">🔥 Pré-venda — economize R$600</p>
                 </div>
                 <CountdownTimer />
               </div>
