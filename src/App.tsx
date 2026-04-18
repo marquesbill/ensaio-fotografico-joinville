@@ -542,11 +542,12 @@ export default function App() {
               { name: "Logo 6", img: "/logos/Logo 6_edited.avif" },
               { name: "IMG 9897", img: "/logos/IMG_9897_edited.avif" },
               { name: "IMG 9900", img: "/logos/IMG_9900_edited_edited_edited.avif" },
-              { name: "IMG 9901", img: "/logos/IMG_9901_PNG.avif" }
+              { name: "IMG 9901", img: "/logos/IMG_9901_PNG.avif" },
+              { name: "IMG 9907", img: "/logos/IMG_9907_edited_edited_edited.avif" }
             ].map((brand, i) => (
               <motion.div
                 key={i}
-                className="brand-logo-item group hover:shadow-lg transition-shadow"
+                className={`brand-logo-item group hover:shadow-lg transition-shadow${i === 8 ? ' hidden md:flex' : ''}`}
                 initial={{ opacity: 0, scale: 0.8 }}
                 whileInView={{ opacity: 1, scale: 1 }}
                 viewport={{ once: true }}
