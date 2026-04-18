@@ -83,19 +83,26 @@ function useCountdown(targetDate: Date) {
   return timeLeft;
 }
 
-const PROMO_DEADLINE = new Date('2026-03-12T23:59:59');
+// ⚠️ ATENÇÃO: Atualize esta data conforme necessário
+const PROMO_DEADLINE = new Date('2026-05-12T23:59:59');
 
 function CountdownTimer() {
   const { days, hours, minutes, seconds } = useCountdown(PROMO_DEADLINE);
   const pad = (n: number) => String(n).padStart(2, '0');
+  const expired = days === 0 && hours === 0 && minutes === 0 && seconds === 0;
   return (
-    <div className="mt-4 mb-2 bg-red-600/10 border border-red-500/30 rounded-2xl px-3 py-3">
-      <p className="text-red-600 font-bold text-xs uppercase tracking-widest text-center mb-2">⏰ Preço válido por</p>
+    <div className="mt-3 mb-2 rounded-2xl px-3 py-3 border border-white/20" style={{ background: 'linear-gradient(135deg, rgba(122,63,143,0.12), rgba(232,112,90,0.12))' }}>
+      <p className="font-bold text-xs uppercase tracking-widest text-center mb-2" style={{ color: '#c44f82' }}>
+        {expired ? '🔒 Oferta encerrada' : '⏰ Oferta expira em'}
+      </p>
       <div className="flex justify-center gap-2 text-center">
         {[{ v: pad(days), l: 'dias' }, { v: pad(hours), l: 'hrs' }, { v: pad(minutes), l: 'min' }, { v: pad(seconds), l: 'seg' }].map(({ v, l }) => (
           <div key={l} className="flex flex-col items-center">
-            <span className="bg-red-600 text-white font-black text-lg leading-none px-2 py-1 rounded-lg min-w-[2.2rem]">{v}</span>
-            <span className="text-red-500 text-[10px] font-bold mt-1 uppercase">{l}</span>
+            <span
+              className="text-white font-black text-xl leading-none px-2 py-1 rounded-lg min-w-[2.4rem] tabular-nums"
+              style={{ background: 'linear-gradient(135deg, #7a3f8f, #e87060)' }}
+            >{v}</span>
+            <span className="text-[10px] font-bold mt-1 uppercase" style={{ color: '#c44f82' }}>{l}</span>
           </div>
         ))}
       </div>
@@ -198,7 +205,12 @@ export default function App() {
               }
             }}
           >
-            <h3 className="font-headline text-lg text-center mb-8 text-white drop-shadow-md -mx-10 -mt-10 mb-6 pt-8 pb-2 px-10 bg-gradient-to-b from-white/10 to-transparent rounded-t-3xl border-b border-white/30 uppercase tracking-wide leading-snug">TENHA ACESSO À<br/>PRÉ-VENDA EXCLUSIVA</h3>
+            <div className="-mx-10 -mt-10 mb-6 pt-7 pb-4 px-6 rounded-t-3xl border-b border-white/20" style={{ background: 'linear-gradient(135deg, #7a3f8f, #e87060)' }}>
+              <h3 className="font-headline text-3xl md:text-4xl text-center text-white font-black drop-shadow-lg uppercase leading-tight tracking-tight">
+                Tenha acesso à<br/><span className="text-white/90">Pré-venda Exclusiva</span>
+              </h3>
+              <p className="text-white/80 text-center text-sm mt-2 font-medium tracking-wide">Vagas limitadas · Preço especial por tempo limitado</p>
+            </div>
             <form className="space-y-5" onSubmit={(e) => e.preventDefault()}>
               <div>
                 <input 
