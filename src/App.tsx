@@ -161,11 +161,26 @@ export default function App() {
             </motion.span>
             <motion.div variants={fadeIn} className="py-6 inline-block relative">
               <div className="absolute inset-0 bg-gradient-to-b from-purple-300/15 to-purple-500/10 blur-3xl rounded-full scale-150"></div>
-              <img
-                alt="A Essência do Movimento"
-                className="h-28 md:h-40 w-auto drop-shadow-[0_15px_25px_rgba(0,0,0,0.6)] relative z-10"
-                src="/logo-w.png"
-              />
+              <div className="logo-shimmer-wrapper relative z-10">
+                <motion.img
+                  alt="A Essência do Movimento"
+                  className="h-28 md:h-40 w-auto"
+                  src="/logo-w.png"
+                  animate={{
+                    filter: [
+                      'drop-shadow(0 0 6px rgba(255,255,255,0.20)) drop-shadow(0 8px 18px rgba(0,0,0,0.45))',
+                      'drop-shadow(0 0 18px rgba(255,255,255,0.55)) drop-shadow(0 0 32px rgba(196,79,130,0.28)) drop-shadow(0 8px 18px rgba(0,0,0,0.35))',
+                      'drop-shadow(0 0 6px rgba(255,255,255,0.20)) drop-shadow(0 8px 18px rgba(0,0,0,0.45))',
+                    ]
+                  }}
+                  transition={{
+                    duration: 3.5,
+                    repeat: Infinity,
+                    ease: 'easeInOut',
+                    delay: 0.5,
+                  }}
+                />
+              </div>
             </motion.div>
             <motion.p 
               variants={fadeIn}
@@ -173,9 +188,18 @@ export default function App() {
             >
               21 de Julho a 02 de Agosto
             </motion.p>
-            <motion.p 
+            <motion.p
               variants={fadeIn}
-              className="text-on-surface font-medium max-w-md bg-white/60 backdrop-blur-md p-6 rounded-2xl border border-white/40 shadow-sm leading-relaxed"
+              className="font-medium max-w-md p-6 rounded-2xl leading-relaxed"
+              style={{
+                background: 'rgba(255,255,255,0.08)',
+                backdropFilter: 'blur(18px)',
+                WebkitBackdropFilter: 'blur(18px)',
+                border: '1px solid rgba(255,255,255,0.18)',
+                boxShadow: '0 4px 24px rgba(0,0,0,0.12), inset 0 1px 0 rgba(255,255,255,0.15)',
+                color: '#f0f4ff',
+                textShadow: '0 1px 4px rgba(0,0,0,0.4)',
+              }}
             >
               Uma experiência fotográfica exclusiva durante o maior festival de dança do mundo. Vagas limitadas para bailarinos que desejam eternizar sua arte.
             </motion.p>

@@ -60,3 +60,39 @@
   overflow: hidden;
   aspect-ratio: 1/1;
 }
+
+/* ── Logo shimmer animation ── */
+@keyframes logoShimmer {
+  0%   { transform: translateX(-130%) skewX(-20deg); opacity: 0; }
+  8%   { opacity: 1; }
+  42%  { opacity: 1; }
+  52%  { transform: translateX(250%) skewX(-20deg); opacity: 0; }
+  100% { transform: translateX(250%) skewX(-20deg); opacity: 0; }
+}
+
+.logo-shimmer-wrapper {
+  position: relative;
+  display: inline-block;
+  overflow: visible;
+}
+
+.logo-shimmer-wrapper::after {
+  content: '';
+  position: absolute;
+  top: -10%;
+  left: 0;
+  width: 30%;
+  height: 120%;
+  background: linear-gradient(
+    to right,
+    transparent 0%,
+    rgba(255, 255, 255, 0.22) 40%,
+    rgba(255, 255, 255, 0.38) 50%,
+    rgba(255, 255, 255, 0.22) 60%,
+    transparent 100%
+  );
+  animation: logoShimmer 5s ease-in-out infinite;
+  animation-delay: 1.2s;
+  pointer-events: none;
+  border-radius: 4px;
+}
