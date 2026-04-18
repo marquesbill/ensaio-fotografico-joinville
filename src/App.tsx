@@ -542,8 +542,7 @@ export default function App() {
               { name: "Logo 6", img: "/logos/Logo 6_edited.avif" },
               { name: "IMG 9897", img: "/logos/IMG_9897_edited.avif" },
               { name: "IMG 9900", img: "/logos/IMG_9900_edited_edited_edited.avif" },
-              { name: "IMG 9901", img: "/logos/IMG_9901_PNG.avif" },
-              { name: "IMG 9907", img: "/logos/IMG_9907_edited_edited_edited.avif" }
+              { name: "IMG 9901", img: "/logos/IMG_9901_PNG.avif" }
             ].map((brand, i) => (
               <motion.div
                 key={i}
