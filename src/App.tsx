@@ -19,7 +19,7 @@ import {
   ExternalLink,
   Star
 } from "lucide-react";
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 
 const fadeIn = {
   initial: { opacity: 0, y: 20 },
@@ -49,6 +49,59 @@ const pulsingGlow = {
     }
   }
 };
+
+function useCountdown(targetDate: Date) {
+  const [timeLeft, setTimeLeft] = useState(() => {
+    const diff = targetDate.getTime() - Date.now();
+    if (diff <= 0) return { days: 0, hours: 0, minutes: 0, seconds: 0 };
+    return {
+      days: Math.floor(diff / (1000 * 60 * 60 * 24)),
+      hours: Math.floor((diff / (1000 * 60 * 60)) % 24),
+      minutes: Math.floor((diff / (1000 * 60)) % 60),
+      seconds: Math.floor((diff / 1000) % 60),
+    };
+  });
+
+  useEffect(() => {
+    const interval = setInterval(() => {
+      const diff = targetDate.getTime() - Date.now();
+      if (diff <= 0) {
+        setTimeLeft({ days: 0, hours: 0, minutes: 0, seconds: 0 });
+        clearInterval(interval);
+        return;
+      }
+      setTimeLeft({
+        days: Math.floor(diff / (1000 * 60 * 60 * 24)),
+        hours: Math.floor((diff / (1000 * 60 * 60)) % 24),
+        minutes: Math.floor((diff / (1000 * 60)) % 60),
+        seconds: Math.floor((diff / 1000) % 60),
+      });
+    }, 1000);
+    return () => clearInterval(interval);
+  }, [targetDate]);
+
+  return timeLeft;
+}
+
+const PROMO_DEADLINE = new Date('2026-03-12T23:59:59');
+
+function CountdownTimer() {
+  const { days, hours, minutes, seconds } = useCountdown(PROMO_DEADLINE);
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return (
+    <div className="mt-4 mb-2 bg-red-600/10 border border-red-500/30 rounded-2xl px-3 py-3">
+      <p className="text-red-600 font-bold text-xs uppercase tracking-widest text-center mb-2">⏰ Preço válido por</p>
+      <div className="flex justify-center gap-2 text-center">
+        {[{ v: pad(days), l: 'dias' }, { v: pad(hours), l: 'hrs' }, { v: pad(minutes), l: 'min' }, { v: pad(seconds), l: 'seg' }].map(({ v, l }) => (
+          <div key={l} className="flex flex-col items-center">
+            <span className="bg-red-600 text-white font-black text-lg leading-none px-2 py-1 rounded-lg min-w-[2.2rem]">{v}</span>
+            <span className="text-red-500 text-[10px] font-bold mt-1 uppercase">{l}</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
 
 export default function App() {
   const [openFaq, setOpenFaq] = useState<number | null>(0);
@@ -145,7 +198,7 @@ export default function App() {
               }
             }}
           >
-            <h3 className="font-headline text-2xl text-center mb-8 text-white drop-shadow-md -mx-10 -mt-10 mb-6 pt-8 pb-2 px-10 bg-gradient-to-b from-white/10 to-transparent rounded-t-3xl border-b border-white/30">Lista de Prioridade</h3>
+            <h3 className="font-headline text-lg text-center mb-8 text-white drop-shadow-md -mx-10 -mt-10 mb-6 pt-8 pb-2 px-10 bg-gradient-to-b from-white/10 to-transparent rounded-t-3xl border-b border-white/30 uppercase tracking-wide leading-snug">TENHA ACESSO À<br/>PRÉ-VENDA EXCLUSIVA</h3>
             <form className="space-y-5" onSubmit={(e) => e.preventDefault()}>
               <div>
                 <input 
@@ -253,9 +306,14 @@ export default function App() {
               whileInView={{ opacity: 1, x: 0 }}
               viewport={{ once: true }}
             >
-              <div className="mb-8">
-                <h3 className="font-headline text-2xl text-on-surface mb-2">Lembrança</h3>
-                <p className="text-primary font-bold text-3xl">R$ 1.800</p>
+              <div className="mb-6">
+                <h3 className="font-headline text-2xl text-on-surface mb-3">Lembrança</h3>
+                <div className="bg-amber-50 border border-amber-300 rounded-2xl px-4 py-3 mb-2">
+                  <p className="text-gray-400 text-sm line-through">de R$ 1.800</p>
+                  <p className="text-green-600 font-black text-4xl leading-tight">R$ 1.400</p>
+                  <p className="text-amber-700 font-bold text-xs uppercase tracking-wide mt-1">🔥 Pré-venda — economize R$400</p>
+                </div>
+                <CountdownTimer />
               </div>
               <ul className="space-y-4 mb-10 flex-grow">
                 <li className="flex items-center gap-3 text-sm font-medium">
@@ -278,9 +336,14 @@ export default function App() {
               viewport={{ once: true }}
             >
               <div className="absolute -top-4 left-1/2 -translate-x-1/2 signature-gradient text-white text-xs font-bold px-6 py-2 rounded-full uppercase tracking-widest shadow-lg">Mais Procurado</div>
-              <div className="mb-8">
-                <h3 className="font-headline text-2xl text-on-surface mb-2">Econômico</h3>
-                <p className="text-primary font-bold text-4xl">R$ 2.400</p>
+              <div className="mb-6">
+                <h3 className="font-headline text-2xl text-on-surface mb-3">Econômico</h3>
+                <div className="bg-amber-50 border-2 border-amber-400 rounded-2xl px-4 py-3 mb-2">
+                  <p className="text-gray-400 text-sm line-through">de R$ 2.400</p>
+                  <p className="text-green-600 font-black text-4xl leading-tight">R$ 1.900</p>
+                  <p className="text-amber-700 font-bold text-xs uppercase tracking-wide mt-1">🔥 Pré-venda — economize R$500</p>
+                </div>
+                <CountdownTimer />
               </div>
               <ul className="space-y-4 mb-10 flex-grow">
                 <li className="flex items-center gap-3 text-sm font-bold">
@@ -302,9 +365,14 @@ export default function App() {
               whileInView={{ opacity: 1, x: 0 }}
               viewport={{ once: true }}
             >
-              <div className="mb-8">
-                <h3 className="font-headline text-2xl text-on-surface mb-2">Completo</h3>
-                <p className="text-primary font-bold text-3xl">R$ 2.800</p>
+              <div className="mb-6">
+                <h3 className="font-headline text-2xl text-on-surface mb-3">Completo</h3>
+                <div className="bg-amber-50 border border-amber-300 rounded-2xl px-4 py-3 mb-2">
+                  <p className="text-gray-400 text-sm line-through">de R$ 2.800</p>
+                  <p className="text-green-600 font-black text-4xl leading-tight">R$ 2.500</p>
+                  <p className="text-amber-700 font-bold text-xs uppercase tracking-wide mt-1">🔥 Pré-venda — economize R$300</p>
+                </div>
+                <CountdownTimer />
               </div>
               <ul className="space-y-4 mb-10 flex-grow">
                 <li className="flex items-center gap-3 text-sm font-medium">
