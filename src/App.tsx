@@ -161,23 +161,25 @@ export default function App() {
             </motion.span>
             <motion.div variants={fadeIn} className="py-6 inline-block relative">
               <div className="absolute inset-0 bg-gradient-to-b from-purple-300/15 to-purple-500/10 blur-3xl rounded-full scale-150"></div>
-              <div className="logo-shimmer-wrapper relative z-10">
+              <div className="relative z-10" style={{ perspective: '900px' }}>
                 <motion.img
                   alt="A Essência do Movimento"
                   className="h-28 md:h-40 w-auto"
                   src="/logo-w.png"
                   animate={{
+                    y: [0, -11, 0],
+                    rotateX: [0, 6, 0],
+                    rotateY: [0, -5, 5, 0],
                     filter: [
-                      'drop-shadow(0 0 6px rgba(255,255,255,0.20)) drop-shadow(0 8px 18px rgba(0,0,0,0.45))',
-                      'drop-shadow(0 0 18px rgba(255,255,255,0.55)) drop-shadow(0 0 32px rgba(196,79,130,0.28)) drop-shadow(0 8px 18px rgba(0,0,0,0.35))',
-                      'drop-shadow(0 0 6px rgba(255,255,255,0.20)) drop-shadow(0 8px 18px rgba(0,0,0,0.45))',
-                    ]
+                      'drop-shadow(0 10px 22px rgba(0,0,0,0.50))',
+                      'drop-shadow(0 22px 32px rgba(0,0,0,0.32)) drop-shadow(0 0 14px rgba(255,255,255,0.10))',
+                      'drop-shadow(0 10px 22px rgba(0,0,0,0.50))',
+                    ],
                   }}
                   transition={{
-                    duration: 3.5,
+                    duration: 6,
                     repeat: Infinity,
                     ease: 'easeInOut',
-                    delay: 0.5,
                   }}
                 />
               </div>
@@ -192,13 +194,13 @@ export default function App() {
               variants={fadeIn}
               className="font-medium max-w-md p-6 rounded-2xl leading-relaxed"
               style={{
-                background: 'rgba(255,255,255,0.08)',
-                backdropFilter: 'blur(18px)',
-                WebkitBackdropFilter: 'blur(18px)',
-                border: '1px solid rgba(255,255,255,0.18)',
-                boxShadow: '0 4px 24px rgba(0,0,0,0.12), inset 0 1px 0 rgba(255,255,255,0.15)',
+                background: 'linear-gradient(135deg, rgba(61,72,117,0.42) 0%, rgba(122,63,143,0.36) 55%, rgba(196,79,130,0.26) 100%)',
+                backdropFilter: 'blur(16px)',
+                WebkitBackdropFilter: 'blur(16px)',
+                border: '1px solid rgba(255,255,255,0.16)',
+                boxShadow: '0 4px 24px rgba(0,0,0,0.18), inset 0 1px 0 rgba(255,255,255,0.12)',
                 color: '#f0f4ff',
-                textShadow: '0 1px 4px rgba(0,0,0,0.4)',
+                textShadow: '0 1px 3px rgba(0,0,0,0.35)',
               }}
             >
               Uma experiência fotográfica exclusiva durante o maior festival de dança do mundo. Vagas limitadas para bailarinos que desejam eternizar sua arte.
