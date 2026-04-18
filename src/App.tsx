@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { motion } from "motion/react";
+import { motion, useScroll, useTransform } from "motion/react";
 import { 
   Quote as QuoteIcon, 
   Camera, 
@@ -113,6 +113,11 @@ function CountdownTimer() {
 export default function App() {
   const [openFaq, setOpenFaq] = useState<number | null>(0);
   const carouselRef = useRef<HTMLDivElement>(null);
+  const { scrollY } = useScroll();
+  const heroLogoY   = useTransform(scrollY, [0, 600], [0, -38]);
+  const heroBadgeY  = useTransform(scrollY, [0, 600], [0, -24]);
+  const heroDateY   = useTransform(scrollY, [0, 600], [0, -20]);
+  const heroTextY   = useTransform(scrollY, [0, 600], [0, -14]);
 
   const scrollCarousel = (direction: 'left' | 'right') => {
     if (carouselRef.current) {
@@ -153,13 +158,14 @@ export default function App() {
             animate="animate"
             variants={staggerContainer}
           >
-            <motion.span 
+            <motion.span
               variants={fadeIn}
+              style={{ y: heroBadgeY }}
               className="inline-block px-4 py-1 rounded-full bg-primary-container/80 text-on-primary-container text-sm font-bold tracking-widest uppercase backdrop-blur-md"
             >
               Joinville 2026
             </motion.span>
-            <motion.div variants={fadeIn} className="py-6 inline-block relative">
+            <motion.div variants={fadeIn} style={{ y: heroLogoY }} className="py-6 inline-block relative">
               <div className="absolute inset-0 bg-gradient-to-b from-purple-300/15 to-purple-500/10 blur-3xl rounded-full scale-150"></div>
               <div className="relative z-10" style={{ perspective: '900px' }}>
                 <motion.img
@@ -184,9 +190,10 @@ export default function App() {
                 />
               </div>
             </motion.div>
-            <motion.p 
+            <motion.p
               variants={fadeIn}
-              className="text-xl md:text-2xl text-on-surface font-semibold"
+              style={{ y: heroDateY, color: '#f0f4ff', textShadow: '0 1px 4px rgba(0,0,0,0.45)' }}
+              className="text-xl md:text-2xl font-semibold"
             >
               21 de Julho a 02 de Agosto
             </motion.p>
@@ -194,6 +201,7 @@ export default function App() {
               variants={fadeIn}
               className="font-medium max-w-md p-6 rounded-2xl leading-relaxed"
               style={{
+                y: heroTextY,
                 background: 'linear-gradient(135deg, rgba(61,72,117,0.42) 0%, rgba(122,63,143,0.36) 55%, rgba(196,79,130,0.26) 100%)',
                 backdropFilter: 'blur(16px)',
                 WebkitBackdropFilter: 'blur(16px)',
@@ -339,7 +347,7 @@ export default function App() {
           <div className="grid grid-cols-1 md:grid-cols-3 gap-8 items-end">
             {/* Package 1 */}
             <motion.div
-              className="glass-card p-10 rounded-[2.5rem] border border-white/60 shadow-xl flex flex-col h-full hover:scale-[1.02] transition-transform duration-500 order-2 md:order-1 bg-white/70"
+              className="glass-card p-10 rounded-[2.5rem] border border-white/60 shadow-xl flex flex-col h-full hover:scale-[1.02] transition-transform duration-500 order-1 bg-white/70"
               initial={{ opacity: 0, x: -50 }}
               whileInView={{ opacity: 1, x: 0 }}
               viewport={{ once: true }}
@@ -368,7 +376,7 @@ export default function App() {
 
             {/* Package 2 - Popular */}
             <motion.div
-              className="relative bg-white/70 backdrop-blur-3xl p-10 rounded-[2.5rem] border-2 border-primary shadow-2xl flex flex-col h-full transform md:scale-110 z-10 order-1 md:order-2 ring-4 ring-primary/10"
+              className="relative bg-white/70 backdrop-blur-3xl p-10 rounded-[2.5rem] border-2 border-primary shadow-2xl flex flex-col h-full transform md:scale-110 z-10 order-2 ring-4 ring-primary/10"
               initial={{ opacity: 0, y: 50 }}
               whileInView={{ opacity: 1, y: 0 }}
               viewport={{ once: true }}
@@ -703,7 +711,7 @@ export default function App() {
               <span className="text-primary font-bold tracking-widest uppercase text-sm">André Ferreira</span>
               <h2 className="font-headline text-4xl text-on-surface italic">@affotografia</h2>
               <p className="text-on-surface-variant text-lg leading-relaxed">André Ferreira é fotógrafo especializado em dança, atuando em estúdios, salas de aula e espetáculos. Com formação anterior em engenharia elétrica e ciência da computação, e passagens por desenvolvimento de software e laboratório de realidade virtual, dedica-se à fotografia de dança há 13 anos. Busca registrar o movimento, a forma e o detalhe, refletindo seu estilo e o estilo da bailarina em suas imagens.</p>
-              <a className="inline-flex items-center gap-2 text-primary font-bold hover:underline transition-all group" href="#">
+              <a className="inline-flex items-center gap-2 text-primary font-bold hover:underline transition-all group" href="https://www.instagram.com/affotografia" target="_blank" rel="noopener noreferrer">
                 Siga no Instagram
                 <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
               </a>
@@ -803,7 +811,7 @@ export default function App() {
             </p>
           </div>
           <div className="flex gap-12">
-            <a className="text-sm uppercase tracking-[0.2em] text-primary/60 hover:text-primary transition-colors font-bold flex items-center gap-2" href="#">
+            <a className="text-sm uppercase tracking-[0.2em] text-primary/60 hover:text-primary transition-colors font-bold flex items-center gap-2" href="https://www.instagram.com/affotografia" target="_blank" rel="noopener noreferrer">
               <Instagram className="w-4 h-4" />
               Instagram
             </a>
