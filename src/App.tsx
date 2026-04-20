@@ -368,10 +368,10 @@ export default function App() {
             >
               <div className="mb-6">
                 <h3 className="font-headline text-2xl text-on-surface mb-3">Lembrança</h3>
-                <div className="bg-amber-50 border border-amber-300 rounded-2xl px-4 py-3 mb-2">
-                  <p className="text-gray-400 text-sm line-through">de R$ 1.800</p>
-                  <p className="text-green-600 font-black text-4xl leading-tight">R$ 1.400</p>
-                  <p className="text-amber-700 font-bold text-xs uppercase tracking-wide mt-1">🔥 Pré-venda — economize R$400</p>
+                <div className="rounded-2xl px-4 py-3 mb-2" style={{ background: '#FFFDF4', border: '1px solid #EAD58B' }}>
+                  <p className="text-sm line-through" style={{ color: '#A09CA3' }}>de R$ 1.800</p>
+                  <p className="font-black text-4xl leading-tight" style={{ color: '#352D39' }}>R$ 1.400</p>
+                  <p className="font-bold text-xs uppercase tracking-wide mt-1" style={{ color: '#8B6A56' }}>🔥 Pré-venda — economize R$400</p>
                 </div>
                 <CountdownTimer />
               </div>
@@ -398,10 +398,10 @@ export default function App() {
               <div className="absolute -top-4 left-1/2 -translate-x-1/2 signature-gradient text-white text-xs font-bold px-6 py-2 rounded-full uppercase tracking-widest shadow-lg">Mais Procurado</div>
               <div className="mb-6">
                 <h3 className="font-headline text-2xl text-on-surface mb-3">Econômico</h3>
-                <div className="bg-amber-50 border-2 border-amber-400 rounded-2xl px-4 py-3 mb-2">
-                  <p className="text-gray-400 text-sm line-through">de R$ 2.400</p>
-                  <p className="text-green-600 font-black text-4xl leading-tight">R$ 1.900</p>
-                  <p className="text-amber-700 font-bold text-xs uppercase tracking-wide mt-1">🔥 Pré-venda — economize R$500</p>
+                <div className="rounded-2xl px-4 py-3 mb-2" style={{ background: '#FFFDF4', border: '2px solid #EAD58B' }}>
+                  <p className="text-sm line-through" style={{ color: '#A09CA3' }}>de R$ 2.400</p>
+                  <p className="font-black text-4xl leading-tight" style={{ color: '#352D39' }}>R$ 1.900</p>
+                  <p className="font-bold text-xs uppercase tracking-wide mt-1" style={{ color: '#8B6A56' }}>🔥 Pré-venda — economize R$500</p>
                 </div>
                 <CountdownTimer />
               </div>
@@ -427,10 +427,10 @@ export default function App() {
             >
               <div className="mb-6">
                 <h3 className="font-headline text-2xl text-on-surface mb-3">Completo</h3>
-                <div className="bg-amber-50 border border-amber-300 rounded-2xl px-4 py-3 mb-2">
-                  <p className="text-gray-400 text-sm line-through">de R$ 2.800</p>
-                  <p className="text-green-600 font-black text-4xl leading-tight">R$ 2.200</p>
-                  <p className="text-amber-700 font-bold text-xs uppercase tracking-wide mt-1">🔥 Pré-venda — economize R$600</p>
+                <div className="rounded-2xl px-4 py-3 mb-2" style={{ background: '#FFFDF4', border: '1px solid #EAD58B' }}>
+                  <p className="text-sm line-through" style={{ color: '#A09CA3' }}>de R$ 2.800</p>
+                  <p className="font-black text-4xl leading-tight" style={{ color: '#352D39' }}>R$ 2.200</p>
+                  <p className="font-bold text-xs uppercase tracking-wide mt-1" style={{ color: '#8B6A56' }}>🔥 Pré-venda — economize R$600</p>
                 </div>
                 <CountdownTimer />
               </div>
