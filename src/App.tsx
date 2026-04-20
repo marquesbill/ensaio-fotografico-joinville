@@ -91,18 +91,18 @@ function CountdownTimer() {
   const pad = (n: number) => String(n).padStart(2, '0');
   const expired = days === 0 && hours === 0 && minutes === 0 && seconds === 0;
   return (
-    <div className="mt-3 mb-2 rounded-2xl px-3 py-3 border border-white/20" style={{ background: 'linear-gradient(135deg, rgba(122,63,143,0.12), rgba(232,112,90,0.12))' }}>
-      <p className="font-bold text-xs uppercase tracking-widest text-center mb-2" style={{ color: '#c44f82' }}>
+    <div className="mt-3 mb-2 rounded-2xl px-3 py-3" style={{ background: 'linear-gradient(135deg, #a46db5 0%, #e8a2e8 100%)', boxShadow: '0 2px 10px rgba(164,109,181,0.25)' }}>
+      <p className="font-bold text-xs uppercase tracking-widest text-center mb-2 text-white drop-shadow-sm">
         {expired ? '🔒 Oferta encerrada' : '⏰ Oferta expira em'}
       </p>
       <div className="flex justify-center gap-2 text-center">
         {[{ v: pad(days), l: 'dias' }, { v: pad(hours), l: 'hrs' }, { v: pad(minutes), l: 'min' }, { v: pad(seconds), l: 'seg' }].map(({ v, l }) => (
           <div key={l} className="flex flex-col items-center">
             <span
-              className="text-white font-black text-xl leading-none px-2 py-1 rounded-lg min-w-[2.4rem] tabular-nums"
-              style={{ background: 'linear-gradient(135deg, #7a3f8f, #e87060)' }}
+              className="font-black text-xl leading-none px-2 py-1 rounded-lg min-w-[2.4rem] tabular-nums"
+              style={{ background: 'rgba(255,255,255,0.92)', color: '#352D39' }}
             >{v}</span>
-            <span className="text-[10px] font-bold mt-1 uppercase" style={{ color: '#c44f82' }}>{l}</span>
+            <span className="text-[10px] font-bold mt-1 uppercase text-white">{l}</span>
           </div>
         ))}
       </div>
