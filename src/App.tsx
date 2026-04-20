@@ -361,7 +361,7 @@ export default function App() {
           <div className="grid grid-cols-1 md:grid-cols-3 gap-8 items-end">
             {/* Package 1 */}
             <motion.div
-              className="glass-card p-10 rounded-[2.5rem] border border-white/60 shadow-xl flex flex-col h-full hover:scale-[1.02] transition-transform duration-500 order-1 bg-white/70"
+              className="glass-card p-10 rounded-[2.5rem] border border-white/60 flex flex-col h-full hover:scale-[1.02] transition-transform duration-500 order-1 bg-white/70" style={{ boxShadow: '0 8px 32px rgba(0,0,0,0.22), 0 2px 8px rgba(0,0,0,0.14)' }}
               initial={{ opacity: 0, x: -50 }}
               whileInView={{ opacity: 1, x: 0 }}
               viewport={{ once: true }}
@@ -420,7 +420,7 @@ export default function App() {
 
             {/* Package 3 */}
             <motion.div
-              className="glass-card p-10 rounded-[2.5rem] border border-white/60 shadow-xl flex flex-col h-full hover:scale-[1.02] transition-transform duration-500 order-3 bg-white/70"
+              className="glass-card p-10 rounded-[2.5rem] border border-white/60 flex flex-col h-full hover:scale-[1.02] transition-transform duration-500 order-3 bg-white/70" style={{ boxShadow: '0 8px 32px rgba(0,0,0,0.22), 0 2px 8px rgba(0,0,0,0.14)' }}
               initial={{ opacity: 0, x: 50 }}
               whileInView={{ opacity: 1, x: 0 }}
               viewport={{ once: true }}
