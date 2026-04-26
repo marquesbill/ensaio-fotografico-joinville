@@ -117,10 +117,11 @@ type FormState = { nome: string; whatsapp: string; email: string };
 type FormStatus = 'idle' | 'sending' | 'success' | 'error';
 
 async function submitToSheets(data: FormState, source: string) {
+  // no-cors só aceita content-types "simples"; usamos text/plain para que o body chegue ao Apps Script
   await fetch(SHEETS_URL, {
     method: 'POST',
-    mode: 'no-cors', // Google Apps Script redireciona; no-cors envia o dado mesmo sem leitura da resposta
-    headers: { 'Content-Type': 'application/json' },
+    mode: 'no-cors',
+    headers: { 'Content-Type': 'text/plain' },
     body: JSON.stringify({ ...data, source, timestamp: new Date().toISOString() }),
   });
 }
