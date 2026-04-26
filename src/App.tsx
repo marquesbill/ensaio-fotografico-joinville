@@ -305,11 +305,14 @@ export default function App() {
               <p className="text-white/80 text-center text-sm mt-2 font-medium tracking-wide">Vagas limitadas · Preço especial por tempo limitado</p>
             </div>
             {heroStatus === 'success' ? (
-              <div className="flex flex-col items-center justify-center py-8 gap-3">
-                <CheckCircle className="w-14 h-14 text-green-400 drop-shadow" />
-                <p className="text-white font-bold text-xl text-center">Vaga garantida! 🎉</p>
-                <p className="text-white/80 text-sm text-center">Entraremos em contato pelo WhatsApp em breve.</p>
-                <button onClick={() => setHeroStatus('idle')} className="mt-2 text-white/60 text-xs underline">Enviar outro cadastro</button>
+              <div
+                className="flex flex-col items-center justify-center py-8 gap-3 rounded-2xl"
+                style={{ background: 'rgba(80, 55, 100, 0.72)', backdropFilter: 'blur(18px)', WebkitBackdropFilter: 'blur(18px)', border: '1px solid rgba(164,109,181,0.30)' }}
+              >
+                <CheckCircle className="w-14 h-14 drop-shadow" style={{ color: '#c084fc' }} />
+                <p className="font-bold text-xl text-center text-white">Vaga garantida! 🎉</p>
+                <p className="text-sm text-center" style={{ color: 'rgba(240,220,255,0.85)' }}>Entraremos em contato pelo WhatsApp em breve.</p>
+                <button onClick={() => setHeroStatus('idle')} className="mt-2 text-xs underline" style={{ color: 'rgba(220,190,255,0.70)' }}>Enviar outro cadastro</button>
               </div>
             ) : (
               <form className="space-y-5" onSubmit={handleHeroSubmit}>
@@ -711,11 +714,14 @@ export default function App() {
               </div>
               <div id="cadastro-footer" className="glass-card p-8 rounded-2xl space-y-4 border border-white/40 shadow-[0_8px_32px_0_rgba(255,255,255,0.1)] bg-white/5 backdrop-blur-2xl">
                 {footerStatus === 'success' ? (
-                  <div className="flex flex-col items-center justify-center py-6 gap-3">
-                    <CheckCircle className="w-12 h-12 text-green-500 drop-shadow" />
-                    <p className="text-on-surface font-bold text-lg text-center">Recebemos seu contato! 🎉</p>
-                    <p className="text-on-surface-variant text-sm text-center">Falaremos com você em breve pelo WhatsApp.</p>
-                    <button onClick={() => setFooterStatus('idle')} className="mt-1 text-on-surface-variant text-xs underline">Enviar outro cadastro</button>
+                  <div
+                    className="flex flex-col items-center justify-center py-6 gap-3 rounded-2xl"
+                    style={{ background: 'rgba(80, 55, 100, 0.72)', backdropFilter: 'blur(18px)', WebkitBackdropFilter: 'blur(18px)', border: '1px solid rgba(164,109,181,0.30)' }}
+                  >
+                    <CheckCircle className="w-12 h-12 drop-shadow" style={{ color: '#c084fc' }} />
+                    <p className="font-bold text-lg text-center text-white">Recebemos seu contato! 🎉</p>
+                    <p className="text-sm text-center" style={{ color: 'rgba(240,220,255,0.85)' }}>Falaremos com você em breve pelo WhatsApp.</p>
+                    <button onClick={() => setFooterStatus('idle')} className="mt-1 text-xs underline" style={{ color: 'rgba(220,190,255,0.70)' }}>Enviar outro cadastro</button>
                   </div>
                 ) : (
                   <form className="flex flex-col gap-4" onSubmit={handleFooterSubmit}>
