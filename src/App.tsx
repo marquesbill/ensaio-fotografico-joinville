@@ -914,9 +914,10 @@ export default function App() {
       {/* Floating WhatsApp Button */}
       <motion.a
         className="fixed bottom-8 right-8 z-50 w-16 h-16 bg-[#25D366] text-white rounded-full flex items-center justify-center shadow-2xl hover:scale-110 active:scale-95 transition-all"
-        href="https://wa.me/551151960627"
+        href={`https://wa.me/551151960627?text=${encodeURIComponent('Olá, gostaria de um ensaio!')}`}
         target="_blank"
         rel="noopener noreferrer"
+        onClick={() => trackEvent('Contact', { content_name: 'Botão WhatsApp Flutuante' })}
         initial={{ scale: 0 }}
         animate={{
           scale: 1,
