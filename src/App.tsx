@@ -110,6 +110,21 @@ function CountdownTimer() {
   );
 }
 
+// ⚠️ Cole aqui a URL do seu Google Apps Script após publicar
+const SHEETS_URL = 'https://script.google.com/macros/s/AKfycbxO8j0G9Gym-5IXzYBI9nCJp6zMfjf4jdNFDDPfw9IaNwFXPu_d7KKutHjk9j8avBw/exec';
+
+type FormState = { nome: string; whatsapp: string; email: string };
+type FormStatus = 'idle' | 'sending' | 'success' | 'error';
+
+async function submitToSheets(data: FormState, source: string) {
+  await fetch(SHEETS_URL, {
+    method: 'POST',
+    mode: 'no-cors', // Google Apps Script redireciona; no-cors envia o dado mesmo sem leitura da resposta
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ ...data, source, timestamp: new Date().toISOString() }),
+  });
+}
+
 export default function App() {
   const [openFaq, setOpenFaq] = useState<number | null>(0);
   const carouselRef = useRef<HTMLDivElement>(null);
@@ -118,6 +133,40 @@ export default function App() {
   const heroBadgeY  = useTransform(scrollY, [0, 600], [0, -24]);
   const heroDateY   = useTransform(scrollY, [0, 600], [0, -20]);
   const heroTextY   = useTransform(scrollY, [0, 600], [0, -14]);
+
+  // Hero form
+  const [heroForm, setHeroForm] = useState<FormState>({ nome: '', whatsapp: '', email: '' });
+  const [heroStatus, setHeroStatus] = useState<FormStatus>('idle');
+
+  // Footer form
+  const [footerForm, setFooterForm] = useState<FormState>({ nome: '', whatsapp: '', email: '' });
+  const [footerStatus, setFooterStatus] = useState<FormStatus>('idle');
+
+  const handleHeroSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!heroForm.nome || !heroForm.whatsapp || !heroForm.email) return;
+    setHeroStatus('sending');
+    try {
+      await submitToSheets(heroForm, 'hero');
+      setHeroStatus('success');
+      setHeroForm({ nome: '', whatsapp: '', email: '' });
+    } catch {
+      setHeroStatus('error');
+    }
+  };
+
+  const handleFooterSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!footerForm.nome || !footerForm.whatsapp || !footerForm.email) return;
+    setFooterStatus('sending');
+    try {
+      await submitToSheets(footerForm, 'footer');
+      setFooterStatus('success');
+      setFooterForm({ nome: '', whatsapp: '', email: '' });
+    } catch {
+      setFooterStatus('error');
+    }
+  };
 
   const scrollCarousel = (direction: 'left' | 'right') => {
     if (carouselRef.current) {
@@ -246,48 +295,70 @@ export default function App() {
               </h3>
               <p className="text-white/80 text-center text-sm mt-2 font-medium tracking-wide">Vagas limitadas · Preço especial por tempo limitado</p>
             </div>
-            <form className="space-y-5" onSubmit={(e) => e.preventDefault()}>
-              <div>
-                <input 
-                  className="w-full bg-white/90 border border-white/80 focus:ring-2 focus:ring-primary focus:bg-white rounded-xl px-4 py-4 placeholder:text-gray-600 text-gray-900 font-bold shadow-inner transition-colors" 
-                  placeholder="Seu Nome" 
-                  type="text" 
-                />
+            {heroStatus === 'success' ? (
+              <div className="flex flex-col items-center justify-center py-8 gap-3">
+                <CheckCircle className="w-14 h-14 text-green-400 drop-shadow" />
+                <p className="text-white font-bold text-xl text-center">Vaga garantida! 🎉</p>
+                <p className="text-white/80 text-sm text-center">Entraremos em contato pelo WhatsApp em breve.</p>
+                <button onClick={() => setHeroStatus('idle')} className="mt-2 text-white/60 text-xs underline">Enviar outro cadastro</button>
               </div>
-              <div>
-                <input 
-                  className="w-full bg-white/90 border border-white/80 focus:ring-2 focus:ring-primary focus:bg-white rounded-xl px-4 py-4 placeholder:text-gray-600 text-gray-900 font-bold shadow-inner transition-colors" 
-                  placeholder="WhatsApp (DDD)" 
-                  type="tel" 
-                />
-              </div>
-              <div>
-                <input 
-                  className="w-full bg-white/90 border border-white/80 focus:ring-2 focus:ring-primary focus:bg-white rounded-xl px-4 py-4 placeholder:text-gray-600 text-gray-900 font-bold shadow-inner transition-colors" 
-                  placeholder="E-mail" 
-                  type="email" 
-                />
-              </div>
-              <motion.button
-                className="w-full signature-gradient text-white font-bold py-5 rounded-full text-lg mt-4 hover:scale-[1.02] active:scale-95 transition-transform"
-                type="submit"
-                animate={{
-                  boxShadow: [
-                    "0 0 8px 2px rgba(255,255,255,0.18)",
-                    "0 0 18px 6px rgba(255,255,255,0.42)",
-                    "0 0 8px 2px rgba(255,255,255,0.18)"
-                  ]
-                }}
-                transition={{
-                  duration: 2,
-                  repeat: Infinity,
-                  ease: "easeInOut",
-                  delay: 0.9
-                }}
-              >
-                Garantir minha Vaga
-              </motion.button>
-            </form>
+            ) : (
+              <form className="space-y-5" onSubmit={handleHeroSubmit}>
+                <div>
+                  <input
+                    className="w-full bg-white/90 border border-white/80 focus:ring-2 focus:ring-primary focus:bg-white rounded-xl px-4 py-4 placeholder:text-gray-600 text-gray-900 font-bold shadow-inner transition-colors"
+                    placeholder="Seu Nome"
+                    type="text"
+                    required
+                    value={heroForm.nome}
+                    onChange={(e) => setHeroForm(f => ({ ...f, nome: e.target.value }))}
+                  />
+                </div>
+                <div>
+                  <input
+                    className="w-full bg-white/90 border border-white/80 focus:ring-2 focus:ring-primary focus:bg-white rounded-xl px-4 py-4 placeholder:text-gray-600 text-gray-900 font-bold shadow-inner transition-colors"
+                    placeholder="WhatsApp (DDD)"
+                    type="tel"
+                    required
+                    value={heroForm.whatsapp}
+                    onChange={(e) => setHeroForm(f => ({ ...f, whatsapp: e.target.value }))}
+                  />
+                </div>
+                <div>
+                  <input
+                    className="w-full bg-white/90 border border-white/80 focus:ring-2 focus:ring-primary focus:bg-white rounded-xl px-4 py-4 placeholder:text-gray-600 text-gray-900 font-bold shadow-inner transition-colors"
+                    placeholder="E-mail"
+                    type="email"
+                    required
+                    value={heroForm.email}
+                    onChange={(e) => setHeroForm(f => ({ ...f, email: e.target.value }))}
+                  />
+                </div>
+                {heroStatus === 'error' && (
+                  <p className="text-red-300 text-sm text-center">Erro ao enviar. Tente novamente.</p>
+                )}
+                <motion.button
+                  className="w-full signature-gradient text-white font-bold py-5 rounded-full text-lg mt-4 hover:scale-[1.02] active:scale-95 transition-transform disabled:opacity-60"
+                  type="submit"
+                  disabled={heroStatus === 'sending'}
+                  animate={{
+                    boxShadow: [
+                      "0 0 8px 2px rgba(255,255,255,0.18)",
+                      "0 0 18px 6px rgba(255,255,255,0.42)",
+                      "0 0 8px 2px rgba(255,255,255,0.18)"
+                    ]
+                  }}
+                  transition={{
+                    duration: 2,
+                    repeat: Infinity,
+                    ease: "easeInOut",
+                    delay: 0.9
+                  }}
+                >
+                  {heroStatus === 'sending' ? 'Enviando…' : 'Garantir minha Vaga'}
+                </motion.button>
+              </form>
+            )}
           </motion.div>
         </div>
       </section>
@@ -618,12 +689,51 @@ export default function App() {
                 <p className="text-on-surface-variant mt-4 leading-relaxed">Localizado no coração de Joinville, nosso estúdio temporário oferece infraestrutura completa para o seu ensaio, com total privacidade e salas preparadas para trocas de figurino e preparação técnica.</p>
               </div>
               <div id="cadastro-footer" className="glass-card p-8 rounded-2xl space-y-4 border border-white/40 shadow-[0_8px_32px_0_rgba(255,255,255,0.1)] bg-white/5 backdrop-blur-2xl">
-                <div className="flex flex-col gap-4">
-                  <input className="w-full bg-white/80 border border-white/50 rounded-xl px-4 py-4 placeholder:text-gray-500 focus:ring-2 focus:ring-primary focus:bg-white text-gray-900 font-medium shadow-inner transition-colors" placeholder="Nome completo" type="text" />
-                  <input className="w-full bg-white/80 border border-white/50 rounded-xl px-4 py-4 placeholder:text-gray-500 focus:ring-2 focus:ring-primary focus:bg-white text-gray-900 font-medium shadow-inner transition-colors" placeholder="WhatsApp" type="tel" />
-                  <input className="w-full bg-white/80 border border-white/50 rounded-xl px-4 py-4 placeholder:text-gray-500 focus:ring-2 focus:ring-primary focus:bg-white text-gray-900 font-medium shadow-inner transition-colors" placeholder="Melhor E-mail" type="email" />
-                </div>
-                <button className="w-full signature-gradient text-white font-bold py-4 rounded-full shadow-md hover:shadow-lg hover:scale-[1.02] active:scale-95 transition-all text-lg mt-2">Quero meu ensaio</button>
+                {footerStatus === 'success' ? (
+                  <div className="flex flex-col items-center justify-center py-6 gap-3">
+                    <CheckCircle className="w-12 h-12 text-green-500 drop-shadow" />
+                    <p className="text-on-surface font-bold text-lg text-center">Recebemos seu contato! 🎉</p>
+                    <p className="text-on-surface-variant text-sm text-center">Falaremos com você em breve pelo WhatsApp.</p>
+                    <button onClick={() => setFooterStatus('idle')} className="mt-1 text-on-surface-variant text-xs underline">Enviar outro cadastro</button>
+                  </div>
+                ) : (
+                  <form className="flex flex-col gap-4" onSubmit={handleFooterSubmit}>
+                    <input
+                      className="w-full bg-white/80 border border-white/50 rounded-xl px-4 py-4 placeholder:text-gray-500 focus:ring-2 focus:ring-primary focus:bg-white text-gray-900 font-medium shadow-inner transition-colors"
+                      placeholder="Nome completo"
+                      type="text"
+                      required
+                      value={footerForm.nome}
+                      onChange={(e) => setFooterForm(f => ({ ...f, nome: e.target.value }))}
+                    />
+                    <input
+                      className="w-full bg-white/80 border border-white/50 rounded-xl px-4 py-4 placeholder:text-gray-500 focus:ring-2 focus:ring-primary focus:bg-white text-gray-900 font-medium shadow-inner transition-colors"
+                      placeholder="WhatsApp"
+                      type="tel"
+                      required
+                      value={footerForm.whatsapp}
+                      onChange={(e) => setFooterForm(f => ({ ...f, whatsapp: e.target.value }))}
+                    />
+                    <input
+                      className="w-full bg-white/80 border border-white/50 rounded-xl px-4 py-4 placeholder:text-gray-500 focus:ring-2 focus:ring-primary focus:bg-white text-gray-900 font-medium shadow-inner transition-colors"
+                      placeholder="Melhor E-mail"
+                      type="email"
+                      required
+                      value={footerForm.email}
+                      onChange={(e) => setFooterForm(f => ({ ...f, email: e.target.value }))}
+                    />
+                    {footerStatus === 'error' && (
+                      <p className="text-red-500 text-sm text-center">Erro ao enviar. Tente novamente.</p>
+                    )}
+                    <button
+                      type="submit"
+                      disabled={footerStatus === 'sending'}
+                      className="w-full signature-gradient text-white font-bold py-4 rounded-full shadow-md hover:shadow-lg hover:scale-[1.02] active:scale-95 transition-all text-lg mt-2 disabled:opacity-60"
+                    >
+                      {footerStatus === 'sending' ? 'Enviando…' : 'Quero meu ensaio'}
+                    </button>
+                  </form>
+                )}
               </div>
             </motion.div>
           </div>
