@@ -656,7 +656,7 @@ export default function App() {
             ].map((brand, i) => (
               <motion.div
                 key={i}
-                className={`brand-logo-item group hover:shadow-lg transition-shadow${i === 8 ? ' hidden md:flex' : ''}`}
+                className={`brand-logo-item group hover:shadow-lg transition-shadow${i === 4 ? ' hidden md:flex' : ''}`}
                 initial={{ opacity: 0, scale: 0.8 }}
                 whileInView={{ opacity: 1, scale: 1 }}
                 viewport={{ once: true }}
