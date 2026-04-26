@@ -113,6 +113,12 @@ function CountdownTimer() {
 // ⚠️ Cole aqui a URL do seu Google Apps Script após publicar
 const SHEETS_URL = 'https://script.google.com/macros/s/AKfycbxO8j0G9Gym-5IXzYBI9nCJp6zMfjf4jdNFDDPfw9IaNwFXPu_d7KKutHjk9j8avBw/exec';
 
+function trackEvent(event: string, params?: Record<string, string | number>) {
+  if (typeof window !== 'undefined' && window.fbq) {
+    window.fbq('track', event, params);
+  }
+}
+
 type FormState = { nome: string; whatsapp: string; email: string };
 type FormStatus = 'idle' | 'sending' | 'success' | 'error';
 
@@ -149,6 +155,7 @@ export default function App() {
     setHeroStatus('sending');
     try {
       await submitToSheets(heroForm, 'hero');
+      trackEvent('Lead', { content_name: 'Formulário Hero' });
       setHeroStatus('success');
       setHeroForm({ nome: '', whatsapp: '', email: '' });
     } catch {
@@ -162,6 +169,7 @@ export default function App() {
     setFooterStatus('sending');
     try {
       await submitToSheets(footerForm, 'footer');
+      trackEvent('Lead', { content_name: 'Formulário Footer' });
       setFooterStatus('success');
       setFooterForm({ nome: '', whatsapp: '', email: '' });
     } catch {
@@ -457,7 +465,11 @@ export default function App() {
                   Pode ser dividido por até 2 pessoas
                 </li>
               </ul>
-              <a href="#cadastro" className="block text-center w-full py-4 rounded-full border-2 border-primary text-primary font-bold hover:bg-primary hover:text-white transition-colors">Selecionar</a>
+              <a
+                href="#cadastro"
+                onClick={() => trackEvent('InitiateCheckout', { content_name: 'Pacote Lembrança', value: 1400, currency: 'BRL' })}
+                className="block text-center w-full py-4 rounded-full border-2 border-primary text-primary font-bold hover:bg-primary hover:text-white transition-colors"
+              >Selecionar</a>
             </motion.div>
 
             {/* Package 2 - Popular */}
@@ -487,7 +499,11 @@ export default function App() {
                   Pode ser dividido por até 3 pessoas
                 </li>
               </ul>
-              <a href="#cadastro" className="block text-center w-full py-5 rounded-full signature-gradient text-white font-bold shadow-lg hover:brightness-110 transition-all text-lg">Selecionar</a>
+              <a
+                href="#cadastro"
+                onClick={() => trackEvent('InitiateCheckout', { content_name: 'Pacote Econômico', value: 1900, currency: 'BRL' })}
+                className="block text-center w-full py-5 rounded-full signature-gradient text-white font-bold shadow-lg hover:brightness-110 transition-all text-lg"
+              >Selecionar</a>
             </motion.div>
 
             {/* Package 3 */}
@@ -516,7 +532,11 @@ export default function App() {
                   Pode ser dividido por até 4 pessoas
                 </li>
               </ul>
-              <a href="#cadastro" className="block text-center w-full py-4 rounded-full border-2 border-primary text-primary font-bold hover:bg-primary hover:text-white transition-colors">Selecionar</a>
+              <a
+                href="#cadastro"
+                onClick={() => trackEvent('InitiateCheckout', { content_name: 'Pacote Completo', value: 2200, currency: 'BRL' })}
+                className="block text-center w-full py-4 rounded-full border-2 border-primary text-primary font-bold hover:bg-primary hover:text-white transition-colors"
+              >Selecionar</a>
             </motion.div>
           </div>
         </div>
