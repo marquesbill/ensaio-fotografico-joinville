@@ -253,7 +253,7 @@ export default function App() {
               style={{ y: heroDateY, color: '#f0f4ff', textShadow: '0 1px 4px rgba(0,0,0,0.45)' }}
               className="text-xl md:text-2xl font-semibold"
             >
-              21 de Julho a 02 de Agosto
+              21 de Julho a 01 de Agosto
             </motion.p>
             <motion.p
               variants={fadeIn}
