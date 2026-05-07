@@ -310,7 +310,7 @@ export default function App() {
                 style={{ background: 'rgba(80, 55, 100, 0.72)', backdropFilter: 'blur(18px)', WebkitBackdropFilter: 'blur(18px)', border: '1px solid rgba(164,109,181,0.30)' }}
               >
                 <CheckCircle className="w-14 h-14 drop-shadow" style={{ color: '#c084fc' }} />
-                <p className="font-bold text-xl text-center text-white">Vaga garantida! 🎉</p>
+                <p className="font-bold text-xl text-center text-white">Vaga garantida!</p>
                 <p className="text-sm text-center" style={{ color: 'rgba(240,220,255,0.85)' }}>Entraremos em contato pelo WhatsApp em breve.</p>
                 <button onClick={() => setHeroStatus('idle')} className="mt-2 text-xs underline" style={{ color: 'rgba(220,190,255,0.70)' }}>Enviar outro cadastro</button>
               </div>
@@ -737,7 +737,7 @@ export default function App() {
                     style={{ background: 'rgba(80, 55, 100, 0.72)', backdropFilter: 'blur(18px)', WebkitBackdropFilter: 'blur(18px)', border: '1px solid rgba(164,109,181,0.30)' }}
                   >
                     <CheckCircle className="w-12 h-12 drop-shadow" style={{ color: '#c084fc' }} />
-                    <p className="font-bold text-lg text-center text-white">Recebemos seu contato! 🎉</p>
+                    <p className="font-bold text-lg text-center text-white">Recebemos seu contato!</p>
                     <p className="text-sm text-center" style={{ color: 'rgba(240,220,255,0.85)' }}>Falaremos com você em breve pelo WhatsApp.</p>
                     <button onClick={() => setFooterStatus('idle')} className="mt-1 text-xs underline" style={{ color: 'rgba(220,190,255,0.70)' }}>Enviar outro cadastro</button>
                   </div>
