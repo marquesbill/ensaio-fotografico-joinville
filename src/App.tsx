@@ -119,7 +119,7 @@ function trackEvent(event: string, params?: Record<string, string | number>) {
   }
 }
 
-type FormState = { nome: string; whatsapp: string; email: string };
+type FormState = { nome: string; whatsapp: string; email: string; vaiJoinville: string };
 type FormStatus = 'idle' | 'sending' | 'success' | 'error';
 
 async function submitToSheets(data: FormState, source: string) {
@@ -142,11 +142,11 @@ export default function App() {
   const heroTextY   = useTransform(scrollY, [0, 600], [0, -14]);
 
   // Hero form
-  const [heroForm, setHeroForm] = useState<FormState>({ nome: '', whatsapp: '', email: '' });
+  const [heroForm, setHeroForm] = useState<FormState>({ nome: '', whatsapp: '', email: '', vaiJoinville: '' });
   const [heroStatus, setHeroStatus] = useState<FormStatus>('idle');
 
   // Footer form
-  const [footerForm, setFooterForm] = useState<FormState>({ nome: '', whatsapp: '', email: '' });
+  const [footerForm, setFooterForm] = useState<FormState>({ nome: '', whatsapp: '', email: '', vaiJoinville: '' });
   const [footerStatus, setFooterStatus] = useState<FormStatus>('idle');
 
   const handleHeroSubmit = async (e: React.FormEvent) => {
@@ -157,7 +157,7 @@ export default function App() {
       await submitToSheets(heroForm, 'hero');
       trackEvent('Lead', { content_name: 'Formulário Hero' });
       setHeroStatus('success');
-      setHeroForm({ nome: '', whatsapp: '', email: '' });
+      setHeroForm({ nome: '', whatsapp: '', email: '', vaiJoinville: '' });
     } catch {
       setHeroStatus('error');
     }
@@ -171,7 +171,7 @@ export default function App() {
       await submitToSheets(footerForm, 'footer');
       trackEvent('Lead', { content_name: 'Formulário Footer' });
       setFooterStatus('success');
-      setFooterForm({ nome: '', whatsapp: '', email: '' });
+      setFooterForm({ nome: '', whatsapp: '', email: '', vaiJoinville: '' });
     } catch {
       setFooterStatus('error');
     }
@@ -316,6 +316,22 @@ export default function App() {
               </div>
             ) : (
               <form className="space-y-5" onSubmit={handleHeroSubmit}>
+                <div>
+                  <p className="text-white/90 font-semibold text-sm mb-2">Vai para Joinville este ano?</p>
+                  <div className="flex gap-3">
+                    {['Sim', 'Não'].map((opt) => (
+                      <button
+                        key={opt}
+                        type="button"
+                        onClick={() => setHeroForm(f => ({ ...f, vaiJoinville: opt }))}
+                        className="flex-1 py-3 rounded-xl font-bold text-sm transition-all border-2"
+                        style={heroForm.vaiJoinville === opt
+                          ? { background: 'rgba(255,255,255,0.95)', color: '#843c9a', borderColor: 'white' }
+                          : { background: 'rgba(255,255,255,0.15)', color: 'white', borderColor: 'rgba(255,255,255,0.40)' }}
+                      >{opt}</button>
+                    ))}
+                  </div>
+                </div>
                 <div>
                   <input
                     className="w-full bg-white/90 border border-white/80 focus:ring-2 focus:ring-primary focus:bg-white rounded-xl px-4 py-4 placeholder:text-gray-600 text-gray-900 font-bold shadow-inner transition-colors"
@@ -725,6 +741,22 @@ export default function App() {
                   </div>
                 ) : (
                   <form className="flex flex-col gap-4" onSubmit={handleFooterSubmit}>
+                    <div>
+                      <p className="text-on-surface font-semibold text-sm mb-2">Vai para Joinville este ano?</p>
+                      <div className="flex gap-3">
+                        {['Sim', 'Não'].map((opt) => (
+                          <button
+                            key={opt}
+                            type="button"
+                            onClick={() => setFooterForm(f => ({ ...f, vaiJoinville: opt }))}
+                            className="flex-1 py-3 rounded-xl font-bold text-sm transition-all border-2"
+                            style={footerForm.vaiJoinville === opt
+                              ? { background: '#843c9a', color: 'white', borderColor: '#843c9a' }
+                              : { background: 'white', color: '#843c9a', borderColor: '#d8b4fe' }}
+                          >{opt}</button>
+                        ))}
+                      </div>
+                    </div>
                     <input
                       className="w-full bg-white/80 border border-white/50 rounded-xl px-4 py-4 placeholder:text-gray-500 focus:ring-2 focus:ring-primary focus:bg-white text-gray-900 font-medium shadow-inner transition-colors"
                       placeholder="Nome completo"
