@@ -111,7 +111,7 @@ function CountdownTimer() {
 }
 
 // ⚠️ Cole aqui a URL do seu Google Apps Script após publicar
-const SHEETS_URL = 'https://script.google.com/macros/s/AKfycbxO8j0G9Gym-5IXzYBI9nCJp6zMfjf4jdNFDDPfw9IaNwFXPu_d7KKutHjk9j8avBw/exec';
+const SHEETS_URL = 'https://script.google.com/macros/s/AKfycbwU_Wcn_Ca4boLils6acN_au3W5W1SMss3vlKuELSZCoWRvFHP0iLNZRx_WKALIsfAP/exec';
 
 function trackEvent(event: string, params?: Record<string, string | number>) {
   if (typeof window !== 'undefined' && window.fbq) {
@@ -316,8 +316,8 @@ export default function App() {
               </div>
             ) : (
               <form className="space-y-5" onSubmit={handleHeroSubmit}>
-                <div className="rounded-xl p-4" style={{ background: 'linear-gradient(135deg, #7a3f8f, #e87060)', border: 'none' }}>
-                  <p className="text-white font-black text-base mb-3 text-center leading-snug drop-shadow-sm">
+                <div className="rounded-xl p-4 shadow-inner" style={{ background: 'rgba(255,255,255,0.9)', border: '1px solid rgba(255,255,255,0.80)' }}>
+                  <p className="font-black text-base mb-3 text-center leading-snug" style={{ color: '#374151' }}>
                     Vai para Joinville este ano?
                   </p>
                   <div className="flex gap-3">
@@ -328,8 +328,8 @@ export default function App() {
                         onClick={() => setHeroForm(f => ({ ...f, vaiJoinville: opt }))}
                         className="flex-1 py-3 rounded-xl font-black text-base transition-all border-2"
                         style={heroForm.vaiJoinville === opt
-                          ? { background: 'white', color: '#843c9a', borderColor: 'white', boxShadow: '0 0 0 3px rgba(255,255,255,0.4)' }
-                          : { background: 'transparent', color: 'white', borderColor: 'rgba(255,255,255,0.60)' }}
+                          ? { background: '#7a3f8f', color: 'white', borderColor: '#7a3f8f' }
+                          : { background: 'transparent', color: '#374151', borderColor: '#d1d5db' }}
                       >{opt}</button>
                     ))}
                   </div>
@@ -743,8 +743,8 @@ export default function App() {
                   </div>
                 ) : (
                   <form className="flex flex-col gap-4" onSubmit={handleFooterSubmit}>
-                    <div className="rounded-xl p-4" style={{ background: 'linear-gradient(135deg, #7a3f8f, #e87060)', border: 'none' }}>
-                      <p className="text-white font-black text-base mb-3 text-center leading-snug drop-shadow-sm">
+                    <div className="rounded-xl p-4 shadow-inner" style={{ background: 'rgba(255,255,255,0.8)', border: '1px solid rgba(255,255,255,0.50)' }}>
+                      <p className="font-black text-base mb-3 text-center leading-snug" style={{ color: '#374151' }}>
                         Vai para Joinville este ano?
                       </p>
                       <div className="flex gap-3">
@@ -755,8 +755,8 @@ export default function App() {
                             onClick={() => setFooterForm(f => ({ ...f, vaiJoinville: opt }))}
                             className="flex-1 py-3 rounded-xl font-black text-base transition-all border-2"
                             style={footerForm.vaiJoinville === opt
-                              ? { background: 'white', color: '#7a3f8f', borderColor: 'white', boxShadow: '0 0 0 3px rgba(255,255,255,0.4)' }
-                              : { background: 'transparent', color: 'white', borderColor: 'rgba(255,255,255,0.60)' }}
+                              ? { background: '#7a3f8f', color: 'white', borderColor: '#7a3f8f' }
+                              : { background: 'transparent', color: '#374151', borderColor: '#d1d5db' }}
                           >{opt}</button>
                         ))}
                       </div>
