@@ -316,9 +316,9 @@ export default function App() {
               </div>
             ) : (
               <form className="space-y-5" onSubmit={handleHeroSubmit}>
-                <div className="rounded-xl p-4" style={{ background: 'rgba(255,255,255,0.18)', border: '1.5px solid rgba(255,255,255,0.55)' }}>
-                  <p className="text-white font-black text-base mb-3 text-center leading-snug">
-                    🎭 Vai para Joinville este ano?
+                <div className="rounded-xl p-4" style={{ background: 'linear-gradient(135deg, #7a3f8f, #e87060)', border: 'none' }}>
+                  <p className="text-white font-black text-base mb-3 text-center leading-snug drop-shadow-sm">
+                    Vai para Joinville este ano?
                   </p>
                   <div className="flex gap-3">
                     {['Sim', 'Não'].map((opt) => (
@@ -743,9 +743,9 @@ export default function App() {
                   </div>
                 ) : (
                   <form className="flex flex-col gap-4" onSubmit={handleFooterSubmit}>
-                    <div className="rounded-xl p-4" style={{ background: 'rgba(132,60,154,0.10)', border: '1.5px solid rgba(132,60,154,0.35)' }}>
-                      <p className="font-black text-base mb-3 text-center leading-snug" style={{ color: '#5b2470' }}>
-                        🎭 Vai para Joinville este ano?
+                    <div className="rounded-xl p-4" style={{ background: 'linear-gradient(135deg, #7a3f8f, #e87060)', border: 'none' }}>
+                      <p className="text-white font-black text-base mb-3 text-center leading-snug drop-shadow-sm">
+                        Vai para Joinville este ano?
                       </p>
                       <div className="flex gap-3">
                         {['Sim', 'Não'].map((opt) => (
@@ -755,8 +755,8 @@ export default function App() {
                             onClick={() => setFooterForm(f => ({ ...f, vaiJoinville: opt }))}
                             className="flex-1 py-3 rounded-xl font-black text-base transition-all border-2"
                             style={footerForm.vaiJoinville === opt
-                              ? { background: '#843c9a', color: 'white', borderColor: '#843c9a', boxShadow: '0 0 0 3px rgba(132,60,154,0.25)' }
-                              : { background: 'white', color: '#843c9a', borderColor: '#c084fc' }}
+                              ? { background: 'white', color: '#7a3f8f', borderColor: 'white', boxShadow: '0 0 0 3px rgba(255,255,255,0.4)' }
+                              : { background: 'transparent', color: 'white', borderColor: 'rgba(255,255,255,0.60)' }}
                           >{opt}</button>
                         ))}
                       </div>
