@@ -316,18 +316,20 @@ export default function App() {
               </div>
             ) : (
               <form className="space-y-5" onSubmit={handleHeroSubmit}>
-                <div>
-                  <p className="text-white/90 font-semibold text-sm mb-2">Vai para Joinville este ano?</p>
+                <div className="rounded-xl p-4" style={{ background: 'rgba(255,255,255,0.18)', border: '1.5px solid rgba(255,255,255,0.55)' }}>
+                  <p className="text-white font-black text-base mb-3 text-center leading-snug">
+                    🎭 Vai para Joinville este ano?
+                  </p>
                   <div className="flex gap-3">
                     {['Sim', 'Não'].map((opt) => (
                       <button
                         key={opt}
                         type="button"
                         onClick={() => setHeroForm(f => ({ ...f, vaiJoinville: opt }))}
-                        className="flex-1 py-3 rounded-xl font-bold text-sm transition-all border-2"
+                        className="flex-1 py-3 rounded-xl font-black text-base transition-all border-2"
                         style={heroForm.vaiJoinville === opt
-                          ? { background: 'rgba(255,255,255,0.95)', color: '#843c9a', borderColor: 'white' }
-                          : { background: 'rgba(255,255,255,0.15)', color: 'white', borderColor: 'rgba(255,255,255,0.40)' }}
+                          ? { background: 'white', color: '#843c9a', borderColor: 'white', boxShadow: '0 0 0 3px rgba(255,255,255,0.4)' }
+                          : { background: 'transparent', color: 'white', borderColor: 'rgba(255,255,255,0.60)' }}
                       >{opt}</button>
                     ))}
                   </div>
@@ -741,18 +743,20 @@ export default function App() {
                   </div>
                 ) : (
                   <form className="flex flex-col gap-4" onSubmit={handleFooterSubmit}>
-                    <div>
-                      <p className="text-on-surface font-semibold text-sm mb-2">Vai para Joinville este ano?</p>
+                    <div className="rounded-xl p-4" style={{ background: 'rgba(132,60,154,0.10)', border: '1.5px solid rgba(132,60,154,0.35)' }}>
+                      <p className="font-black text-base mb-3 text-center leading-snug" style={{ color: '#5b2470' }}>
+                        🎭 Vai para Joinville este ano?
+                      </p>
                       <div className="flex gap-3">
                         {['Sim', 'Não'].map((opt) => (
                           <button
                             key={opt}
                             type="button"
                             onClick={() => setFooterForm(f => ({ ...f, vaiJoinville: opt }))}
-                            className="flex-1 py-3 rounded-xl font-bold text-sm transition-all border-2"
+                            className="flex-1 py-3 rounded-xl font-black text-base transition-all border-2"
                             style={footerForm.vaiJoinville === opt
-                              ? { background: '#843c9a', color: 'white', borderColor: '#843c9a' }
-                              : { background: 'white', color: '#843c9a', borderColor: '#d8b4fe' }}
+                              ? { background: '#843c9a', color: 'white', borderColor: '#843c9a', boxShadow: '0 0 0 3px rgba(132,60,154,0.25)' }
+                              : { background: 'white', color: '#843c9a', borderColor: '#c084fc' }}
                           >{opt}</button>
                         ))}
                       </div>
