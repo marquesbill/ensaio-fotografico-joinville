@@ -253,7 +253,7 @@ export default function App() {
               style={{ y: heroDateY, color: '#f0f4ff', textShadow: '0 1px 4px rgba(0,0,0,0.45)' }}
               className="text-xl md:text-2xl font-semibold"
             >
-              21 de Julho a 01 de Agosto
+              20 de Julho a 02 de Agosto
             </motion.p>
             <motion.p
               variants={fadeIn}
@@ -913,16 +913,16 @@ export default function App() {
         <div className="container mx-auto px-6 max-w-3xl pt-16">
           <h2 className="font-headline text-4xl text-center mb-16">Dúvidas Frequentes</h2>
           <div className="space-y-4">
-            {[
-              { q: "Quando serão os ensaios?", a: "Os ensaios ocorrerão em datas selecionadas. Fique atento às nossas redes sociais para o anúncio dos próximos lotes." },
+            {([
+              { q: "Quando serão os ensaios?", a: "Os ensaios ocorrerão de 20 de julho a 02 de agosto de 2026, durante o Festival de Dança de Joinville." },
               { q: "Onde serão feitas as fotos?", a: "No Hotel Le Village, Sala Esmeralda, em Joinville. Um ambiente preparado com infraestrutura completa." },
               { q: "Quem pode fazer o ensaio?", a: "Bailarinos de todas as idades e níveis, desde iniciantes até profissionais, de qualquer modalidade." },
-              { q: "Quanto tempo dura o ensaio?", a: "Nossos ensaios duram entre 30 a 90 minutos, dependendo do pacote escolhido." },
+              { q: "Quanto tempo dura o ensaio?", a: "Nossos ensaios duram entre 30 a 120 minutos, dependendo do pacote escolhido." },
               { q: "O que eu vou receber?", a: "Você receberá fotos editadas em alta resolução em uma galeria online privativa e elegante." },
-              { q: "Serão quantos lotes?", a: "Trabalhamos com lotes limitados para garantir a exclusividade e a qualidade de cada ensaio." },
-              { q: "Quais são as formas de pagamento?", a: "Aceitamos PIX, transferência bancária e cartões de crédito (com possibilidade de parcelamento)." },
-              { q: "Tem pacote especial para grupos?", a: "Sim! Oferecemos condições especiais para grupos de bailarinos da mesma escola ou companhia. Entre em contato." }
-            ].map((faq, i) => (
+              { q: "Serão quantos lotes?", a: "Trabalhamos com 3 lotes: Pré-venda (Lote 0), Lote 1 e Lote 2. Cada lote tem vagas limitadas e o preço aumenta a cada etapa." },
+              { q: "Quais são as formas de pagamento?", a: "Aceitamos PIX e cartões de crédito (com possibilidade de parcelamento)." },
+              { q: "Tem pacote especial para grupos?", a: (<>Sim! Oferecemos condições especiais para grupos de bailarinos da mesma escola ou companhia. <a href={`https://wa.me/551151960627?text=${encodeURIComponent('Olá, gostaria de informações sobre ensaio em grupo')}`} target="_blank" rel="noopener noreferrer" className="text-primary font-bold underline hover:opacity-80 transition-opacity">Entre em contato pelo WhatsApp.</a></>) },
+            ] as { q: string; a: React.ReactNode }[]).map((faq, i) => (
               <motion.div 
                 key={i}
                 className="glass-card rounded-2xl overflow-hidden border border-white/60 shadow-sm bg-white/70"
