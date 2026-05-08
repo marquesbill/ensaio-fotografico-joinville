@@ -6,8 +6,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   if (req.method === 'OPTIONS') return res.status(200).end();
 
-  const { date, package: pkg } = req.query as Record<string, string>;
-  if (!date || !pkg) return res.status(400).json({ error: 'date e package são obrigatórios' });
+  const { date } = req.query as Record<string, string>;
+  if (!date) return res.status(400).json({ error: 'date é obrigatório' });
 
   try {
     const url = `${SCRIPT_URL}?action=allSlots&date=${encodeURIComponent(date)}`;
