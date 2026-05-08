@@ -154,7 +154,7 @@ export default function Agendamento() {
       <div className="max-w-2xl mx-auto px-4 pb-20">
         <Steps step={step} />
 
-        <AnimatePresence mode="wait">
+        <AnimatePresence mode="sync">
 
           {/* ── Step 1: Package ── */}
           {step === 1 && (
