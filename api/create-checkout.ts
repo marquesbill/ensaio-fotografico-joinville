@@ -1,9 +1,8 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import Stripe from 'stripe';
 
-const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!);
 const SCRIPT_URL = process.env.SHEETS_SCRIPT_URL!;
-const SITE_URL   = process.env.SITE_URL || 'https://ensaiofotograficoemjoinville.com';
+const SITE_URL   = process.env.SITE_URL || 'https://www.ensaiofotograficoemjoinville.com';
 
 const PACKAGES = {
   lembranca: { name: 'Lembrança',  duration: 30,  price: 140000 },
@@ -17,6 +16,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
   if (req.method === 'OPTIONS') return res.status(200).end();
   if (req.method !== 'POST')    return res.status(405).json({ error: 'Method not allowed' });
+
+  // Init Stripe here (not at module level) so missing env var returns JSON, not HTML
+  if (!process.env.STRIPE_SECRET_KEY) {
+    return res.status(500).json({ error: 'STRIPE_SECRET_KEY não configurada' });
+  }
+  const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
 
   const { date, time, packageKey, name, email, whatsapp } = req.body as {
     date: string; time: string; packageKey: PkgKey;

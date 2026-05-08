@@ -169,30 +169,47 @@ export default function Agendamento() {
   const availablePeriods = PERIODS.filter(p => slotsByPeriod(availableSlots, p.key).length > 0);
   const periodSlots = selectedPeriod ? slotsByPeriod(availableSlots, selectedPeriod) : [];
 
+  // Called on submit — only checks format (empty fields are already blocked by disabled button)
   function validateForm(): boolean {
     const errors = { nome: '', email: '', whatsapp: '' };
 
-    if (!form.nome.trim()) {
-      errors.nome = 'Informe seu nome completo. Ex: Maria Silva';
-    } else if (form.nome.trim().split(/\s+/).length < 2) {
+    if (form.nome.trim().split(/\s+/).length < 2) {
       errors.nome = 'Informe nome e sobrenome. Ex: Maria Silva';
     }
-
-    if (!form.email.trim()) {
-      errors.email = 'Informe seu e-mail. Ex: maria@gmail.com';
-    } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email.trim())) {
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email.trim())) {
       errors.email = 'E-mail inválido. Ex: maria@gmail.com';
     }
-
     const digits = form.whatsapp.replace(/\D/g, '');
-    if (!form.whatsapp.trim()) {
-      errors.whatsapp = 'Informe seu WhatsApp. Ex: (47) 99999-9999';
-    } else if (digits.length < 10 || digits.length > 11) {
+    if (digits.length < 10 || digits.length > 11) {
       errors.whatsapp = 'Número inválido. Ex: (47) 99999-9999';
     }
 
     setFormErrors(errors);
     return !errors.nome && !errors.email && !errors.whatsapp;
+  }
+
+  // Inline validators — only fire when field has content
+  function validateNome(value: string) {
+    if (!value.trim()) { setFormErrors(fe => ({ ...fe, nome: '' })); return; }
+    setFormErrors(fe => ({
+      ...fe,
+      nome: value.trim().split(/\s+/).length < 2 ? 'Informe nome e sobrenome. Ex: Maria Silva' : '',
+    }));
+  }
+  function validateEmail(value: string) {
+    if (!value.trim()) { setFormErrors(fe => ({ ...fe, email: '' })); return; }
+    setFormErrors(fe => ({
+      ...fe,
+      email: /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value.trim()) ? '' : 'E-mail inválido. Ex: maria@gmail.com',
+    }));
+  }
+  function validateWhatsapp(value: string) {
+    if (!value.trim()) { setFormErrors(fe => ({ ...fe, whatsapp: '' })); return; }
+    const digits = value.replace(/\D/g, '');
+    setFormErrors(fe => ({
+      ...fe,
+      whatsapp: digits.length >= 10 && digits.length <= 11 ? '' : 'Número inválido. Ex: (47) 99999-9999',
+    }));
   }
 
   async function handleCheckout() {
@@ -463,9 +480,9 @@ export default function Agendamento() {
                   <input
                     className={`w-full bg-white/90 border focus:ring-2 focus:ring-primary focus:bg-white rounded-xl px-4 py-3 text-on-surface font-medium shadow-sm transition-colors ${formErrors.nome ? 'border-red-400 bg-red-50/50' : 'border-outline-variant'}`}
                     placeholder="Ex: Maria Silva"
-                    type="text" autoComplete="name"
+                    type="text" autoComplete="off"
                     value={form.nome}
-                    onChange={e => { setForm(f => ({ ...f, nome: e.target.value })); setFormErrors(fe => ({ ...fe, nome: '' })); }}
+                    onChange={e => { const v = e.target.value; setForm(f => ({ ...f, nome: v })); validateNome(v); }}
                   />
                   {formErrors.nome && (
                     <p className="mt-1.5 text-xs text-red-600 flex items-center gap-1">
@@ -480,9 +497,9 @@ export default function Agendamento() {
                   <input
                     className={`w-full bg-white/90 border focus:ring-2 focus:ring-primary focus:bg-white rounded-xl px-4 py-3 text-on-surface font-medium shadow-sm transition-colors ${formErrors.email ? 'border-red-400 bg-red-50/50' : 'border-outline-variant'}`}
                     placeholder="Ex: maria@gmail.com"
-                    type="text" autoComplete="email"
+                    type="text" autoComplete="off"
                     value={form.email}
-                    onChange={e => { setForm(f => ({ ...f, email: e.target.value })); setFormErrors(fe => ({ ...fe, email: '' })); }}
+                    onChange={e => { const v = e.target.value; setForm(f => ({ ...f, email: v })); validateEmail(v); }}
                   />
                   {formErrors.email && (
                     <p className="mt-1.5 text-xs text-red-600 flex items-center gap-1">
@@ -497,9 +514,9 @@ export default function Agendamento() {
                   <input
                     className={`w-full bg-white/90 border focus:ring-2 focus:ring-primary focus:bg-white rounded-xl px-4 py-3 text-on-surface font-medium shadow-sm transition-colors ${formErrors.whatsapp ? 'border-red-400 bg-red-50/50' : 'border-outline-variant'}`}
                     placeholder="Ex: (47) 99999-9999"
-                    type="text" autoComplete="tel"
+                    type="text" autoComplete="off"
                     value={form.whatsapp}
-                    onChange={e => { setForm(f => ({ ...f, whatsapp: e.target.value })); setFormErrors(fe => ({ ...fe, whatsapp: '' })); }}
+                    onChange={e => { const v = e.target.value; setForm(f => ({ ...f, whatsapp: v })); validateWhatsapp(v); }}
                   />
                   {formErrors.whatsapp && (
                     <p className="mt-1.5 text-xs text-red-600 flex items-center gap-1">
