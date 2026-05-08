@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { CheckCircle, ChevronLeft, ChevronRight, Clock, Calendar, User, Loader2, AlertCircle } from 'lucide-react';
+import { CheckCircle, ChevronLeft, ChevronRight, Clock, Calendar, User, Loader2, AlertCircle, Sun, Sunset, Moon } from 'lucide-react';
 
 // ── Constants ─────────────────────────────────────────────────
 const PACKAGES = [
@@ -40,6 +40,14 @@ const DATES_END   = new Date('2026-08-02T12:00:00');
 const DOW = ['Dom','Seg','Ter','Qua','Qui','Sex','Sáb'];
 const MON = ['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'];
 
+type Period = 'manha' | 'tarde' | 'noite';
+
+const PERIODS: { key: Period; label: string; sub: string; Icon: typeof Sun }[] = [
+  { key: 'manha', label: 'Manhã',  sub: '9h às 12h',       Icon: Sun    },
+  { key: 'tarde', label: 'Tarde',  sub: '12h às 18h',      Icon: Sunset },
+  { key: 'noite', label: 'Noite',  sub: '18h em diante',   Icon: Moon   },
+];
+
 function allDates() {
   const out: Date[] = [];
   for (let d = new Date(DATES_START); d <= DATES_END; d.setDate(d.getDate() + 1))
@@ -57,6 +65,15 @@ function formatDateFull(dateStr: string) {
   const [y, m, d] = dateStr.split('-');
   const dt = new Date(Number(y), Number(m) - 1, Number(d));
   return `${DOW[dt.getDay()]}, ${dt.getDate()} de ${MON[dt.getMonth()]} de ${y}`;
+}
+
+function slotsByPeriod(slots: string[], period: Period): string[] {
+  return slots.filter(t => {
+    const h = parseInt(t.split(':')[0]);
+    if (period === 'manha') return h >= 0  && h < 12;
+    if (period === 'tarde') return h >= 12 && h < 18;
+    return h >= 18;
+  });
 }
 
 // ── Step indicator ────────────────────────────────────────────
@@ -82,6 +99,37 @@ function Steps({ step }: { step: number }) {
   );
 }
 
+// ── Floating WhatsApp Button ──────────────────────────────────
+function WhatsAppButton() {
+  return (
+    <motion.a
+      className="fixed bottom-8 right-8 z-50 w-14 h-14 bg-[#25D366] text-white rounded-full flex items-center justify-center shadow-2xl"
+      href={`https://wa.me/551151960627?text=${encodeURIComponent('Olá, tenho uma dúvida sobre o ensaio em Joinville!')}`}
+      target="_blank"
+      rel="noopener noreferrer"
+      initial={{ scale: 0 }}
+      animate={{
+        scale: 1,
+        boxShadow: [
+          '0 0 15px 5px rgba(37,211,102,0.5)',
+          '0 0 25px 10px rgba(37,211,102,0.65)',
+          '0 0 15px 5px rgba(37,211,102,0.5)',
+        ],
+      }}
+      transition={{
+        scale: { type: 'spring', stiffness: 260, damping: 20, delay: 0.5 },
+        boxShadow: { duration: 2, repeat: Infinity, ease: 'easeInOut', delay: 1.5 },
+      }}
+      whileHover={{ scale: 1.1 }}
+      whileTap={{ scale: 0.95 }}
+    >
+      <svg className="w-7 h-7 fill-current" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+        <path d="M.057 24l1.687-6.163c-1.041-1.804-1.588-3.849-1.587-5.946.003-6.556 5.338-11.891 11.893-11.891 3.181.001 6.167 1.24 8.413 3.488 2.246 2.248 3.484 5.232 3.483 8.413-.003 6.557-5.338 11.892-11.893 11.892-1.997-.001-3.951-.5-5.688-1.448l-6.308 1.654zm6.597-3.807c1.676.995 3.276 1.591 5.392 1.592 5.448 0 9.886-4.438 9.889-9.886.002-5.462-4.415-9.89-9.881-9.892-5.452 0-9.887 4.434-9.889 9.884-.001 2.225.651 3.891 1.746 5.634l-.999 3.648 3.742-.981z" />
+      </svg>
+    </motion.a>
+  );
+}
+
 // ── Main page ─────────────────────────────────────────────────
 export default function Agendamento() {
   const [step, setStep]               = useState(1);
@@ -90,8 +138,10 @@ export default function Agendamento() {
   const [slots, setSlots]             = useState<Record<PkgKey, string[]> | null>(null);
   const [loadingSlots, setLoadingSlots] = useState(false);
   const [slotsError, setSlotsError]   = useState('');
+  const [selectedPeriod, setSelectedPeriod] = useState<Period | null>(null);
   const [selectedTime, setSelectedTime] = useState<string | null>(null);
   const [form, setForm]               = useState({ nome: '', email: '', whatsapp: '' });
+  const [formErrors, setFormErrors]   = useState({ nome: '', email: '', whatsapp: '' });
   const [submitting, setSubmitting]   = useState(false);
   const [submitError, setSubmitError] = useState('');
 
@@ -101,7 +151,7 @@ export default function Agendamento() {
   // Load slots when date changes
   useEffect(() => {
     if (!selectedDate) return;
-    setSlots(null); setSlotsError(''); setSelectedTime(null);
+    setSlots(null); setSlotsError(''); setSelectedTime(null); setSelectedPeriod(null);
     setLoadingSlots(true);
     fetch(`/api/slots?date=${selectedDate}`)
       .then(r => r.json())
@@ -115,7 +165,38 @@ export default function Agendamento() {
 
   const availableSlots: string[] = (pkg && slots) ? (slots[pkg] || []) : [];
 
+  // Periods that have at least one slot
+  const availablePeriods = PERIODS.filter(p => slotsByPeriod(availableSlots, p.key).length > 0);
+  const periodSlots = selectedPeriod ? slotsByPeriod(availableSlots, selectedPeriod) : [];
+
+  function validateForm(): boolean {
+    const errors = { nome: '', email: '', whatsapp: '' };
+
+    if (!form.nome.trim()) {
+      errors.nome = 'Informe seu nome completo. Ex: Maria Silva';
+    } else if (form.nome.trim().split(/\s+/).length < 2) {
+      errors.nome = 'Informe nome e sobrenome. Ex: Maria Silva';
+    }
+
+    if (!form.email.trim()) {
+      errors.email = 'Informe seu e-mail. Ex: maria@gmail.com';
+    } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email.trim())) {
+      errors.email = 'E-mail inválido. Ex: maria@gmail.com';
+    }
+
+    const digits = form.whatsapp.replace(/\D/g, '');
+    if (!form.whatsapp.trim()) {
+      errors.whatsapp = 'Informe seu WhatsApp. Ex: (47) 99999-9999';
+    } else if (digits.length < 10 || digits.length > 11) {
+      errors.whatsapp = 'Número inválido. Ex: (47) 99999-9999';
+    }
+
+    setFormErrors(errors);
+    return !errors.nome && !errors.email && !errors.whatsapp;
+  }
+
   async function handleCheckout() {
+    if (!validateForm()) return;
     if (!pkg || !selectedDate || !selectedTime || !form.nome || !form.email || !form.whatsapp) return;
     setSubmitting(true); setSubmitError('');
     try {
@@ -142,7 +223,7 @@ export default function Agendamento() {
     <div className="min-h-screen bg-surface" style={{ fontFamily: 'inherit' }}>
       {/* Header */}
       <div className="-mx-0 mb-8 pt-7 pb-5 px-6 text-center" style={{ background: 'linear-gradient(135deg, #7a3f8f, #e87060)' }}>
-        <a href="/" className="inline-block mb-4 opacity-80 hover:opacity-100 transition-opacity">
+        <a href="/" className="inline-block mb-4 transition-opacity hover:opacity-80">
           <img src="/logo-w.png" alt="Ensaio Fotográfico em Joinville" className="h-12 mx-auto" />
         </a>
         <h1 className="font-headline text-2xl md:text-3xl text-white font-black uppercase tracking-tight drop-shadow">
@@ -194,7 +275,6 @@ export default function Agendamento() {
                         <p className="text-xs text-on-surface-variant mt-0.5">à vista</p>
                       </div>
                     </div>
-                    {pkg === p.key && <CheckCircle className="absolute top-4 right-4 w-5 h-5 text-primary" />}
                   </button>
                 ))}
               </div>
@@ -227,7 +307,7 @@ export default function Agendamento() {
                   const dow = DOW[d.getDay()];
                   return (
                     <button key={ds} type="button"
-                      onClick={() => { setSelectedDate(ds); setSelectedTime(null); }}
+                      onClick={() => { setSelectedDate(ds); setSelectedTime(null); setSelectedPeriod(null); }}
                       className={`shrink-0 snap-start flex flex-col items-center justify-center rounded-xl p-3 min-w-[64px] border-2 transition-all
                         ${isSelected ? 'border-primary bg-primary text-white' : 'border-outline-variant bg-white/90 hover:border-primary/50 text-on-surface'}`}
                     >
@@ -258,7 +338,7 @@ export default function Agendamento() {
             </motion.div>
           )}
 
-          {/* ── Step 3: Time slot ── */}
+          {/* ── Step 3: Period → Time slot ── */}
           {step === 3 && (
             <motion.div key="step3"
               initial={{ opacity: 0, x: 40 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -40 }}
@@ -292,21 +372,56 @@ export default function Agendamento() {
                       <p className="text-sm mt-1">Tente outra data.</p>
                     </div>
                   ) : (
-                    <div className="grid grid-cols-3 sm:grid-cols-4 gap-2">
-                      {availableSlots.map(t => (
-                        <button key={t} type="button"
-                          onClick={() => setSelectedTime(t)}
-                          className={`py-3 rounded-xl border-2 font-bold text-base transition-all
-                            ${selectedTime === t ? 'border-primary bg-primary text-white' : 'border-outline-variant bg-white/90 text-on-surface hover:border-primary/50'}`}
-                        >{t}</button>
-                      ))}
-                    </div>
+                    <>
+                      {/* Period selection */}
+                      {!selectedPeriod && (
+                        <div className="grid grid-cols-3 gap-3 mb-2">
+                          {availablePeriods.map(({ key, label, sub, Icon }) => (
+                            <button key={key} type="button"
+                              onClick={() => setSelectedPeriod(key)}
+                              className="flex flex-col items-center gap-2 rounded-2xl border-2 border-outline-variant bg-white/90 hover:border-primary/60 hover:bg-primary/5 py-5 px-2 transition-all"
+                            >
+                              <Icon className="w-7 h-7 text-primary" />
+                              <span className="font-bold text-on-surface text-base">{label}</span>
+                              <span className="text-xs text-on-surface-variant">{sub}</span>
+                              <span className="text-xs text-primary font-semibold">{slotsByPeriod(availableSlots, key).length} horários</span>
+                            </button>
+                          ))}
+                        </div>
+                      )}
+
+                      {/* Time slots for selected period */}
+                      {selectedPeriod && (
+                        <div>
+                          <div className="flex items-center gap-2 mb-4">
+                            <button type="button"
+                              onClick={() => { setSelectedPeriod(null); setSelectedTime(null); }}
+                              className="flex items-center gap-1 text-sm text-primary font-semibold hover:opacity-70 transition-opacity">
+                              <ChevronLeft className="w-4 h-4" />
+                              {PERIODS.find(p => p.key === selectedPeriod)?.label}
+                            </button>
+                            <span className="text-on-surface-variant text-sm">
+                              — {PERIODS.find(p => p.key === selectedPeriod)?.sub}
+                            </span>
+                          </div>
+                          <div className="grid grid-cols-4 gap-2">
+                            {periodSlots.map(t => (
+                              <button key={t} type="button"
+                                onClick={() => setSelectedTime(t)}
+                                className={`py-3 rounded-xl border-2 font-bold text-base transition-all
+                                  ${selectedTime === t ? 'border-primary bg-primary text-white' : 'border-outline-variant bg-white/90 text-on-surface hover:border-primary/50'}`}
+                              >{t}</button>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                    </>
                   )}
                 </>
               )}
 
               <div className="flex gap-3 mt-6">
-                <button type="button" onClick={() => setStep(2)}
+                <button type="button" onClick={() => { setStep(2); setSelectedPeriod(null); setSelectedTime(null); }}
                   className="flex-1 py-3 rounded-full border-2 border-outline-variant text-on-surface font-bold hover:bg-surface-container transition-colors">
                   <ChevronLeft className="inline w-4 h-4" /> Voltar
                 </button>
@@ -339,36 +454,58 @@ export default function Agendamento() {
                 </div>
               </div>
 
-              <form className="space-y-4" onSubmit={e => { e.preventDefault(); handleCheckout(); }}>
+              <form className="space-y-4" noValidate onSubmit={e => { e.preventDefault(); handleCheckout(); }}>
+                {/* Nome */}
                 <div>
-                  <label className="block text-sm font-semibold text-on-surface mb-1.5"><User className="inline w-4 h-4 mr-1" />Nome completo</label>
+                  <label className="block text-sm font-semibold text-on-surface mb-1.5">
+                    <User className="inline w-4 h-4 mr-1" />Nome completo
+                  </label>
                   <input
-                    className="w-full bg-white/90 border border-outline-variant focus:ring-2 focus:ring-primary focus:bg-white rounded-xl px-4 py-3 text-on-surface font-medium shadow-sm transition-colors"
-                    placeholder="Seu nome completo"
-                    type="text" required autoComplete="name"
+                    className={`w-full bg-white/90 border focus:ring-2 focus:ring-primary focus:bg-white rounded-xl px-4 py-3 text-on-surface font-medium shadow-sm transition-colors ${formErrors.nome ? 'border-red-400 bg-red-50/50' : 'border-outline-variant'}`}
+                    placeholder="Ex: Maria Silva"
+                    type="text" autoComplete="name"
                     value={form.nome}
-                    onChange={e => setForm(f => ({ ...f, nome: e.target.value }))}
+                    onChange={e => { setForm(f => ({ ...f, nome: e.target.value })); setFormErrors(fe => ({ ...fe, nome: '' })); }}
                   />
+                  {formErrors.nome && (
+                    <p className="mt-1.5 text-xs text-red-600 flex items-center gap-1">
+                      <AlertCircle className="w-3.5 h-3.5 shrink-0" />{formErrors.nome}
+                    </p>
+                  )}
                 </div>
+
+                {/* E-mail */}
                 <div>
                   <label className="block text-sm font-semibold text-on-surface mb-1.5">E-mail</label>
                   <input
-                    className="w-full bg-white/90 border border-outline-variant focus:ring-2 focus:ring-primary focus:bg-white rounded-xl px-4 py-3 text-on-surface font-medium shadow-sm transition-colors"
-                    placeholder="seu@email.com"
-                    type="email" required autoComplete="email"
+                    className={`w-full bg-white/90 border focus:ring-2 focus:ring-primary focus:bg-white rounded-xl px-4 py-3 text-on-surface font-medium shadow-sm transition-colors ${formErrors.email ? 'border-red-400 bg-red-50/50' : 'border-outline-variant'}`}
+                    placeholder="Ex: maria@gmail.com"
+                    type="text" autoComplete="email"
                     value={form.email}
-                    onChange={e => setForm(f => ({ ...f, email: e.target.value }))}
+                    onChange={e => { setForm(f => ({ ...f, email: e.target.value })); setFormErrors(fe => ({ ...fe, email: '' })); }}
                   />
+                  {formErrors.email && (
+                    <p className="mt-1.5 text-xs text-red-600 flex items-center gap-1">
+                      <AlertCircle className="w-3.5 h-3.5 shrink-0" />{formErrors.email}
+                    </p>
+                  )}
                 </div>
+
+                {/* WhatsApp */}
                 <div>
                   <label className="block text-sm font-semibold text-on-surface mb-1.5">WhatsApp</label>
                   <input
-                    className="w-full bg-white/90 border border-outline-variant focus:ring-2 focus:ring-primary focus:bg-white rounded-xl px-4 py-3 text-on-surface font-medium shadow-sm transition-colors"
-                    placeholder="(11) 99999-9999"
-                    type="tel" required autoComplete="tel"
+                    className={`w-full bg-white/90 border focus:ring-2 focus:ring-primary focus:bg-white rounded-xl px-4 py-3 text-on-surface font-medium shadow-sm transition-colors ${formErrors.whatsapp ? 'border-red-400 bg-red-50/50' : 'border-outline-variant'}`}
+                    placeholder="Ex: (47) 99999-9999"
+                    type="text" autoComplete="tel"
                     value={form.whatsapp}
-                    onChange={e => setForm(f => ({ ...f, whatsapp: e.target.value }))}
+                    onChange={e => { setForm(f => ({ ...f, whatsapp: e.target.value })); setFormErrors(fe => ({ ...fe, whatsapp: '' })); }}
                   />
+                  {formErrors.whatsapp && (
+                    <p className="mt-1.5 text-xs text-red-600 flex items-center gap-1">
+                      <AlertCircle className="w-3.5 h-3.5 shrink-0" />{formErrors.whatsapp}
+                    </p>
+                  )}
                 </div>
 
                 {submitError && (
@@ -400,6 +537,9 @@ export default function Agendamento() {
           )}
         </AnimatePresence>
       </div>
+
+      {/* WhatsApp button visible in steps 1–3 */}
+      {step < 4 && <WhatsAppButton />}
     </div>
   );
 }
