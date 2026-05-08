@@ -487,7 +487,7 @@ export default function App() {
                 </li>
               </ul>
               <a
-                href="#cadastro"
+                href="/agendamento"
                 onClick={() => trackEvent('InitiateCheckout', { content_name: 'Pacote Lembrança', value: 1400, currency: 'BRL' })}
                 className="block text-center w-full py-4 rounded-full border-2 border-primary text-primary font-bold hover:bg-primary hover:text-white transition-colors"
               >Selecionar</a>
@@ -521,7 +521,7 @@ export default function App() {
                 </li>
               </ul>
               <a
-                href="#cadastro"
+                href="/agendamento"
                 onClick={() => trackEvent('InitiateCheckout', { content_name: 'Pacote Econômico', value: 1900, currency: 'BRL' })}
                 className="block text-center w-full py-5 rounded-full signature-gradient text-white font-bold shadow-lg hover:brightness-110 transition-all text-lg"
               >Selecionar</a>
@@ -554,7 +554,7 @@ export default function App() {
                 </li>
               </ul>
               <a
-                href="#cadastro"
+                href="/agendamento"
                 onClick={() => trackEvent('InitiateCheckout', { content_name: 'Pacote Completo', value: 2200, currency: 'BRL' })}
                 className="block text-center w-full py-4 rounded-full border-2 border-primary text-primary font-bold hover:bg-primary hover:text-white transition-colors"
               >Selecionar</a>
