@@ -290,6 +290,10 @@ export default function Agendamento() {
                       <div className="text-right shrink-0">
                         <p className="font-black text-2xl text-on-surface leading-none">R$ {p.price.toLocaleString('pt-BR')}</p>
                         <p className="text-xs text-on-surface-variant mt-0.5">à vista</p>
+                        <p className="text-xs text-primary font-semibold mt-1.5">
+                          6x R$ {(p.price / 6).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                        </p>
+                        <p className="text-[10px] text-on-surface-variant">sem juros</p>
                       </div>
                     </div>
                   </button>
@@ -467,7 +471,15 @@ export default function Agendamento() {
                   <div className="flex justify-between"><span className="text-on-surface-variant">Pacote</span><span className="font-bold">{selectedPkg?.name} · {selectedPkg?.duration}min</span></div>
                   <div className="flex justify-between"><span className="text-on-surface-variant">Data</span><span className="font-bold">{selectedDate && formatDateFull(selectedDate)}</span></div>
                   <div className="flex justify-between"><span className="text-on-surface-variant">Horário</span><span className="font-bold">{selectedTime}</span></div>
-                  <div className="flex justify-between pt-2 border-t border-primary/20"><span className="font-bold">Total</span><span className="font-black text-primary text-base">R$ {selectedPkg?.price.toLocaleString('pt-BR')}</span></div>
+                  <div className="flex justify-between items-end pt-2 border-t border-primary/20">
+                    <span className="font-bold">Total</span>
+                    <div className="text-right">
+                      <span className="font-black text-primary text-base block">R$ {selectedPkg?.price.toLocaleString('pt-BR')}</span>
+                      <span className="text-[11px] text-on-surface-variant">
+                        ou 6x R$ {selectedPkg ? (selectedPkg.price / 6).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : ''} sem juros
+                      </span>
+                    </div>
+                  </div>
                 </div>
               </div>
 
