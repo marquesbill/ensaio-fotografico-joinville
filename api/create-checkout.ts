@@ -58,7 +58,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         auto_return: 'approved',
         payment_methods: {
           installments: 6,
-          default_installments: 1,
         },
         external_reference: JSON.stringify({ date, time, packageKey, name, email, whatsapp }),
         notification_url: `${SITE_URL}/api/webhook`,
