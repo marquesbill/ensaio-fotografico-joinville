@@ -38,7 +38,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   try {
     // 1. Create Stripe Checkout session
     const session = await stripe.checkout.sessions.create({
-      payment_method_types: ['card', 'pix'],
+      automatic_payment_methods: { enabled: true },
       mode: 'payment',
       payment_method_options: {
         card: {
