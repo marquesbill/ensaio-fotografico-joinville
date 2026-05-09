@@ -1,13 +1,13 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
-import Stripe from 'stripe';
 
 const SCRIPT_URL = process.env.SHEETS_SCRIPT_URL!;
 const SITE_URL   = process.env.SITE_URL || 'https://www.ensaiofotograficoemjoinville.com';
+const MP_TOKEN   = process.env.MERCADOPAGO_ACCESS_TOKEN!;
 
 const PACKAGES = {
-  lembranca: { name: 'Lembrança',  duration: 30,  price: 140000 },
-  economico: { name: 'Econômico',  duration: 90,  price: 190000 },
-  completo:  { name: 'Completo',   duration: 120, price: 220000 },
+  lembranca: { name: 'Lembrança',  duration: 30,  price: 1400 },
+  economico: { name: 'Econômico',  duration: 90,  price: 1900 },
+  completo:  { name: 'Completo',   duration: 120, price: 2200 },
 } as const;
 type PkgKey = keyof typeof PACKAGES;
 
@@ -17,11 +17,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method === 'OPTIONS') return res.status(200).end();
   if (req.method !== 'POST')    return res.status(405).json({ error: 'Method not allowed' });
 
-  // Init Stripe here (not at module level) so missing env var returns JSON, not HTML
-  if (!process.env.STRIPE_SECRET_KEY) {
-    return res.status(500).json({ error: 'STRIPE_SECRET_KEY não configurada' });
+  if (!MP_TOKEN) {
+    return res.status(500).json({ error: 'MERCADOPAGO_ACCESS_TOKEN não configurada' });
   }
-  const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
 
   const { date, time, packageKey, name, email, whatsapp } = req.body as {
     date: string; time: string; packageKey: PkgKey;
@@ -36,33 +34,43 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (!pkg) return res.status(400).json({ error: 'Pacote inválido' });
 
   try {
-    // 1. Create Stripe Checkout session
-    const session = await stripe.checkout.sessions.create({
-      payment_method_types: ['card'],
-      mode: 'payment',
-      payment_method_options: {
-        card: {
-          installments: { enabled: true },
-        },
+    // 1. Create Mercado Pago preference
+    const prefRes = await fetch('https://api.mercadopago.com/checkout/preferences', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${MP_TOKEN}`,
       },
-      line_items: [{
-        quantity: 1,
-        price_data: {
-          currency: 'brl',
-          unit_amount: pkg.price,
-          product_data: {
-            name: `Ensaio Fotográfico em Joinville — Pacote ${pkg.name}`,
-            description: `${date.split('-').reverse().join('/')} às ${time} · ${pkg.duration} min`,
-            images: [`${SITE_URL}/logo-b.png`],
-          },
+      body: JSON.stringify({
+        items: [{
+          title:       `Ensaio Fotográfico em Joinville — Pacote ${pkg.name}`,
+          description: `${date.split('-').reverse().join('/')} às ${time} · ${pkg.duration} min`,
+          quantity:    1,
+          unit_price:  pkg.price,
+          currency_id: 'BRL',
+        }],
+        payer: { email },
+        back_urls: {
+          success: `${SITE_URL}/agendamento/sucesso`,
+          failure: `${SITE_URL}/agendamento?cancelado=1`,
+          pending: `${SITE_URL}/agendamento/sucesso`,
         },
-      }],
-      customer_email: email,
-      metadata: { date, time, packageKey, name, email, whatsapp },
-      success_url: `${SITE_URL}/agendamento/sucesso?session_id={CHECKOUT_SESSION_ID}`,
-      cancel_url:  `${SITE_URL}/agendamento?cancelado=1`,
-      expires_at: Math.floor(Date.now() / 1000) + 30 * 60, // 30 min
+        auto_return: 'approved',
+        payment_methods: {
+          installments: 6,
+          default_installments: 1,
+        },
+        external_reference: JSON.stringify({ date, time, packageKey, name, email, whatsapp }),
+        notification_url: `${SITE_URL}/api/webhook`,
+        expires: true,
+        expiration_date_to: new Date(Date.now() + 30 * 60 * 1000).toISOString(),
+      }),
     });
+
+    const pref = await prefRes.json() as { id?: string; init_point?: string; message?: string };
+    if (!pref.id || !pref.init_point) {
+      throw new Error(pref.message || 'Erro ao criar preferência Mercado Pago');
+    }
 
     // 2. Mark slot as Pending in Sheets
     await fetch(SCRIPT_URL, {
@@ -71,11 +79,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       body: JSON.stringify({
         action: 'createPending',
         date, start: time, packageKey, name, email, whatsapp,
-        stripeSession: session.id,
+        stripeSession: pref.id,   // reusing field — stores MP preference ID
       }),
     });
 
-    return res.status(200).json({ url: session.url });
+    return res.status(200).json({ url: pref.init_point });
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : String(err);
     console.error('[create-checkout]', msg);

@@ -1,23 +1,16 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
-import Stripe from 'stripe';
 import { Resend } from 'resend';
 
-const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!);
-const resend  = new Resend(process.env.RESEND_API_KEY!);
-const SCRIPT_URL  = process.env.SHEETS_SCRIPT_URL!;
+const resend     = new Resend(process.env.RESEND_API_KEY!);
+const SCRIPT_URL = process.env.SHEETS_SCRIPT_URL!;
+const MP_TOKEN   = process.env.MERCADOPAGO_ACCESS_TOKEN!;
 const ANDRE_EMAIL = 'andreffotografia@gmail.com';
 
-// Vercel disables bodyParser for webhooks — we need the raw body
-export const config = { api: { bodyParser: false } };
-
-async function getRawBody(req: VercelRequest): Promise<Buffer> {
-  return new Promise((resolve, reject) => {
-    const chunks: Buffer[] = [];
-    req.on('data', (c) => chunks.push(typeof c === 'string' ? Buffer.from(c) : c));
-    req.on('end',  () => resolve(Buffer.concat(chunks)));
-    req.on('error', reject);
-  });
-}
+const PACKAGES: Record<string, { name: string; duration: number; price: number }> = {
+  lembranca: { name: 'Lembrança',  duration: 30,  price: 1400 },
+  economico: { name: 'Econômico',  duration: 90,  price: 1900 },
+  completo:  { name: 'Completo',   duration: 120, price: 2200 },
+};
 
 function fmtDate(dateStr: string) {
   const [y, m, d] = dateStr.split('-');
@@ -80,37 +73,58 @@ function emailHtml(data: {
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method !== 'POST') return res.status(405).end();
 
-  const rawBody = await getRawBody(req);
-  const sig     = req.headers['stripe-signature'] as string;
+  // MP sends JSON body — default bodyParser is fine (no raw body needed)
+  const body = req.body as {
+    type?: string;
+    action?: string;
+    data?: { id?: string | number };
+  };
 
-  let event: Stripe.Event;
-  try {
-    event = stripe.webhooks.constructEvent(rawBody, sig, process.env.STRIPE_WEBHOOK_SECRET!);
-  } catch (err: unknown) {
-    const msg = err instanceof Error ? err.message : String(err);
-    console.error('[webhook] signature error:', msg);
-    return res.status(400).send(`Webhook Error: ${msg}`);
-  }
-
-  if (event.type !== 'checkout.session.completed') {
+  // Only process approved payments
+  if (body.type !== 'payment') {
     return res.status(200).json({ received: true });
   }
 
-  const session  = event.data.object as Stripe.Checkout.Session;
-  const meta     = session.metadata!;
-  const { date, time, packageKey, name, email, whatsapp } = meta;
+  const paymentId = body.data?.id;
+  if (!paymentId) return res.status(400).json({ error: 'Missing payment id' });
 
-  const PACKAGES: Record<string, { name: string; duration: number; price: number }> = {
-    lembranca: { name: 'Lembrança',  duration: 30,  price: 1400 },
-    economico: { name: 'Econômico',  duration: 90,  price: 1900 },
-    completo:  { name: 'Completo',   duration: 120, price: 2200 },
+  // Fetch full payment details from MP
+  let payment: {
+    status: string;
+    preference_id: string;
+    id: number;
+    external_reference?: string;
+    installments?: number;
   };
+  try {
+    const r = await fetch(`https://api.mercadopago.com/v1/payments/${paymentId}`, {
+      headers: { Authorization: `Bearer ${MP_TOKEN}` },
+    });
+    payment = await r.json();
+  } catch (err) {
+    console.error('[webhook] failed to fetch MP payment', err);
+    return res.status(500).json({ error: 'Failed to fetch payment' });
+  }
+
+  if (payment.status !== 'approved') {
+    return res.status(200).json({ received: true, status: payment.status });
+  }
+
+  // Parse booking data from external_reference
+  let meta: { date: string; time: string; packageKey: string; name: string; email: string; whatsapp: string };
+  try {
+    meta = JSON.parse(payment.external_reference || '{}');
+  } catch {
+    console.error('[webhook] invalid external_reference');
+    return res.status(400).json({ error: 'Invalid external_reference' });
+  }
+
+  const { date, time, packageKey, name, email, whatsapp } = meta;
   const pkg = PACKAGES[packageKey] || { name: packageKey, duration: 0, price: 0 };
 
-  // Compute end time
   const [sh, sm] = time.split(':').map(Number);
-  const endMin = sh * 60 + sm + pkg.duration;
-  const endTime = String(Math.floor(endMin / 60)).padStart(2, '0') + ':' + String(endMin % 60).padStart(2, '0');
+  const endMin   = sh * 60 + sm + pkg.duration;
+  const endTime  = String(Math.floor(endMin / 60)).padStart(2, '0') + ':' + String(endMin % 60).padStart(2, '0');
 
   // 1. Confirm booking in Sheets
   let bookingId = '';
@@ -119,9 +133,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       method: 'POST',
       headers: { 'Content-Type': 'text/plain' },
       body: JSON.stringify({
-        action: 'confirmBooking',
-        stripeSession: session.id,
-        stripePayment: (session.payment_intent as string) || '',
+        action:        'confirmBooking',
+        stripeSession: payment.preference_id,   // MP preference ID stored here
+        stripePayment: String(payment.id),
       }),
     });
     const json = await r.json();
@@ -131,13 +145,18 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   }
 
   // 2. Send confirmation email to client
-  const htmlBody = emailHtml({ name, date, time, endTime, packageName: pkg.name, duration: pkg.duration, price: pkg.price.toFixed(2).replace('.', ','), bookingId });
+  const htmlBody = emailHtml({
+    name, date, time, endTime,
+    packageName: pkg.name, duration: pkg.duration,
+    price: pkg.price.toFixed(2).replace('.', ','),
+    bookingId,
+  });
   try {
     await resend.emails.send({
-      from: 'Ensaio Joinville <confirmacao@ensaiofotograficoemjoinville.com>',
-      to:   email,
+      from:    'Ensaio Joinville <confirmacao@ensaiofotograficoemjoinville.com>',
+      to:      email,
       subject: `Reserva confirmada — ${pkg.name} · ${date.split('-').reverse().join('/')} às ${time}`,
-      html: htmlBody,
+      html:    htmlBody,
     });
   } catch (e) {
     console.error('[webhook] resend client error', e);
@@ -146,14 +165,15 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   // 3. Notify André
   try {
     await resend.emails.send({
-      from: 'Ensaio Joinville <confirmacao@ensaiofotograficoemjoinville.com>',
-      to:   ANDRE_EMAIL,
+      from:    'Ensaio Joinville <confirmacao@ensaiofotograficoemjoinville.com>',
+      to:      ANDRE_EMAIL,
       subject: `Nova reserva: ${name} — ${pkg.name} ${date.split('-').reverse().join('/')} ${time}`,
-      html: `<p><strong>Nova reserva confirmada</strong><br>
+      html:    `<p><strong>Nova reserva confirmada</strong><br>
 Cliente: ${name}<br>E-mail: ${email}<br>WhatsApp: ${whatsapp}<br>
 Data: ${fmtDate(date)}<br>Horário: ${time}–${endTime}<br>
 Pacote: ${pkg.name}<br>Valor: R$ ${pkg.price}<br>
-Booking ID: ${bookingId}<br>Stripe Session: ${session.id}</p>`,
+Parcelas: ${payment.installments || 1}x<br>
+Booking ID: ${bookingId}<br>MP Payment: ${payment.id}</p>`,
     });
   } catch (e) {
     console.error('[webhook] resend andre error', e);
