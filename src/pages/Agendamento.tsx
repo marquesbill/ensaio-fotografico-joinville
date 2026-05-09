@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { CheckCircle, ChevronLeft, ChevronRight, Clock, Calendar, User, Loader2, AlertCircle, Sun, Sunset, Moon } from 'lucide-react';
+import { initMercadoPago, Payment } from '@mercadopago/sdk-react';
 
 // ── Constants ─────────────────────────────────────────────────
 const PACKAGES = [
@@ -144,6 +145,7 @@ export default function Agendamento() {
   const [formErrors, setFormErrors]   = useState({ nome: '', email: '', whatsapp: '' });
   const [submitting, setSubmitting]   = useState(false);
   const [submitError, setSubmitError] = useState('');
+  const [preferenceId, setPreferenceId] = useState<string | null>(null);
 
   const dates = allDates();
   const selectedPkg = PACKAGES.find(p => p.key === pkg);
@@ -212,6 +214,11 @@ export default function Agendamento() {
     }));
   }
 
+  // Initialise MP SDK once (idempotent)
+  useEffect(() => {
+    initMercadoPago(import.meta.env.VITE_MP_PUBLIC_KEY as string, { locale: 'pt-BR' });
+  }, []);
+
   async function handleCheckout() {
     if (!validateForm()) return;
     if (!pkg || !selectedDate || !selectedTime || !form.nome || !form.email || !form.whatsapp) return;
@@ -224,10 +231,40 @@ export default function Agendamento() {
       });
       const data = await res.json();
       if (data.error) throw new Error(data.error);
-      window.location.href = data.url;
+      setPreferenceId(data.preferenceId);
+      setStep(5);
     } catch (e: unknown) {
       setSubmitError(e instanceof Error ? e.message : 'Erro ao criar sessão de pagamento.');
+    } finally {
       setSubmitting(false);
+    }
+  }
+
+  async function handlePaymentSubmit(formData: Record<string, unknown>) {
+    if (!pkg || !selectedDate || !selectedTime || !preferenceId) return;
+    try {
+      const res = await fetch('/api/process-payment', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          formData,
+          preferenceId,
+          date: selectedDate, time: selectedTime, packageKey: pkg,
+          name: form.nome, email: form.email, whatsapp: form.whatsapp,
+        }),
+      });
+      const data = await res.json();
+      if (data.error) throw new Error(data.error);
+      if (data.status === 'approved') {
+        window.location.href = '/agendamento/sucesso';
+      } else if (data.status === 'pending') {
+        // PIX or boleto — success page handles pending too
+        window.location.href = '/agendamento/sucesso';
+      } else {
+        throw new Error('Pagamento recusado. Verifique os dados e tente novamente.');
+      }
+    } catch (e: unknown) {
+      throw e; // re-throw so the Brick shows its own error state
     }
   }
 
@@ -562,6 +599,53 @@ export default function Agendamento() {
                   Pagamento seguro via Mercado Pago · O horário é confirmado após o pagamento.
                 </p>
               </form>
+            </motion.div>
+          )}
+
+          {/* ── Step 5: Payment Brick ── */}
+          {step === 5 && preferenceId && selectedPkg && (
+            <motion.div key="step5"
+              initial={{ opacity: 0, x: 40 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -40 }}
+              className="w-full max-w-lg mx-auto"
+            >
+              <h2 className="font-headline text-2xl font-black text-on-surface mb-1">Pagamento</h2>
+              <p className="text-sm text-on-surface-variant mb-6">
+                {selectedPkg.name} · {selectedDate ? selectedDate.split('-').reverse().join('/') : ''} às {selectedTime}
+              </p>
+
+              <div className="bg-white rounded-2xl shadow-lg overflow-hidden">
+                <Payment
+                  initialization={{
+                    amount: selectedPkg.price,
+                    preferenceId,
+                  }}
+                  customization={{
+                    paymentMethods: {
+                      creditCard: 'all',
+                      debitCard:  'all',
+                      ticket:     'all',
+                      bankTransfer: 'all',
+                      maxInstallments: 6,
+                    },
+                    visual: {
+                      style: {
+                        theme: 'default',
+                      },
+                    },
+                  }}
+                  onSubmit={async ({ formData }) => {
+                    await handlePaymentSubmit(formData as Record<string, unknown>);
+                  }}
+                  onError={(error) => {
+                    console.error('[Payment Brick]', error);
+                  }}
+                />
+              </div>
+
+              <button onClick={() => setStep(4)}
+                className="mt-4 w-full py-2 text-sm text-on-surface-variant hover:text-on-surface transition-colors flex items-center justify-center gap-1">
+                <ChevronLeft className="w-4 h-4" /> Voltar e alterar dados
+              </button>
             </motion.div>
           )}
         </AnimatePresence>

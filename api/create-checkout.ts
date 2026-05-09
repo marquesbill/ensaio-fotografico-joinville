@@ -82,7 +82,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       }),
     });
 
-    return res.status(200).json({ url: pref.init_point });
+    return res.status(200).json({ preferenceId: pref.id });
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : String(err);
     console.error('[create-checkout]', msg);
