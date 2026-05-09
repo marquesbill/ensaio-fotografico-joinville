@@ -38,14 +38,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   try {
     // 1. Create Stripe Checkout session
     const session = await stripe.checkout.sessions.create({
-      automatic_payment_methods: { enabled: true },
+      payment_method_types: ['card'],
       mode: 'payment',
       payment_method_options: {
         card: {
           installments: { enabled: true },
-        },
-        pix: {
-          expires_after_seconds: 1800, // 30 min — igual ao bloqueio do slot
         },
       },
       line_items: [{
