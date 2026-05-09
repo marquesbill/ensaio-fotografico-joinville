@@ -559,7 +559,7 @@ export default function Agendamento() {
                 </div>
 
                 <p className="text-xs text-center text-on-surface-variant pt-1">
-                  Pagamento seguro via Stripe · O horário é confirmado após o pagamento.
+                  Pagamento seguro via Mercado Pago · O horário é confirmado após o pagamento.
                 </p>
               </form>
             </motion.div>
