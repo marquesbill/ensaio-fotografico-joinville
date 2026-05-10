@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import {
   LogOut, Calendar, List,
-  X, AlertCircle, Check, Loader2, RefreshCw, Search, Link2, CheckCircle, Copy,
+  X, AlertCircle, Check, Loader2, RefreshCw, Search, Link2, CheckCircle, Copy, Plus,
 } from 'lucide-react';
 
 /* ─────────────────────────── types ─────────────────────────── */
@@ -67,9 +67,9 @@ const RANGE_START = '2026-07-20';
 const RANGE_END   = '2026-08-02';
 const DAY_FROM    = 8;    // 08:00
 const DAY_TO      = 20;   // 20:00
-const SLOT_PX     = 7;    // px per 15-min slot
-const COL_PX      = 68;   // px per day column
-const GUTTER_PX   = 34;   // px for time-label column
+const SLOT_PX     = 11;   // px per 15-min slot  (aumentado para caber tudo sem scroll da página)
+const COL_PX      = 72;   // px per day column
+const GUTTER_PX   = 38;   // px for time-label column
 
 function timeToMins(t: string) {
   const [h, m] = t.split(':').map(Number);
@@ -324,6 +324,160 @@ function Overlay({ children, onClose }: { children: React.ReactNode; onClose: ()
         {children}
       </div>
     </div>
+  );
+}
+
+/* ─────────────────── New Booking Modal ─────────────────────── */
+function NewBookingModal({
+  onClose, onSubmit, loading,
+}: {
+  onClose: () => void;
+  onSubmit: (data: { name: string; email: string; whatsapp: string; date: string; time: string; packageKey: string }, confirm: boolean) => void;
+  loading: boolean;
+}) {
+  const [name,     setName]     = useState('');
+  const [email,    setEmail]    = useState('');
+  const [whatsapp, setWhatsapp] = useState('');
+  const [pkgKey,   setPkgKey]   = useState('lembranca');
+  const [date,     setDate]     = useState('');
+  const [time,     setTime]     = useState('');
+  const [slots,    setSlots]    = useState<Slot[]>([]);
+  const [slotsLoading, setSlotsLoading] = useState(false);
+
+  const today = new Date().toISOString().split('T')[0];
+
+  useEffect(() => {
+    if (!date) { setSlots([]); setTime(''); return; }
+    setSlotsLoading(true);
+    fetch(`${API}/api/slots?date=${date}`)
+      .then(r => r.json())
+      .then((data: Record<string, string[]>) => {
+        const times = data[pkgKey] ?? [];
+        setSlots(times.map(t => ({ time: t, available: true })));
+        setTime('');
+      })
+      .catch(() => setSlots([]))
+      .finally(() => setSlotsLoading(false));
+  }, [date, pkgKey]);
+
+  const canSubmit = name.trim() && email.trim() && date && time && pkgKey;
+
+  function submit(confirm: boolean) {
+    if (!canSubmit) return;
+    onSubmit({ name: name.trim(), email: email.trim(), whatsapp: whatsapp.trim(), date, time, packageKey: pkgKey }, confirm);
+  }
+
+  return (
+    <Overlay onClose={onClose}>
+      <div className="flex items-center gap-3 mb-5">
+        <div className="w-10 h-10 rounded-full flex items-center justify-center shrink-0"
+             style={{ background: 'linear-gradient(135deg,#7a3f8f,#e87060)' }}>
+          <Plus size={18} className="text-white" />
+        </div>
+        <div>
+          <h2 className="text-base font-bold text-[#352D39]">Novo Agendamento</h2>
+          <p className="text-xs text-gray-400">Criado pelo painel admin</p>
+        </div>
+      </div>
+
+      <div className="space-y-3">
+        {/* Client info */}
+        <div className="grid grid-cols-2 gap-3">
+          <div className="col-span-2">
+            <label className="block text-xs font-semibold text-gray-600 mb-1 uppercase tracking-wide">Nome *</label>
+            <input
+              className="w-full border border-gray-200 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-purple-200"
+              value={name} onChange={e => setName(e.target.value)} placeholder="Nome completo"
+            />
+          </div>
+          <div>
+            <label className="block text-xs font-semibold text-gray-600 mb-1 uppercase tracking-wide">E-mail *</label>
+            <input
+              type="email"
+              className="w-full border border-gray-200 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-purple-200"
+              value={email} onChange={e => setEmail(e.target.value)} placeholder="email@exemplo.com"
+            />
+          </div>
+          <div>
+            <label className="block text-xs font-semibold text-gray-600 mb-1 uppercase tracking-wide">WhatsApp</label>
+            <input
+              className="w-full border border-gray-200 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-purple-200"
+              value={whatsapp} onChange={e => setWhatsapp(e.target.value)} placeholder="(00) 00000-0000"
+            />
+          </div>
+        </div>
+
+        {/* Package */}
+        <div>
+          <label className="block text-xs font-semibold text-gray-600 mb-1 uppercase tracking-wide">Pacote *</label>
+          <select
+            className="w-full border border-gray-200 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-purple-200"
+            value={pkgKey} onChange={e => { setPkgKey(e.target.value); setTime(''); }}
+          >
+            {PACKAGES.map(p => (
+              <option key={p.key} value={p.key}>{p.name} — {p.duration}min — R$ {p.price}</option>
+            ))}
+          </select>
+        </div>
+
+        {/* Date */}
+        <div className="grid grid-cols-2 gap-3">
+          <div>
+            <label className="block text-xs font-semibold text-gray-600 mb-1 uppercase tracking-wide">Data *</label>
+            <input
+              type="date" min={today}
+              className="w-full border border-gray-200 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-purple-200"
+              value={date} onChange={e => setDate(e.target.value)}
+            />
+          </div>
+          <div>
+            <label className="block text-xs font-semibold text-gray-600 mb-1 uppercase tracking-wide">
+              Horário *
+              {slotsLoading && <Loader2 size={11} className="inline animate-spin ml-1" />}
+            </label>
+            {!date ? (
+              <p className="text-xs text-gray-400 pt-2.5">Escolha a data primeiro</p>
+            ) : !slotsLoading && slots.length === 0 ? (
+              <p className="text-xs text-gray-400 pt-2.5">Sem horários disponíveis</p>
+            ) : (
+              <select
+                className="w-full border border-gray-200 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-purple-200 disabled:opacity-50"
+                value={time} onChange={e => setTime(e.target.value)} disabled={slotsLoading}
+              >
+                <option value="">— Selecione —</option>
+                {slots.map(s => <option key={s.time} value={s.time}>{s.time}</option>)}
+              </select>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* Actions */}
+      <div className="mt-5 space-y-2">
+        <div className="grid grid-cols-2 gap-3">
+          <button
+            onClick={() => submit(false)}
+            disabled={!canSubmit || loading}
+            className="flex items-center justify-center gap-2 py-2.5 rounded-lg border border-[#7a3f8f] text-[#7a3f8f] text-sm font-semibold hover:bg-purple-50 disabled:opacity-50 transition-colors"
+          >
+            {loading ? <Loader2 size={14} className="animate-spin" /> : <Link2 size={14} />}
+            Criar + gerar link
+          </button>
+          <button
+            onClick={() => submit(true)}
+            disabled={!canSubmit || loading}
+            className="flex items-center justify-center gap-2 py-2.5 rounded-lg border border-green-400 text-green-700 text-sm font-semibold hover:bg-green-50 disabled:opacity-50 transition-colors"
+          >
+            {loading ? <Loader2 size={14} className="animate-spin" /> : <CheckCircle size={14} />}
+            Confirmar direto
+          </button>
+        </div>
+        <p className="text-[10px] text-center text-gray-400">
+          "Criar + gerar link" cria o agendamento pendente e retorna um link MP (3 dias).<br />
+          "Confirmar direto" confirma imediatamente sem necessidade de pagamento online.
+        </p>
+      </div>
+    </Overlay>
   );
 }
 
@@ -759,6 +913,7 @@ function Dashboard({
   const [actionLoading,    setActionLoading]    = useState(false);
   const [toast,            setToast]            = useState<{ msg: string; type: 'ok' | 'err' } | null>(null);
   const [paymentLinkUrl,   setPaymentLinkUrl]   = useState<string | null>(null);
+  const [showNewBooking,   setShowNewBooking]   = useState(false);
 
   const headers = { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` };
 
@@ -839,6 +994,32 @@ function Dashboard({
     }
   }
 
+  async function handleCreateBooking(
+    data: { name: string; email: string; whatsapp: string; date: string; time: string; packageKey: string },
+    confirm: boolean,
+  ) {
+    setActionLoading(true);
+    try {
+      const r = await fetch(`${API}/api/admin-create-booking`, {
+        method: 'POST', headers,
+        body: JSON.stringify({ ...data, confirm }),
+      });
+      const json = await r.json();
+      if (!r.ok) throw new Error(json.error || 'Erro');
+      setShowNewBooking(false);
+      if (!confirm && json.paymentUrl) {
+        setPaymentLinkUrl(json.paymentUrl);
+      } else {
+        setToast({ msg: `Agendamento de ${data.name} criado e confirmado`, type: 'ok' });
+      }
+      await fetchBookings();
+    } catch (e) {
+      setToast({ msg: e instanceof Error ? e.message : 'Erro ao criar agendamento', type: 'err' });
+    } finally {
+      setActionLoading(false);
+    }
+  }
+
   async function handleGetPaymentLink(booking: Booking) {
     setActionLoading(true);
     try {
@@ -897,10 +1078,10 @@ function Dashboard({
   const cancelled = bookings.filter(b => b.status === 'Cancelado').length;
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="h-screen flex flex-col bg-gray-50 overflow-hidden">
       {/* Header */}
-      <header className="bg-white border-b border-gray-100 sticky top-0 z-40">
-        <div className="max-w-6xl mx-auto px-4 h-14 flex items-center justify-between">
+      <header className="bg-white border-b border-gray-100 shrink-0 z-40">
+        <div className="max-w-7xl mx-auto px-4 h-14 flex items-center justify-between">
           <div className="flex items-center gap-3">
             <div className="w-8 h-8 rounded-lg flex items-center justify-center"
                  style={{ background: 'linear-gradient(135deg,#7a3f8f,#e87060)' }}>
@@ -908,10 +1089,19 @@ function Dashboard({
             </div>
             <span className="font-bold text-[#352D39] text-sm hidden sm:block">Painel Admin · Ensaio Joinville</span>
           </div>
-          <div className="flex items-center gap-3">
-            <span className="text-sm text-gray-500 hidden sm:block">
+          <div className="flex items-center gap-2">
+            <span className="text-sm text-gray-500 hidden sm:block mr-1">
               Olá, <strong className="text-[#352D39]">{user}</strong>
             </span>
+            {/* Novo Agendamento */}
+            <button
+              onClick={() => setShowNewBooking(true)}
+              className="flex items-center gap-1.5 text-sm font-semibold text-white px-3 py-1.5 rounded-lg transition-opacity hover:opacity-90"
+              style={{ background: 'linear-gradient(135deg,#7a3f8f,#e87060)' }}
+            >
+              <Plus size={14} /> <span className="hidden sm:block">Novo agendamento</span>
+              <span className="sm:hidden">Novo</span>
+            </button>
             <button
               onClick={fetchBookings} title="Atualizar"
               className="p-2 rounded-lg hover:bg-gray-100 text-gray-500"
@@ -928,23 +1118,23 @@ function Dashboard({
         </div>
       </header>
 
-      <main className="max-w-6xl mx-auto px-4 py-6">
+      <main className="flex-1 overflow-hidden flex flex-col max-w-7xl w-full mx-auto px-4 py-4">
         {/* Stats */}
-        <div className="grid grid-cols-3 gap-4 mb-6">
+        <div className="grid grid-cols-3 gap-3 mb-3 shrink-0">
           {[
             { label: 'Confirmados', value: confirmed, color: 'text-green-600', bg: 'bg-green-50', border: 'border-green-100' },
             { label: 'Pendentes',   value: pending,   color: 'text-amber-600', bg: 'bg-amber-50',  border: 'border-amber-100'  },
             { label: 'Cancelados',  value: cancelled, color: 'text-gray-500',  bg: 'bg-gray-50',   border: 'border-gray-100'   },
           ].map(s => (
-            <div key={s.label} className={`${s.bg} border ${s.border} rounded-xl px-4 py-4 text-center`}>
-              <p className={`text-2xl font-bold ${s.color}`}>{s.value}</p>
+            <div key={s.label} className={`${s.bg} border ${s.border} rounded-xl px-4 py-3 text-center`}>
+              <p className={`text-xl font-bold ${s.color}`}>{s.value}</p>
               <p className="text-xs text-gray-500 mt-0.5">{s.label}</p>
             </div>
           ))}
         </div>
 
         {/* View toggle */}
-        <div className="flex gap-2 mb-6">
+        <div className="flex gap-2 mb-3 shrink-0">
           <button
             onClick={() => setView('timeline')}
             className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
@@ -969,28 +1159,39 @@ function Dashboard({
           </button>
         </div>
 
-        {/* Content */}
-        {error ? (
-          <div className="bg-red-50 border border-red-100 rounded-xl p-6 text-center text-red-600 text-sm">
-            <AlertCircle size={20} className="mx-auto mb-2" /> {error}
-          </div>
-        ) : loading ? (
-          <div className="flex items-center justify-center py-20">
-            <Loader2 size={24} className="animate-spin text-[#7a3f8f]" />
-          </div>
-        ) : (
-          <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6">
-            {view === 'timeline'
-              ? <TimelineView bookings={bookings} onCancel={setCancelTarget} onReschedule={setRescheduleTarget}
-                              onGetPaymentLink={handleGetPaymentLink} onConfirmPayment={handleConfirmPayment} />
-              : <BookingList  bookings={bookings} onCancel={setCancelTarget} onReschedule={setRescheduleTarget}
-                              onGetPaymentLink={handleGetPaymentLink} onConfirmPayment={handleConfirmPayment} />
-            }
-          </div>
-        )}
+        {/* Content — fills remaining height, scrolls internally */}
+        <div className="flex-1 overflow-hidden bg-white rounded-2xl border border-gray-100 shadow-sm">
+          {error ? (
+            <div className="flex items-center justify-center h-full">
+              <div className="text-center text-red-600 text-sm">
+                <AlertCircle size={20} className="mx-auto mb-2" /> {error}
+              </div>
+            </div>
+          ) : loading ? (
+            <div className="flex items-center justify-center h-full">
+              <Loader2 size={24} className="animate-spin text-[#7a3f8f]" />
+            </div>
+          ) : (
+            <div className="h-full overflow-auto p-5">
+              {view === 'timeline'
+                ? <TimelineView bookings={bookings} onCancel={setCancelTarget} onReschedule={setRescheduleTarget}
+                                onGetPaymentLink={handleGetPaymentLink} onConfirmPayment={handleConfirmPayment} />
+                : <BookingList  bookings={bookings} onCancel={setCancelTarget} onReschedule={setRescheduleTarget}
+                                onGetPaymentLink={handleGetPaymentLink} onConfirmPayment={handleConfirmPayment} />
+              }
+            </div>
+          )}
+        </div>
       </main>
 
       {/* Modals */}
+      {showNewBooking && (
+        <NewBookingModal
+          onClose={() => setShowNewBooking(false)}
+          onSubmit={handleCreateBooking}
+          loading={actionLoading}
+        />
+      )}
       {cancelTarget && (
         <CancelModal
           booking={cancelTarget}
@@ -1013,8 +1214,8 @@ function Dashboard({
         <PaymentLinkModal url={paymentLinkUrl} onClose={() => setPaymentLinkUrl(null)} />
       )}
 
-      {/* Action loading overlay (payment link / confirm) */}
-      {actionLoading && !cancelTarget && !rescheduleTarget && (
+      {/* Action loading overlay (for get-payment-link / confirm-payment, not modals) */}
+      {actionLoading && !cancelTarget && !rescheduleTarget && !showNewBooking && (
         <div className="fixed inset-0 z-50 flex items-center justify-center"
              style={{ background: 'rgba(0,0,0,0.25)' }}>
           <div className="bg-white rounded-2xl px-8 py-6 shadow-2xl flex items-center gap-3">

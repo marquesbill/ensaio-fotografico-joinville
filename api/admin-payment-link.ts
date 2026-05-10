@@ -60,7 +60,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
   try {
     // 1. Create new MP preference with 7-day expiry
-    const expiry = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
+    const expiry = new Date(Date.now() + 3 * 24 * 60 * 60 * 1000).toISOString();
     const prefRes = await fetch('https://api.mercadopago.com/checkout/preferences', {
       method: 'POST',
       headers: {

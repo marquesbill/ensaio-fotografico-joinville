@@ -586,21 +586,26 @@ function processReminders() {
       return;
     }
 
+    // ── Lembretes automáticos desativados temporariamente ──────
+    // A vendedora envia os lembretes manualmente via WhatsApp.
+    // Para reativar, remova os comentários abaixo.
+    //
     // Lembrete 1: após 5 min
-    if (ageMin >= 5 && !row[15]) {
-      sendReminderEmail(booking, 1);
-      sa.getRange(rowNum, 16).setValue(nowIso());
-    }
+    // if (ageMin >= 5 && !row[15]) {
+    //   sendReminderEmail(booking, 1);
+    //   sa.getRange(rowNum, 16).setValue(nowIso());
+    // }
     // Lembrete 2: após 2h
-    if (ageMin >= 120 && !row[16]) {
-      sendReminderEmail(booking, 2);
-      sa.getRange(rowNum, 17).setValue(nowIso());
-    }
+    // if (ageMin >= 120 && !row[16]) {
+    //   sendReminderEmail(booking, 2);
+    //   sa.getRange(rowNum, 17).setValue(nowIso());
+    // }
     // Lembrete 3: após 22h
-    if (ageMin >= 22 * 60 && !row[17]) {
-      sendReminderEmail(booking, 3);
-      sa.getRange(rowNum, 18).setValue(nowIso());
-    }
+    // if (ageMin >= 22 * 60 && !row[17]) {
+    //   sendReminderEmail(booking, 3);
+    //   sa.getRange(rowNum, 18).setValue(nowIso());
+    // }
+    // ────────────────────────────────────────────────────────────
     // Notificação para André: após 30 min
     if (ageMin >= CFG.ANDRE_NOTIFY_MIN && !row[18]) {
       sendAndreNotification(booking);
