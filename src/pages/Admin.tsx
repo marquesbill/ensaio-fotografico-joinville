@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import {
   LogOut, Calendar, List,
-  X, AlertCircle, Check, Loader2, RefreshCw, Search,
+  X, AlertCircle, Check, Loader2, RefreshCw, Search, Link2, CheckCircle, Copy,
 } from 'lucide-react';
 
 /* ─────────────────────────── types ─────────────────────────── */
@@ -327,6 +327,52 @@ function Overlay({ children, onClose }: { children: React.ReactNode; onClose: ()
   );
 }
 
+/* ─────────────────── Payment Link Modal ────────────────────── */
+function PaymentLinkModal({ url, onClose }: { url: string; onClose: () => void }) {
+  const [copied, setCopied] = useState(false);
+  function copy() {
+    navigator.clipboard.writeText(url).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    });
+  }
+  return (
+    <Overlay onClose={onClose}>
+      <div className="flex items-center gap-3 mb-4">
+        <div className="w-10 h-10 rounded-full flex items-center justify-center shrink-0"
+             style={{ background: 'linear-gradient(135deg,#7a3f8f,#e87060)' }}>
+          <Link2 size={18} className="text-white" />
+        </div>
+        <div>
+          <h2 className="text-base font-bold text-[#352D39]">Link de Pagamento</h2>
+          <p className="text-xs text-gray-500">Válido por 7 dias · Mercado Pago</p>
+        </div>
+      </div>
+
+      <div className="bg-gray-50 border border-gray-200 rounded-xl px-4 py-3 mb-4 break-all text-xs text-gray-700 font-mono select-all">
+        {url}
+      </div>
+
+      <div className="flex gap-3">
+        <button
+          onClick={copy}
+          className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-lg border border-[#7a3f8f] text-[#7a3f8f] text-sm font-semibold hover:bg-purple-50 transition-colors"
+        >
+          {copied ? <Check size={14} /> : <Copy size={14} />}
+          {copied ? 'Copiado!' : 'Copiar link'}
+        </button>
+        <a
+          href={url} target="_blank" rel="noopener noreferrer"
+          className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-lg text-white text-sm font-semibold transition-opacity hover:opacity-90"
+          style={{ background: 'linear-gradient(135deg,#7a3f8f,#e87060)' }}
+        >
+          <Link2 size={14} /> Abrir
+        </a>
+      </div>
+    </Overlay>
+  );
+}
+
 /* ─────────────────── Toast ──────────────────────────────────── */
 function Toast({ msg, type, onDone }: { msg: string; type: 'ok' | 'err'; onDone: () => void }) {
   useEffect(() => { const t = setTimeout(onDone, 3500); return () => clearTimeout(t); }, [onDone]);
@@ -342,11 +388,13 @@ function Toast({ msg, type, onDone }: { msg: string; type: 'ok' | 'err'; onDone:
 
 /* ─────────────────── Timeline View ─────────────────────────── */
 function TimelineView({
-  bookings, onCancel, onReschedule,
+  bookings, onCancel, onReschedule, onGetPaymentLink, onConfirmPayment,
 }: {
   bookings: Booking[];
   onCancel: (b: Booking) => void;
   onReschedule: (b: Booking) => void;
+  onGetPaymentLink: (b: Booking) => void;
+  onConfirmPayment: (b: Booking) => void;
 }) {
   const [sel, setSel] = useState<Booking | null>(null);
 
@@ -459,9 +507,21 @@ function TimelineView({
               <X size={14} />
             </button>
           </div>
-          <div className="flex gap-2 mt-3">
+          {sel.status === 'Pendente' && (
+            <div className="flex gap-2 mt-3">
+              <button onClick={() => { onGetPaymentLink(sel); setSel(null); }}
+                      className="flex-1 text-xs py-1.5 rounded-lg border border-[#7a3f8f] text-[#7a3f8f] hover:bg-purple-50 font-medium flex items-center justify-center gap-1">
+                <Link2 size={11} /> Link pgmto
+              </button>
+              <button onClick={() => { onConfirmPayment(sel); setSel(null); }}
+                      className="flex-1 text-xs py-1.5 rounded-lg border border-green-300 text-green-600 hover:bg-green-50 font-medium flex items-center justify-center gap-1">
+                <CheckCircle size={11} /> Confirmar pgmto
+              </button>
+            </div>
+          )}
+          <div className="flex gap-2 mt-2">
             <button onClick={() => { onReschedule(sel); setSel(null); }}
-                    className="flex-1 text-xs py-1.5 rounded-lg border border-[#7a3f8f] text-[#7a3f8f] hover:bg-purple-50 font-medium">
+                    className="flex-1 text-xs py-1.5 rounded-lg border border-gray-200 text-gray-500 hover:bg-gray-50 font-medium">
               Remarcar
             </button>
             <button onClick={() => { onCancel(sel); setSel(null); }}
@@ -477,13 +537,16 @@ function TimelineView({
 
 /* ─────────────────── BookingCard ───────────────────────────── */
 function BookingCard({
-  booking, onCancel, onReschedule,
+  booking, onCancel, onReschedule, onGetPaymentLink, onConfirmPayment,
 }: {
   booking: Booking;
   onCancel: (b: Booking) => void;
   onReschedule: (b: Booking) => void;
+  onGetPaymentLink: (b: Booking) => void;
+  onConfirmPayment: (b: Booking) => void;
 }) {
-  const active = booking.status !== 'Cancelado';
+  const active  = booking.status !== 'Cancelado';
+  const pending = booking.status === 'Pendente';
   return (
     <div className={`rounded-xl border p-4 ${STATUS_COLOR[booking.status] ?? 'bg-gray-50 border-gray-200'}`}>
       <div className="flex items-start justify-between gap-2">
@@ -500,8 +563,20 @@ function BookingCard({
           {booking.status}
         </span>
       </div>
-      {active && (
+      {pending && (
         <div className="flex gap-2 mt-3">
+          <button
+            onClick={() => onGetPaymentLink(booking)}
+            className="flex-1 text-xs py-1.5 rounded-lg border border-[#7a3f8f] text-[#7a3f8f] font-semibold hover:bg-white/60 transition-colors flex items-center justify-center gap-1"
+          ><Link2 size={11} /> Link pgmto</button>
+          <button
+            onClick={() => onConfirmPayment(booking)}
+            className="flex-1 text-xs py-1.5 rounded-lg border border-green-400 text-green-600 font-semibold hover:bg-green-50 transition-colors flex items-center justify-center gap-1"
+          ><CheckCircle size={11} /> Confirmar pgmto</button>
+        </div>
+      )}
+      {active && (
+        <div className="flex gap-2 mt-2">
           <button
             onClick={() => onReschedule(booking)}
             className="flex-1 text-xs py-1.5 rounded-lg border border-current font-semibold hover:bg-white/60 transition-colors"
@@ -521,10 +596,14 @@ function BookingList({
   bookings,
   onCancel,
   onReschedule,
+  onGetPaymentLink,
+  onConfirmPayment,
 }: {
   bookings: Booking[];
   onCancel: (b: Booking) => void;
   onReschedule: (b: Booking) => void;
+  onGetPaymentLink: (b: Booking) => void;
+  onConfirmPayment: (b: Booking) => void;
 }) {
   const [search, setSearch] = useState('');
   const [status, setStatus] = useState('');
@@ -613,14 +692,24 @@ function BookingList({
                 </td>
                 <td className="px-4 py-3">
                   {b.status !== 'Cancelado' && (
-                    <div className="flex gap-2 justify-end">
+                    <div className="flex flex-wrap gap-1.5 justify-end">
+                      {b.status === 'Pendente' && (<>
+                        <button
+                          onClick={() => onGetPaymentLink(b)}
+                          className="text-xs px-2.5 py-1.5 rounded-lg border border-[#7a3f8f] text-[#7a3f8f] hover:bg-purple-50 font-medium flex items-center gap-1"
+                        ><Link2 size={11} /> Link pgmto</button>
+                        <button
+                          onClick={() => onConfirmPayment(b)}
+                          className="text-xs px-2.5 py-1.5 rounded-lg border border-green-300 text-green-600 hover:bg-green-50 font-medium flex items-center gap-1"
+                        ><CheckCircle size={11} /> Confirmar pgmto</button>
+                      </>)}
                       <button
                         onClick={() => onReschedule(b)}
-                        className="text-xs px-3 py-1.5 rounded-lg border border-[#7a3f8f] text-[#7a3f8f] hover:bg-purple-50 font-medium"
+                        className="text-xs px-2.5 py-1.5 rounded-lg border border-gray-200 text-gray-500 hover:bg-gray-50 font-medium"
                       >Remarcar</button>
                       <button
                         onClick={() => onCancel(b)}
-                        className="text-xs px-3 py-1.5 rounded-lg border border-red-200 text-red-500 hover:bg-red-50 font-medium"
+                        className="text-xs px-2.5 py-1.5 rounded-lg border border-red-200 text-red-500 hover:bg-red-50 font-medium"
                       >Cancelar</button>
                     </div>
                   )}
@@ -641,7 +730,8 @@ function BookingList({
       {/* Cards — mobile */}
       <div className="md:hidden space-y-3">
         {filtered.map(b => (
-          <BookingCard key={b.id} booking={b} onCancel={onCancel} onReschedule={onReschedule} />
+          <BookingCard key={b.id} booking={b} onCancel={onCancel} onReschedule={onReschedule}
+                       onGetPaymentLink={onGetPaymentLink} onConfirmPayment={onConfirmPayment} />
         ))}
         {filtered.length === 0 && (
           <p className="text-center text-sm text-gray-400 py-8">Nenhum agendamento encontrado</p>
@@ -667,7 +757,8 @@ function Dashboard({
   const [cancelTarget,     setCancelTarget]     = useState<Booking | null>(null);
   const [rescheduleTarget, setRescheduleTarget] = useState<Booking | null>(null);
   const [actionLoading,    setActionLoading]    = useState(false);
-  const [toast, setToast] = useState<{ msg: string; type: 'ok' | 'err' } | null>(null);
+  const [toast,            setToast]            = useState<{ msg: string; type: 'ok' | 'err' } | null>(null);
+  const [paymentLinkUrl,   setPaymentLinkUrl]   = useState<string | null>(null);
 
   const headers = { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` };
 
@@ -743,6 +834,59 @@ function Dashboard({
       await fetchBookings();
     } catch (e) {
       setToast({ msg: e instanceof Error ? e.message : 'Erro ao remarcar', type: 'err' });
+    } finally {
+      setActionLoading(false);
+    }
+  }
+
+  async function handleGetPaymentLink(booking: Booking) {
+    setActionLoading(true);
+    try {
+      const r = await fetch(`${API}/api/admin-payment-link`, {
+        method: 'POST', headers,
+        body: JSON.stringify({
+          bookingId:  booking.id,
+          name:       booking.name,
+          email:      booking.email ?? '',
+          whatsapp:   booking.whatsapp ?? '',
+          date:       booking.date,
+          time:       booking.start,
+          packageKey: PKG_KEY[booking.package] ?? 'lembranca',
+        }),
+      });
+      const json = await r.json();
+      if (!r.ok) throw new Error(json.error || 'Erro');
+      setPaymentLinkUrl(json.url);
+      await fetchBookings();
+    } catch (e) {
+      setToast({ msg: e instanceof Error ? e.message : 'Erro ao gerar link', type: 'err' });
+    } finally {
+      setActionLoading(false);
+    }
+  }
+
+  async function handleConfirmPayment(booking: Booking) {
+    setActionLoading(true);
+    try {
+      const r = await fetch(`${API}/api/admin-confirm`, {
+        method: 'POST', headers,
+        body: JSON.stringify({
+          bookingId:     booking.id,
+          stripeSession: booking.stripeSession ?? '',
+          name:          booking.name,
+          email:         booking.email ?? '',
+          whatsapp:      booking.whatsapp ?? '',
+          date:          booking.date,
+          time:          booking.start,
+          packageKey:    PKG_KEY[booking.package] ?? 'lembranca',
+        }),
+      });
+      const json = await r.json();
+      if (!r.ok) throw new Error(json.error || 'Erro');
+      setToast({ msg: `Pagamento de ${booking.name} confirmado manualmente`, type: 'ok' });
+      await fetchBookings();
+    } catch (e) {
+      setToast({ msg: e instanceof Error ? e.message : 'Erro ao confirmar', type: 'err' });
     } finally {
       setActionLoading(false);
     }
@@ -837,8 +981,10 @@ function Dashboard({
         ) : (
           <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6">
             {view === 'timeline'
-              ? <TimelineView bookings={bookings} onCancel={setCancelTarget} onReschedule={setRescheduleTarget} />
-              : <BookingList  bookings={bookings} onCancel={setCancelTarget} onReschedule={setRescheduleTarget} />
+              ? <TimelineView bookings={bookings} onCancel={setCancelTarget} onReschedule={setRescheduleTarget}
+                              onGetPaymentLink={handleGetPaymentLink} onConfirmPayment={handleConfirmPayment} />
+              : <BookingList  bookings={bookings} onCancel={setCancelTarget} onReschedule={setRescheduleTarget}
+                              onGetPaymentLink={handleGetPaymentLink} onConfirmPayment={handleConfirmPayment} />
             }
           </div>
         )}
@@ -860,6 +1006,22 @@ function Dashboard({
           onConfirm={(d, t, pkg) => handleReschedule(rescheduleTarget, d, t, pkg)}
           loading={actionLoading}
         />
+      )}
+
+      {/* Payment link modal */}
+      {paymentLinkUrl && (
+        <PaymentLinkModal url={paymentLinkUrl} onClose={() => setPaymentLinkUrl(null)} />
+      )}
+
+      {/* Action loading overlay (payment link / confirm) */}
+      {actionLoading && !cancelTarget && !rescheduleTarget && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center"
+             style={{ background: 'rgba(0,0,0,0.25)' }}>
+          <div className="bg-white rounded-2xl px-8 py-6 shadow-2xl flex items-center gap-3">
+            <Loader2 size={20} className="animate-spin text-[#7a3f8f]" />
+            <span className="text-sm font-medium text-[#352D39]">Processando…</span>
+          </div>
+        </div>
       )}
 
       {/* Toast */}
