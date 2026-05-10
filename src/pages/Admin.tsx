@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import {
   LogOut, Calendar, List,
   X, AlertCircle, Check, Loader2, RefreshCw, Search, Link2, CheckCircle, Copy, Plus,
@@ -550,11 +550,28 @@ function TimelineView({
   onGetPaymentLink: (b: Booking) => void;
   onConfirmPayment: (b: Booking) => void;
 }) {
-  const [sel, setSel] = useState<Booking | null>(null);
+  const [sel, setSel]       = useState<Booking | null>(null);
+  const [slotPx, setSlotPx] = useState(SLOT_PX);
+  const scrollRef            = useRef<HTMLDivElement>(null);
 
   const dates      = getRange();
   const totalSlots = (DAY_TO - DAY_FROM) * 4;
-  const bodyH      = totalSlots * SLOT_PX;
+  const bodyH      = totalSlots * slotPx;
+
+  // Fit all hours in the visible area — recompute whenever the container resizes
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    const compute = () => {
+      const available = el.clientHeight - 48; // 48 = day-header row (h-12)
+      const px = Math.max(8, Math.floor(available / totalSlots));
+      setSlotPx(px);
+    };
+    compute();
+    const ro = new ResizeObserver(compute);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [totalSlots]);
 
   const byDate = bookings.reduce<Record<string, Booking[]>>((acc, b) => {
     (acc[b.date] ??= []).push(b); return acc;
@@ -563,8 +580,8 @@ function TimelineView({
   const hours = Array.from({ length: DAY_TO - DAY_FROM + 1 }, (_, i) => DAY_FROM + i);
 
   return (
-    <div>
-      <div className="overflow-x-auto">
+    <div className="h-full flex flex-col">
+      <div ref={scrollRef} className="flex-1 min-h-0 overflow-x-auto">
         <div style={{ display: 'flex', minWidth: GUTTER_PX + dates.length * COL_PX }}>
 
           {/* Time gutter */}
@@ -573,7 +590,7 @@ function TimelineView({
             <div className="relative" style={{ height: bodyH }}>
               {hours.map(h => (
                 <div key={h}
-                     style={{ position: 'absolute', top: (h - DAY_FROM) * 4 * SLOT_PX - 7, right: 6 }}
+                     style={{ position: 'absolute', top: (h - DAY_FROM) * 4 * slotPx - 7, right: 6 }}
                      className="text-[10px] text-gray-300 leading-none select-none">
                   {String(h).padStart(2,'0')}:00
                 </div>
@@ -605,7 +622,7 @@ function TimelineView({
                   {Array.from({ length: totalSlots }, (_, i) => (
                     <div key={i}
                          className={`absolute inset-x-0 border-t ${i % 4 === 0 ? 'border-gray-100' : 'border-gray-50'}`}
-                         style={{ top: i * SLOT_PX }}
+                         style={{ top: i * slotPx }}
                     />
                   ))}
 
@@ -613,8 +630,8 @@ function TimelineView({
                   {dayBks.map(b => {
                     const sm     = timeToMins(b.start) - DAY_FROM * 60;
                     const em     = timeToMins(b.end)   - DAY_FROM * 60;
-                    const top    = (sm / 15) * SLOT_PX + 1;
-                    const height = Math.max((em - sm) / 15 * SLOT_PX - 2, 18);
+                    const top    = (sm / 15) * slotPx + 1;
+                    const height = Math.max((em - sm) / 15 * slotPx - 2, 18);
                     const cls    = b.status === 'Confirmado'
                       ? 'bg-green-100 border-green-300 text-green-800'
                       : 'bg-amber-50 border-amber-300 text-amber-700';
@@ -1172,7 +1189,7 @@ function Dashboard({
               <Loader2 size={24} className="animate-spin text-[#7a3f8f]" />
             </div>
           ) : (
-            <div className="h-full overflow-auto p-5">
+            <div className={`h-full p-5 ${view === 'timeline' ? 'overflow-hidden' : 'overflow-auto'}`}>
               {view === 'timeline'
                 ? <TimelineView bookings={bookings} onCancel={setCancelTarget} onReschedule={setRescheduleTarget}
                                 onGetPaymentLink={handleGetPaymentLink} onConfirmPayment={handleConfirmPayment} />
