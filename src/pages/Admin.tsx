@@ -50,8 +50,17 @@ const STATUS_DOT: Record<string, string> = {
 
 function fmtDate(d: string) {
   if (!d) return '';
-  const [y, m, day] = d.split('-');
+  // Handle ISO datetime like "2026-07-28T03:00:00.000Z" or plain "2026-07-28"
+  const datePart = d.includes('T') ? d.split('T')[0] : d;
+  const [y, m, day] = datePart.split('-');
   return `${day}/${m}/${y}`;
+}
+
+function fmtTime(t: string) {
+  if (!t) return '';
+  // Handle ISO datetime like "1899-12-30T18:06:00.000Z" or plain "18:06"
+  if (t.includes('T')) return t.split('T')[1].substring(0, 5);
+  return t.substring(0, 5);
 }
 
 function monthDays(year: number, month: number) {
@@ -159,7 +168,7 @@ function CancelModal({
     <Overlay onClose={onClose}>
       <h2 className="text-lg font-bold text-[#352D39] mb-1">Cancelar Agendamento</h2>
       <p className="text-sm text-gray-500 mb-5">
-        {booking.name} · {fmtDate(booking.date)} às {booking.start}
+        {booking.name} · {fmtDate(booking.date)} às {fmtTime(booking.start)}
       </p>
       <label className="block text-xs font-semibold text-gray-600 mb-1 uppercase tracking-wide">Motivo do cancelamento</label>
       <textarea
@@ -220,7 +229,7 @@ function RescheduleModal({
     <Overlay onClose={onClose}>
       <h2 className="text-lg font-bold text-[#352D39] mb-1">Remarcar Agendamento</h2>
       <p className="text-sm text-gray-500 mb-5">
-        {booking.name} · atual: {fmtDate(booking.date)} às {booking.start}
+        {booking.name} · atual: {fmtDate(booking.date)} às {fmtTime(booking.start)}
       </p>
 
       <div className="space-y-4">
@@ -460,7 +469,7 @@ function BookingCard({
       <div className="flex items-start justify-between gap-2">
         <div>
           <p className="font-semibold text-sm text-[#352D39]">{booking.name}</p>
-          <p className="text-xs text-gray-500 mt-0.5">{booking.start} – {booking.end} · {booking.package}</p>
+          <p className="text-xs text-gray-500 mt-0.5">{fmtTime(booking.start)} – {fmtTime(booking.end)} · {booking.package}</p>
           {booking.email && <p className="text-xs text-gray-400 mt-0.5">{booking.email}</p>}
           {booking.whatsapp && <p className="text-xs text-gray-400">{booking.whatsapp}</p>}
           {booking.price != null && (
@@ -567,7 +576,7 @@ function BookingList({
             {filtered.map(b => (
               <tr key={b.id} className="hover:bg-gray-50/50">
                 <td className="px-4 py-3 font-medium text-[#352D39]">{fmtDate(b.date)}</td>
-                <td className="px-4 py-3 text-gray-600">{b.start} – {b.end}</td>
+                <td className="px-4 py-3 text-gray-600">{fmtTime(b.start)} – {fmtTime(b.end)}</td>
                 <td className="px-4 py-3">
                   <p className="font-medium text-[#352D39]">{b.name}</p>
                   {b.email && <p className="text-xs text-gray-400">{b.email}</p>}
@@ -648,7 +657,14 @@ function Dashboard({
       const r    = await fetch(`${API}/api/admin-bookings`, { headers: { Authorization: `Bearer ${token}` } });
       const json = await r.json();
       if (!r.ok) throw new Error(json.error || 'Erro ao carregar');
-      setBookings(Array.isArray(json) ? json : (json.bookings ?? []));
+      // Normalize date/time fields from ISO strings returned by Sheets
+      const raw: Booking[] = Array.isArray(json) ? json : (json.bookings ?? []);
+      setBookings(raw.map(b => ({
+        ...b,
+        date:  b.date?.includes('T')  ? b.date.split('T')[0]           : (b.date  ?? ''),
+        start: b.start?.includes('T') ? b.start.split('T')[1].slice(0,5) : (b.start ?? ''),
+        end:   b.end?.includes('T')   ? b.end.split('T')[1].slice(0,5)   : (b.end   ?? ''),
+      })));
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Erro de conexão');
     } finally {
