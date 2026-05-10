@@ -67,9 +67,9 @@ const RANGE_START = '2026-07-20';
 const RANGE_END   = '2026-08-02';
 const DAY_FROM    = 8;    // 08:00
 const DAY_TO      = 20;   // 20:00
-const SLOT_PX     = 18;   // px per 15-min slot
-const COL_PX      = 108;  // px per day column
-const GUTTER_PX   = 44;   // px for time-label column
+const SLOT_PX     = 11;   // px per 15-min slot
+const COL_PX      = 90;   // px per day column
+const GUTTER_PX   = 38;   // px for time-label column
 
 function timeToMins(t: string) {
   const [h, m] = t.split(':').map(Number);
