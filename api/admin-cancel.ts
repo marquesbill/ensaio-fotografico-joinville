@@ -1,8 +1,28 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { Resend } from 'resend';
-import { verifyToken } from './_adminAuth';
+import { createHmac } from 'crypto';
 
-const SCRIPT_URL  = process.env.SHEETS_SCRIPT_URL!;
+const SECRET     = process.env.ADMIN_SECRET || 'dev-secret-change-me';
+const TOKEN_TTL  = 8 * 60 * 60 * 1000; // 8 h
+const SCRIPT_URL = process.env.SHEETS_SCRIPT_URL!;
+
+function verifyToken(authHeader?: string): { user: string; iat: number } | null {
+  if (!authHeader || !authHeader.startsWith('Bearer ')) return null;
+  const token = authHeader.slice(7);
+  try {
+    const dot = token.lastIndexOf('.');
+    if (dot === -1) return null;
+    const payload  = token.slice(0, dot);
+    const sig      = token.slice(dot + 1);
+    const expected = createHmac('sha256', SECRET).update(payload).digest('hex');
+    if (expected !== sig) return null;
+    const data = JSON.parse(Buffer.from(payload, 'base64').toString()) as { user: string; iat: number };
+    if (Date.now() - data.iat > TOKEN_TTL) return null;
+    return data;
+  } catch {
+    return null;
+  }
+}
 const resend      = new Resend(process.env.RESEND_API_KEY!);
 const ANDRE_EMAIL = 'andreffotografia@gmail.com';
 
@@ -17,7 +37,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method === 'OPTIONS') return res.status(200).end();
   if (req.method !== 'POST') return res.status(405).end();
 
-  const auth = verifyToken(req.headers.authorization);
+  const auth = verifyToken(req.headers.authorization as string | undefined);
   if (!auth) return res.status(401).json({ error: 'Não autorizado' });
 
   const { bookingId, reason, name, email, date, time, packageName } = req.body as {
