@@ -731,9 +731,18 @@ function doGet(e) {
       const sa = getSheet('Agendamentos');
       if (!sa || sa.getLastRow() < 2) { result = []; }
       else {
+        const TZ = 'America/Sao_Paulo';
         result = sa.getRange(2, 1, sa.getLastRow() - 1, 15).getValues().map(r => ({
-          id: r[0], date: r[1], start: r[2], end: r[3], package: r[4],
-          name: r[7], status: r[12]
+          id:       r[0],
+          date:     r[1] ? (typeof r[1] === 'string' ? r[1] : Utilities.formatDate(r[1], TZ, 'yyyy-MM-dd')) : '',
+          start:    r[2] ? (typeof r[2] === 'string' ? r[2] : Utilities.formatDate(r[2], TZ, 'HH:mm'))      : '',
+          end:      r[3] ? (typeof r[3] === 'string' ? r[3] : Utilities.formatDate(r[3], TZ, 'HH:mm'))      : '',
+          package:  r[4],
+          price:    r[6],
+          name:     r[7],
+          email:    r[8],
+          whatsapp: r[9],
+          status:   r[12],
         }));
       }
     } else if (action === 'ping') {
