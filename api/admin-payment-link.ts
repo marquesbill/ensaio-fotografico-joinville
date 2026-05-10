@@ -41,14 +41,18 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   const auth = verifyToken(req.headers.authorization as string | undefined);
   if (!auth) return res.status(401).json({ error: 'Não autorizado' });
 
-  const { bookingId, name, email, whatsapp, date, time, packageKey } = req.body as {
-    bookingId:  string;
-    name:       string;
-    email:      string;
-    whatsapp:   string;
-    date:       string;
-    time:       string;
-    packageKey: PkgKey;
+  const { bookingId, name, email, whatsapp, instagram, instagramBailarina, nomeBailarina,
+          date, time, packageKey } = req.body as {
+    bookingId:           string;
+    name:                string;
+    email:               string;
+    whatsapp:            string;
+    instagram?:          string;
+    instagramBailarina?: string;
+    nomeBailarina?:      string;
+    date:                string;
+    time:                string;
+    packageKey:          PkgKey;
   };
 
   if (!bookingId || !date || !time || !packageKey || !name || !email) {
@@ -114,6 +118,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         action:        'createPending',
         date, start: time, packageKey,
         name, email, whatsapp,
+        instagram: instagram || '',
+        instagramBailarina: instagramBailarina || '',
+        nomeBailarina: nomeBailarina || '',
         stripeSession: pref.id,
       }),
     }).catch(e => console.error('[admin-payment-link] createPending error', e));

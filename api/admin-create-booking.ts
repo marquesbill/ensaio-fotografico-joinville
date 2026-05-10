@@ -55,14 +55,18 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   const auth = verifyToken(req.headers.authorization as string | undefined);
   if (!auth) return res.status(401).json({ error: 'Não autorizado' });
 
-  const { name, email, whatsapp, date, time, packageKey, confirm } = req.body as {
-    name:       string;
-    email:      string;
-    whatsapp:   string;
-    date:       string;
-    time:       string;
-    packageKey: PkgKey;
-    confirm:    boolean; // true = confirm immediately (manual/cash); false = return payment link
+  const { name, email, whatsapp, instagram, instagramBailarina, nomeBailarina,
+          date, time, packageKey, confirm } = req.body as {
+    name:                string;
+    email:               string;
+    whatsapp:            string;
+    instagram?:          string;
+    instagramBailarina?: string;
+    nomeBailarina?:      string;
+    date:                string;
+    time:                string;
+    packageKey:          PkgKey;
+    confirm:             boolean;
   };
 
   if (!name || !email || !date || !time || !packageKey) {
@@ -114,6 +118,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         body: JSON.stringify({
           action: 'createPending',
           date, start: time, packageKey, name, email, whatsapp,
+          instagram: instagram || '',
+          instagramBailarina: instagramBailarina || '',
+          nomeBailarina: nomeBailarina || '',
           stripeSession: pref.id,
         }),
       });
@@ -144,6 +151,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       body: JSON.stringify({
         action: 'createPending',
         date, start: time, packageKey, name, email, whatsapp,
+        instagram: instagram || '',
+        instagramBailarina: instagramBailarina || '',
+        nomeBailarina: nomeBailarina || '',
         stripeSession: sessionId,
       }),
     });

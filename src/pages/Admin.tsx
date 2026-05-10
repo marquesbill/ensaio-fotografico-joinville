@@ -6,18 +6,21 @@ import {
 
 /* ─────────────────────────── types ─────────────────────────── */
 interface Booking {
-  id:            string;
-  date:          string;   // "2026-07-05"
-  start:         string;   // "09:00"
-  end:           string;
-  package:       string;   // display name or key
-  price?:        number;
-  name:          string;
-  email?:        string;
-  whatsapp?:     string;
-  stripeSession?: string;
-  status:        string;   // "Confirmado" | "Pendente" | "Cancelado"
-  createdAt?:    string;
+  id:                   string;
+  date:                 string;   // "2026-07-05"
+  start:                string;   // "09:00"
+  end:                  string;
+  package:              string;   // display name or key
+  price?:               number;
+  name:                 string;
+  email?:               string;
+  whatsapp?:            string;
+  instagram?:           string;
+  instagramBailarina?:  string;
+  nomeBailarina?:       string;
+  stripeSession?:       string;
+  status:               string;   // "Confirmado" | "Pendente" | "Cancelado"
+  createdAt?:           string;
 }
 
 interface Slot { time: string; available: boolean }
@@ -332,13 +335,16 @@ function NewBookingModal({
   onClose, onSubmit, loading,
 }: {
   onClose: () => void;
-  onSubmit: (data: { name: string; email: string; whatsapp: string; date: string; time: string; packageKey: string }, confirm: boolean) => void;
+  onSubmit: (data: { name: string; email: string; whatsapp: string; instagram: string; instagramBailarina: string; nomeBailarina: string; date: string; time: string; packageKey: string }, confirm: boolean) => void;
   loading: boolean;
 }) {
-  const [name,     setName]     = useState('');
-  const [email,    setEmail]    = useState('');
-  const [whatsapp, setWhatsapp] = useState('');
-  const [pkgKey,   setPkgKey]   = useState('lembranca');
+  const [name,                setName]                = useState('');
+  const [email,               setEmail]               = useState('');
+  const [whatsapp,            setWhatsapp]            = useState('');
+  const [instagram,           setInstagram]           = useState('');
+  const [instagramBailarina,  setInstagramBailarina]  = useState('');
+  const [nomeBailarina,       setNomeBailarina]       = useState('');
+  const [pkgKey,              setPkgKey]              = useState('lembranca');
   const [date,     setDate]     = useState('');
   const [time,     setTime]     = useState('');
   const [slots,    setSlots]    = useState<Slot[]>([]);
@@ -364,7 +370,11 @@ function NewBookingModal({
 
   function submit(confirm: boolean) {
     if (!canSubmit) return;
-    onSubmit({ name: name.trim(), email: email.trim(), whatsapp: whatsapp.trim(), date, time, packageKey: pkgKey }, confirm);
+    onSubmit({
+      name: name.trim(), email: email.trim(), whatsapp: whatsapp.trim(),
+      instagram: instagram.trim(), instagramBailarina: instagramBailarina.trim(), nomeBailarina: nomeBailarina.trim(),
+      date, time, packageKey: pkgKey,
+    }, confirm);
   }
 
   return (
@@ -403,6 +413,31 @@ function NewBookingModal({
             <input
               className="w-full border border-gray-200 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-purple-200"
               value={whatsapp} onChange={e => setWhatsapp(e.target.value)} placeholder="(00) 00000-0000"
+            />
+          </div>
+          <div>
+            <label className="block text-xs font-semibold text-gray-600 mb-1 uppercase tracking-wide">Instagram do cliente</label>
+            <input
+              className="w-full border border-gray-200 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-purple-200"
+              value={instagram} onChange={e => setInstagram(e.target.value)} placeholder="@usuario"
+            />
+          </div>
+        </div>
+
+        {/* Bailarina */}
+        <div className="grid grid-cols-2 gap-3">
+          <div>
+            <label className="block text-xs font-semibold text-gray-600 mb-1 uppercase tracking-wide">Nome da bailarina</label>
+            <input
+              className="w-full border border-gray-200 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-purple-200"
+              value={nomeBailarina} onChange={e => setNomeBailarina(e.target.value)} placeholder="Nome completo"
+            />
+          </div>
+          <div>
+            <label className="block text-xs font-semibold text-gray-600 mb-1 uppercase tracking-wide">Instagram da bailarina</label>
+            <input
+              className="w-full border border-gray-200 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-purple-200"
+              value={instagramBailarina} onChange={e => setInstagramBailarina(e.target.value)} placeholder="@bailarina"
             />
           </div>
         </div>
@@ -666,8 +701,11 @@ function TimelineView({
               <p className="text-xs text-gray-500 mt-0.5">
                 {fmtDate(sel.date)} · {fmtTime(sel.start)}–{fmtTime(sel.end)} · {sel.package}
               </p>
-              {sel.email    && <p className="text-xs text-gray-400 mt-0.5">{sel.email}</p>}
-              {sel.whatsapp && <p className="text-xs text-gray-400">{sel.whatsapp}</p>}
+              {sel.email              && <p className="text-xs text-gray-400 mt-0.5">{sel.email}</p>}
+              {sel.whatsapp           && <p className="text-xs text-gray-400">{sel.whatsapp}</p>}
+              {sel.instagram          && <p className="text-xs text-gray-400">📷 {sel.instagram}</p>}
+              {sel.nomeBailarina      && <p className="text-xs text-purple-600 font-medium mt-0.5">💃 {sel.nomeBailarina}</p>}
+              {sel.instagramBailarina && <p className="text-xs text-purple-400">📷 {sel.instagramBailarina}</p>}
               {sel.price != null && (
                 <p className="text-xs font-medium text-[#352D39] mt-1">
                   R$ {Number(sel.price).toFixed(2).replace('.', ',')}
@@ -724,8 +762,11 @@ function BookingCard({
         <div>
           <p className="font-semibold text-sm text-[#352D39]">{booking.name}</p>
           <p className="text-xs text-gray-500 mt-0.5">{fmtTime(booking.start)} – {fmtTime(booking.end)} · {booking.package}</p>
-          {booking.email && <p className="text-xs text-gray-400 mt-0.5">{booking.email}</p>}
-          {booking.whatsapp && <p className="text-xs text-gray-400">{booking.whatsapp}</p>}
+          {booking.email              && <p className="text-xs text-gray-400 mt-0.5">{booking.email}</p>}
+          {booking.whatsapp           && <p className="text-xs text-gray-400">{booking.whatsapp}</p>}
+          {booking.instagram          && <p className="text-xs text-gray-400">📷 {booking.instagram}</p>}
+          {booking.nomeBailarina      && <p className="text-xs text-purple-600 font-medium mt-0.5">💃 {booking.nomeBailarina}</p>}
+          {booking.instagramBailarina && <p className="text-xs text-purple-400">📷 {booking.instagramBailarina}</p>}
           {booking.price != null && (
             <p className="text-xs font-medium text-[#352D39] mt-1">R$ {Number(booking.price).toFixed(2).replace('.', ',')}</p>
           )}
@@ -1012,7 +1053,7 @@ function Dashboard({
   }
 
   async function handleCreateBooking(
-    data: { name: string; email: string; whatsapp: string; date: string; time: string; packageKey: string },
+    data: { name: string; email: string; whatsapp: string; instagram: string; instagramBailarina: string; nomeBailarina: string; date: string; time: string; packageKey: string },
     confirm: boolean,
   ) {
     setActionLoading(true);

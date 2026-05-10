@@ -141,7 +141,7 @@ export default function Agendamento() {
   const [slotsError, setSlotsError]   = useState('');
   const [selectedPeriod, setSelectedPeriod] = useState<Period | null>(null);
   const [selectedTime, setSelectedTime] = useState<string | null>(null);
-  const [form, setForm]               = useState({ nome: '', email: '', whatsapp: '' });
+  const [form, setForm]               = useState({ nome: '', email: '', whatsapp: '', instagram: '' });
   const [formErrors, setFormErrors]   = useState({ nome: '', email: '', whatsapp: '' });
   const [submitting, setSubmitting]   = useState(false);
   const [submitError, setSubmitError] = useState('');
@@ -227,7 +227,7 @@ export default function Agendamento() {
       const res = await fetch('/api/create-checkout', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ date: selectedDate, time: selectedTime, packageKey: pkg, name: form.nome, email: form.email, whatsapp: form.whatsapp }),
+        body: JSON.stringify({ date: selectedDate, time: selectedTime, packageKey: pkg, name: form.nome, email: form.email, whatsapp: form.whatsapp, instagram: form.instagram }),
       });
       const data = await res.json();
       if (data.error) throw new Error(data.error);
@@ -250,7 +250,7 @@ export default function Agendamento() {
           formData,
           preferenceId,
           date: selectedDate, time: selectedTime, packageKey: pkg,
-          name: form.nome, email: form.email, whatsapp: form.whatsapp,
+          name: form.nome, email: form.email, whatsapp: form.whatsapp, instagram: form.instagram,
         }),
       });
       const data = await res.json();
@@ -572,6 +572,18 @@ export default function Agendamento() {
                       <AlertCircle className="w-3.5 h-3.5 shrink-0" />{formErrors.whatsapp}
                     </p>
                   )}
+                </div>
+
+                {/* Instagram */}
+                <div>
+                  <label className="block text-sm font-semibold text-on-surface mb-1.5">Instagram <span className="font-normal text-on-surface-variant text-xs">(opcional)</span></label>
+                  <input
+                    className="w-full bg-white/90 border border-outline-variant focus:ring-2 focus:ring-primary focus:bg-white rounded-xl px-4 py-3 text-on-surface font-medium shadow-sm transition-colors"
+                    placeholder="@seuperfil"
+                    type="text" autoComplete="off"
+                    value={form.instagram}
+                    onChange={e => setForm(f => ({ ...f, instagram: e.target.value }))}
+                  />
                 </div>
 
                 {submitError && (

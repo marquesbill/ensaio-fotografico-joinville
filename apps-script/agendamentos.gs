@@ -30,9 +30,9 @@ const CFG = {
 
 // ── Colunas de "Agendamentos" (índices 0-based para .getValues()) ──
 // 0:ID  1:Data  2:Início  3:Fim  4:Pacote  5:Duração  6:Valor
-// 7:Nome  8:E-mail  9:WhatsApp  10:StripeSession  11:StripePayment
-// 12:Status  13:Criado em  14:Atualizado em
-// 15:Rem1Sent  16:Rem2Sent  17:Rem3Sent  18:AndreNotified  19:ExpiryWarnSent
+// 7:Nome  8:E-mail  9:WhatsApp  10:InstaCliente  11:InstaBailarina  12:NomeBailarina
+// 13:StripeSession  14:StripePayment  15:Status  16:Criado em  17:Atualizado em
+// 18:Rem1Sent  19:Rem2Sent  20:Rem3Sent  21:AndreNotified  22:ExpiryWarnSent
 
 // ── Helpers de tempo ──────────────────────────────────────────
 function timeToMin(hhmm) {
@@ -86,9 +86,9 @@ function initSheets() {
 
   const agHeaders = [
     'ID','Data','Início','Fim','Pacote','Duração (min)','Valor (R$)',
-    'Nome','E-mail','WhatsApp','Stripe Session','Stripe Payment',
-    'Status','Criado em','Atualizado em',
-    'Rem1Sent','Rem2Sent','Rem3Sent','AndreNotified'
+    'Nome','E-mail','WhatsApp','Instagram Cliente','Instagram Bailarina','Nome Bailarina',
+    'Stripe Session','Stripe Payment','Status','Criado em','Atualizado em',
+    'Rem1Sent','Rem2Sent','Rem3Sent','AndreNotified','ExpiryWarnSent'
   ];
   ensureSheet('Agendamentos', agHeaders, '#4CAF50');
   ensureSheet('Bloqueios',    ['Data','Início','Fim','Motivo'],                '#FF9800');
@@ -98,14 +98,9 @@ function initSheets() {
   const sa = getSheet('Agendamentos');
   if (sa && sa.getLastRow() > 0) {
     const existingHeaders = sa.getRange(1, 1, 1, sa.getLastColumn()).getValues()[0];
-    if (existingHeaders.indexOf('Rem1Sent') === -1) {
-      const lc = sa.getLastColumn();
-      sa.getRange(1, lc + 1).setValue('Rem1Sent');
-      sa.getRange(1, lc + 2).setValue('Rem2Sent');
-      sa.getRange(1, lc + 3).setValue('Rem3Sent');
-      sa.getRange(1, lc + 4).setValue('AndreNotified');
-      sa.getRange(1, 1, 1, lc + 4)
-        .setFontWeight('bold').setBackground('#1a1a2e').setFontColor('#ffffff');
+    if (existingHeaders.indexOf('Instagram Cliente') === -1) {
+      // New fields added — reinitialise headers fully via initSheets
+      addLog('HEADERS_DESATUALIZADOS', '', 'Execute initSheets para adicionar novos campos', 'ensureAgendamentosHeaders');
     }
   }
 
@@ -214,7 +209,7 @@ function refreshCalendar() {
   const data = sa.getRange(2, 1, sa.getLastRow() - 1, numCols).getValues();
 
   data.forEach(row => {
-    const status = row[12];
+    const status = row[15];
     if (status !== 'Confirmado' && status !== 'Pendente') return;
 
     const dateStr  = row[1] ? (typeof row[1] === 'string' ? row[1] : Utilities.formatDate(row[1], 'America/Sao_Paulo', 'yyyy-MM-dd')) : '';
@@ -222,7 +217,7 @@ function refreshCalendar() {
     const endStr   = row[3] ? row[3].toString() : '';
     const pkgKey   = row[4];
     const nome     = row[7];
-    const criadoEm = row[13];
+    const criadoEm = row[16];
     const pkg      = CFG.PACKAGES[pkgKey] || CFG.PACKAGES.completo;
 
     const colIdx = dateColMap[dateStr];
@@ -293,7 +288,7 @@ function buildClientesSheet() {
   if (!cl) { cl = ss.insertSheet('Clientes'); cl.setTabColor('#009688'); }
   else      { cl.clearContents(); }
 
-  const headers = ['Nome','E-mail','WhatsApp','Pacote','Duração','Data','Horário de início','Valor (R$)','Confirmado em','ID'];
+  const headers = ['Nome','E-mail','WhatsApp','Instagram','Instagram Bailarina','Nome Bailarina','Pacote','Duração','Data','Horário de início','Valor (R$)','Confirmado em','ID'];
   cl.appendRow(headers);
   cl.getRange(1, 1, 1, headers.length)
     .setFontWeight('bold').setBackground('#1a1a2e').setFontColor('#ffffff');
@@ -305,24 +300,25 @@ function buildClientesSheet() {
     return;
   }
 
-  const numCols = Math.max(sa.getLastColumn(), 15);
+  const numCols = Math.max(sa.getLastColumn(), 18);
   const data = sa.getRange(2, 1, sa.getLastRow() - 1, numCols).getValues();
   const rows = [];
 
   data.forEach(row => {
-    if (row[12] !== 'Confirmado') return;
+    if (row[15] !== 'Confirmado') return;
     const pkg       = CFG.PACKAGES[row[4]] || {};
     const valorNum  = parseFloat(row[6]);
     const valorLabel = isNaN(valorNum) ? row[6] : 'R$ ' + valorNum.toLocaleString('pt-BR', { minimumFractionDigits: 2 });
     const dateStr   = row[1] ? (typeof row[1] === 'string' ? row[1] : Utilities.formatDate(row[1], 'America/Sao_Paulo', 'yyyy-MM-dd')) : '';
     rows.push([
       row[7], row[8], row[9],
+      row[10] || '', row[11] || '', row[12] || '',
       pkg.name || row[4],
       (pkg.duration || row[5]) + ' min',
       formatDateBR(dateStr),
       row[2] ? row[2].toString() : '',
       valorLabel,
-      row[14] || '',
+      row[17] || '',
       row[0],
     ]);
   });
@@ -365,17 +361,17 @@ function getWorkIntervals(dateStr) {
 function getBookingsForDate(dateStr) {
   const sa = getSheet('Agendamentos');
   if (!sa || sa.getLastRow() < 2) return [];
-  const numCols = Math.max(sa.getLastColumn(), 15);
+  const numCols = Math.max(sa.getLastColumn(), 18);
   const data = sa.getRange(2, 1, sa.getLastRow() - 1, numCols).getValues();
   const now  = Date.now();
 
   return data.filter(row => {
-    const status = row[12];
+    const status = row[15];
     const d = row[1] ? (typeof row[1] === 'string' ? row[1] : Utilities.formatDate(row[1], 'America/Sao_Paulo', 'yyyy-MM-dd')) : '';
     if (d !== dateStr) return false;
     if (status === 'Confirmado') return true;
     if (status === 'Pendente') {
-      const criadoEm = row[13];
+      const criadoEm = row[16];
       const ageH = criadoEm ? (now - new Date(criadoEm).getTime()) / 3600000 : 0;
       return ageH < CFG.PENDING_BLOCK_H; // bloqueia por até 24h
     }
@@ -528,6 +524,8 @@ function sendVendedoraNotification(booking) {
           <td style="font-size:13px;">${booking.email}</td></tr>
       <tr><td style="color:#6b7280;padding:6px 0;font-size:13px;">WhatsApp</td>
           <td style="font-weight:600;font-size:14px;color:#7a3f8f;">${booking.whatsapp}</td></tr>
+      <tr><td style="color:#6b7280;padding:6px 0;font-size:13px;">Bailarina</td>
+          <td style="font-size:13px;">${booking.nomeBailarina || '—'}</td></tr>
       <tr><td style="color:#6b7280;padding:6px 0;font-size:13px;">Pacote</td>
           <td style="font-size:13px;">${pkgInfo.name || booking.pacote}</td></tr>
       <tr><td style="color:#6b7280;padding:6px 0;font-size:13px;">Data</td>
@@ -580,6 +578,8 @@ function sendExpiryWarning(booking) {
           <td style="font-size:13px;">${booking.email}</td></tr>
       <tr><td style="color:#6b7280;padding:6px 0;font-size:13px;">WhatsApp</td>
           <td style="font-weight:600;font-size:14px;color:#e87060;">${booking.whatsapp}</td></tr>
+      <tr><td style="color:#6b7280;padding:6px 0;font-size:13px;">Bailarina</td>
+          <td style="font-size:13px;">${booking.nomeBailarina || '—'}</td></tr>
       <tr><td style="color:#6b7280;padding:6px 0;font-size:13px;">Pacote</td>
           <td style="font-size:13px;">${pkgInfo.name || booking.pacote}</td></tr>
       <tr><td style="color:#6b7280;padding:6px 0;font-size:13px;">Data</td>
@@ -615,14 +615,14 @@ function processReminders() {
   const sa = getSheet('Agendamentos');
   if (!sa || sa.getLastRow() < 2) return;
 
-  const numCols = Math.max(sa.getLastColumn(), 20);
+  const numCols = Math.max(sa.getLastColumn(), 23);
   const data    = sa.getRange(2, 1, sa.getLastRow() - 1, numCols).getValues();
   const now     = Date.now();
   let   calendarChanged = false;
 
   data.forEach((row, i) => {
-    if (row[12] !== 'Pendente') return;
-    const criadoEm = row[13];
+    if (row[15] !== 'Pendente') return;
+    const criadoEm = row[16];
     if (!criadoEm) return;
 
     const rowNum  = i + 2;
@@ -637,13 +637,16 @@ function processReminders() {
       nome:     row[7],
       email:    row[8],
       whatsapp: row[9],
+      instagram:           row[10],
+      instagramBailarina:  row[11],
+      nomeBailarina:       row[12],
       criadoEm: criadoEm,
     };
 
     // 24h sem pagamento → expirar e liberar slot
     if (ageMin >= CFG.PENDING_BLOCK_H * 60) {
-      sa.getRange(rowNum, 13).setValue('Expirado');
-      sa.getRange(rowNum, 15).setValue(nowIso());
+      sa.getRange(rowNum, 16).setValue('Expirado');
+      sa.getRange(rowNum, 18).setValue(nowIso());
       clearCalendarSlot(booking.data, booking.inicio, booking.fim);
       addLog('PENDENTE_EXPIRADO', booking.id, 'Expirou após 3 dias', 'processReminders');
       calendarChanged = true;
@@ -655,31 +658,31 @@ function processReminders() {
     // Para reativar, remova os comentários abaixo.
     //
     // Lembrete 1: após 5 min
-    // if (ageMin >= 5 && !row[15]) {
+    // if (ageMin >= 5 && !row[18]) {
     //   sendReminderEmail(booking, 1);
-    //   sa.getRange(rowNum, 16).setValue(nowIso());
+    //   sa.getRange(rowNum, 19).setValue(nowIso());
     // }
     // Lembrete 2: após 2h
-    // if (ageMin >= 120 && !row[16]) {
+    // if (ageMin >= 120 && !row[19]) {
     //   sendReminderEmail(booking, 2);
-    //   sa.getRange(rowNum, 17).setValue(nowIso());
+    //   sa.getRange(rowNum, 20).setValue(nowIso());
     // }
     // Lembrete 3: após 22h
-    // if (ageMin >= 22 * 60 && !row[17]) {
+    // if (ageMin >= 22 * 60 && !row[20]) {
     //   sendReminderEmail(booking, 3);
-    //   sa.getRange(rowNum, 18).setValue(nowIso());
+    //   sa.getRange(rowNum, 21).setValue(nowIso());
     // }
     // ────────────────────────────────────────────────────────────
     // Aviso de expiração para Mariane: 8h antes do prazo de 3 dias
-    if (ageMin >= (CFG.PENDING_BLOCK_H * 60 - 8 * 60) && !row[19]) {
+    if (ageMin >= (CFG.PENDING_BLOCK_H * 60 - 8 * 60) && !row[22]) {
       sendExpiryWarning(booking);
-      sa.getRange(rowNum, 20).setValue(nowIso());
+      sa.getRange(rowNum, 23).setValue(nowIso());
     }
 
     // Notificação para Mariane: após 30 min
-    if (ageMin >= CFG.ANDRE_NOTIFY_MIN && !row[18]) {
+    if (ageMin >= CFG.ANDRE_NOTIFY_MIN && !row[21]) {
       sendVendedoraNotification(booking);
-      sa.getRange(rowNum, 19).setValue(nowIso());
+      sa.getRange(rowNum, 22).setValue(nowIso());
     }
 
     // Atualiza indicador no calendário (🟡 → 🔴 quando passa de 30 min)
@@ -691,7 +694,9 @@ function processReminders() {
 
 // ── Booking CRUD ──────────────────────────────────────────────
 function createPending(data) {
-  const { date, start, packageKey, name, email, whatsapp, stripeSession } = data;
+  const { date, start, packageKey, name, email, whatsapp,
+          instagram, instagramBailarina, nomeBailarina,
+          stripeSession } = data;
   const pkg = CFG.PACKAGES[packageKey];
   if (!pkg) throw new Error('Pacote inválido: ' + packageKey);
 
@@ -703,8 +708,9 @@ function createPending(data) {
   sa.appendRow([
     bookingId, date, start, endTime, packageKey, pkg.duration,
     (pkg.price / 100).toFixed(2), name, email, whatsapp,
+    instagram || '', instagramBailarina || '', nomeBailarina || '',
     stripeSession || '', '', 'Pendente', now, now,
-    '', '', '', ''
+    '', '', '', '', ''
   ]);
 
   paintCalendarSlot(date, start, endTime, name, packageKey, 'Pendente', now);
@@ -719,20 +725,20 @@ function confirmBooking(data) {
   const sa = getSheet('Agendamentos');
   if (!sa || sa.getLastRow() < 2) throw new Error('Planilha vazia');
 
-  const numCols = Math.max(sa.getLastColumn(), 15);
+  const numCols = Math.max(sa.getLastColumn(), 18);
   const rows    = sa.getRange(2, 1, sa.getLastRow() - 1, numCols).getValues();
-  const idx     = rows.findIndex(r => r[10] === stripeSession);
+  const idx     = rows.findIndex(r => r[13] === stripeSession);
   if (idx < 0) throw new Error('Session não encontrada: ' + stripeSession);
 
   const row  = rows[idx];
   const shRow = idx + 2;
-  sa.getRange(shRow, 12).setValue(stripePayment || '');
-  sa.getRange(shRow, 13).setValue('Confirmado');
-  sa.getRange(shRow, 15).setValue(nowIso());
+  sa.getRange(shRow, 15).setValue(stripePayment || '');
+  sa.getRange(shRow, 16).setValue('Confirmado');
+  sa.getRange(shRow, 18).setValue(nowIso());
 
   const dateStr = row[1] ? (typeof row[1] === 'string' ? row[1] : Utilities.formatDate(row[1], 'America/Sao_Paulo', 'yyyy-MM-dd')) : '';
   clearCalendarSlot(dateStr, row[2] ? row[2].toString() : '', row[3] ? row[3].toString() : '');
-  paintCalendarSlot(dateStr, row[2] ? row[2].toString() : '', row[3] ? row[3].toString() : '', row[7], row[4], 'Confirmado', row[13]);
+  paintCalendarSlot(dateStr, row[2] ? row[2].toString() : '', row[3] ? row[3].toString() : '', row[7], row[4], 'Confirmado', row[16]);
 
   buildClientesSheet();
   addLog('PAGAMENTO_CONFIRMADO', row[0],
@@ -752,15 +758,15 @@ function cancelBooking(data) {
   const sa = getSheet('Agendamentos');
   if (!sa || sa.getLastRow() < 2) throw new Error('Planilha vazia');
 
-  const numCols = Math.max(sa.getLastColumn(), 15);
+  const numCols = Math.max(sa.getLastColumn(), 18);
   const rows    = sa.getRange(2, 1, sa.getLastRow() - 1, numCols).getValues();
   const idx     = rows.findIndex(r => r[0] === bookingId);
   if (idx < 0) throw new Error('Booking não encontrado: ' + bookingId);
 
   const row   = rows[idx];
   const shRow = idx + 2;
-  sa.getRange(shRow, 13).setValue('Cancelado');
-  sa.getRange(shRow, 15).setValue(nowIso());
+  sa.getRange(shRow, 16).setValue('Cancelado');
+  sa.getRange(shRow, 18).setValue(nowIso());
 
   const dateStr = row[1] ? (typeof row[1] === 'string' ? row[1] : Utilities.formatDate(row[1], 'America/Sao_Paulo', 'yyyy-MM-dd')) : '';
   clearCalendarSlot(dateStr, row[2] ? row[2].toString() : '', row[3] ? row[3].toString() : '');
@@ -807,17 +813,20 @@ function doGet(e) {
       if (!sa || sa.getLastRow() < 2) { result = []; }
       else {
         const TZ = 'America/Sao_Paulo';
-        result = sa.getRange(2, 1, sa.getLastRow() - 1, 15).getValues().map(r => ({
-          id:       r[0],
-          date:     r[1] ? (typeof r[1] === 'string' ? r[1] : Utilities.formatDate(r[1], TZ, 'yyyy-MM-dd')) : '',
-          start:    r[2] ? (typeof r[2] === 'string' ? r[2] : Utilities.formatDate(r[2], TZ, 'HH:mm'))      : '',
-          end:      r[3] ? (typeof r[3] === 'string' ? r[3] : Utilities.formatDate(r[3], TZ, 'HH:mm'))      : '',
-          package:  r[4],
-          price:    r[6],
-          name:     r[7],
-          email:    r[8],
-          whatsapp: r[9],
-          status:   r[12],
+        result = sa.getRange(2, 1, sa.getLastRow() - 1, 18).getValues().map(r => ({
+          id:                  r[0],
+          date:                r[1] ? (typeof r[1] === 'string' ? r[1] : Utilities.formatDate(r[1], TZ, 'yyyy-MM-dd')) : '',
+          start:               r[2] ? (typeof r[2] === 'string' ? r[2] : Utilities.formatDate(r[2], TZ, 'HH:mm'))      : '',
+          end:                 r[3] ? (typeof r[3] === 'string' ? r[3] : Utilities.formatDate(r[3], TZ, 'HH:mm'))      : '',
+          package:             r[4],
+          price:               r[6],
+          name:                r[7],
+          email:               r[8],
+          whatsapp:            r[9],
+          instagram:           r[10],
+          instagramBailarina:  r[11],
+          nomeBailarina:       r[12],
+          status:              r[15],
         }));
       }
     } else if (action === 'ping') {

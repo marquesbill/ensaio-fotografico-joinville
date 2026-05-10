@@ -21,9 +21,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return res.status(500).json({ error: 'MERCADOPAGO_ACCESS_TOKEN não configurada' });
   }
 
-  const { date, time, packageKey, name, email, whatsapp } = req.body as {
+  const { date, time, packageKey, name, email, whatsapp, instagram, instagramBailarina, nomeBailarina } = req.body as {
     date: string; time: string; packageKey: PkgKey;
     name: string; email: string; whatsapp: string;
+    instagram?: string; instagramBailarina?: string; nomeBailarina?: string;
   };
 
   if (!date || !time || !packageKey || !name || !email || !whatsapp) {
@@ -78,6 +79,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       body: JSON.stringify({
         action: 'createPending',
         date, start: time, packageKey, name, email, whatsapp,
+        instagram: instagram || '',
+        instagramBailarina: instagramBailarina || '',
+        nomeBailarina: nomeBailarina || '',
         stripeSession: pref.id,   // reusing field — stores MP preference ID
       }),
     });
