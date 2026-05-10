@@ -205,14 +205,9 @@ function RescheduleModal({
     setSlotsLoading(true);
     fetch(`${API}/api/slots?date=${newDate}`)
       .then(r => r.json())
-      .then((data: { slots?: Slot[] }) => {
-        const pkg = PACKAGES.find(p => p.key === pkgKey);
-        const dur = pkg?.duration ?? 30;
-        // Filter available slots considering the package duration
-        const available = (data.slots || []).filter(s => s.available);
-        // Further filter: need enough consecutive availability
-        // Simple approach: show slots where available = true
-        setSlots(available);
+      .then((data: Record<string, string[]>) => {
+        const times = data[pkgKey] ?? [];
+        setSlots(times.map(t => ({ time: t, available: true })));
         setNewTime('');
       })
       .catch(() => setSlots([]))
