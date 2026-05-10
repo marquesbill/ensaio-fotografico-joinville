@@ -67,9 +67,9 @@ const RANGE_START = '2026-07-20';
 const RANGE_END   = '2026-08-02';
 const DAY_FROM    = 8;    // 08:00
 const DAY_TO      = 20;   // 20:00
-const SLOT_PX     = 11;   // px per 15-min slot
-const COL_PX      = 90;   // px per day column
-const GUTTER_PX   = 38;   // px for time-label column
+const SLOT_PX     = 7;    // px per 15-min slot
+const COL_PX      = 68;   // px per day column
+const GUTTER_PX   = 34;   // px for time-label column
 
 function timeToMins(t: string) {
   const [h, m] = t.split(':').map(Number);
@@ -422,9 +422,6 @@ function TimelineView({
                               className={`rounded border ${cls} px-1.5 py-0.5 text-left overflow-hidden w-full hover:brightness-95 transition-all ${sel?.id === b.id ? 'ring-2 ring-offset-1 ring-[#7a3f8f]' : ''}`}
                               onClick={() => setSel(sel?.id === b.id ? null : b)}>
                         <p className="text-[10px] font-semibold leading-tight truncate">{b.name}</p>
-                        {height > 30 && (
-                          <p className="text-[9px] opacity-70 leading-tight truncate">{b.start} · {b.package}</p>
-                        )}
                       </button>
                     );
                   })}
