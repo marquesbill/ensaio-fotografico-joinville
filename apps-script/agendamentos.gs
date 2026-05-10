@@ -12,8 +12,8 @@ const CFG = {
   WORK_END_H: 19,
   BUFFER_MIN: 15,
   SLOT_STEP_MIN: 15,
-  PENDING_BLOCK_H: 24,          // horas que o slot fica bloqueado para pagamento pendente
-  ANDRE_NOTIFY_MIN: 30,         // minutos até André receber aviso de pagamento não concluído
+  PENDING_BLOCK_H: 72,          // horas que o slot fica bloqueado para pagamento pendente (3 dias)
+  ANDRE_NOTIFY_MIN: 30,         // minutos até Mariane receber aviso de pagamento não concluído
   PACKAGES: {
     lembranca: { name: 'Lembrança', duration: 30,  price: 140000, color: '#6A0DAD', textColor: '#FFFFFF', bold: false },
     economico: { name: 'Econômico', duration: 90,  price: 190000, color: '#0277BD', textColor: '#FFFFFF', bold: true  },
@@ -21,16 +21,18 @@ const CFG = {
   },
   DATES_START:  '2026-07-20',
   DATES_END:    '2026-08-02',
-  ANDRE_EMAIL:  'andreffotografia@gmail.com',
-  FROM_EMAIL:   'Ensaio Joinville <confirmacao@ensaiofotograficoemjoinville.com>',
-  SITE_URL:     'https://www.ensaiofotograficoemjoinville.com',
+  ANDRE_EMAIL:    'andreffotografia@gmail.com',
+  MARIANE_EMAIL:  'mariane.sslourenco@gmail.com',
+  FROM_EMAIL:     'Ensaio Joinville <confirmacao@ensaiofotograficoemjoinville.com>',
+  SITE_URL:       'https://www.ensaiofotograficoemjoinville.com',
+  ADMIN_URL:      'https://www.ensaiofotograficoemjoinville.com/admin',
 };
 
 // ── Colunas de "Agendamentos" (índices 0-based para .getValues()) ──
 // 0:ID  1:Data  2:Início  3:Fim  4:Pacote  5:Duração  6:Valor
 // 7:Nome  8:E-mail  9:WhatsApp  10:StripeSession  11:StripePayment
 // 12:Status  13:Criado em  14:Atualizado em
-// 15:Rem1Sent  16:Rem2Sent  17:Rem3Sent  18:AndreNotified
+// 15:Rem1Sent  16:Rem2Sent  17:Rem3Sent  18:AndreNotified  19:ExpiryWarnSent
 
 // ── Helpers de tempo ──────────────────────────────────────────
 function timeToMin(hhmm) {
@@ -504,7 +506,7 @@ function sendReminderEmail(booking, num) {
   if (ok) addLog('LEMBRETE_' + num, booking.id, 'Enviado para ' + booking.email, 'sendReminderEmail');
 }
 
-function sendAndreNotification(booking) {
+function sendVendedoraNotification(booking) {
   const valorNum   = parseFloat(booking.valor);
   const valorLabel = isNaN(valorNum) ? booking.valor : 'R$ ' + valorNum.toLocaleString('pt-BR', { minimumFractionDigits: 2 });
   const pkgInfo    = CFG.PACKAGES[booking.pacote] || {};
@@ -514,8 +516,9 @@ function sendAndreNotification(booking) {
 <table width="100%" cellpadding="0" cellspacing="0" style="background:#f4f4f5;padding:32px 0;">
 <tr><td align="center">
 <table width="520" cellpadding="0" cellspacing="0" style="background:#ffffff;border-radius:12px;overflow:hidden;box-shadow:0 2px 8px rgba(0,0,0,0.08);">
-  <tr><td style="background:#BF360C;padding:20px 28px;">
-    <h2 style="color:#ffffff;margin:0;font-size:17px;">🔴 Pagamento pendente há 30 min — cliente não pagou</h2>
+  <tr><td style="background:#7a3f8f;padding:20px 28px;">
+    <h2 style="color:#ffffff;margin:0;font-size:17px;">⏳ Pagamento pendente há 30 min</h2>
+    <p style="color:rgba(255,255,255,0.85);margin:6px 0 0;font-size:13px;">O cliente ainda não finalizou o pagamento online.</p>
   </td></tr>
   <tr><td style="padding:24px 28px;">
     <table width="100%" style="border-collapse:collapse;">
@@ -524,16 +527,25 @@ function sendAndreNotification(booking) {
       <tr><td style="color:#6b7280;padding:6px 0;font-size:13px;">E-mail</td>
           <td style="font-size:13px;">${booking.email}</td></tr>
       <tr><td style="color:#6b7280;padding:6px 0;font-size:13px;">WhatsApp</td>
-          <td style="font-weight:600;font-size:14px;color:#BF360C;">${booking.whatsapp}</td></tr>
+          <td style="font-weight:600;font-size:14px;color:#7a3f8f;">${booking.whatsapp}</td></tr>
       <tr><td style="color:#6b7280;padding:6px 0;font-size:13px;">Pacote</td>
           <td style="font-size:13px;">${pkgInfo.name || booking.pacote}</td></tr>
       <tr><td style="color:#6b7280;padding:6px 0;font-size:13px;">Data</td>
-          <td style="font-size:13px;">${formatDateBR(booking.data)} às ${booking.inicio}</td></tr>
+          <td style="font-size:13px;">${formatDateBR(booking.data)} às ${booking.inicio} – ${booking.fim}</td></tr>
       <tr><td style="color:#6b7280;padding:6px 0;font-size:13px;border-top:1px solid #e5e7eb;">Valor</td>
-          <td style="font-weight:700;font-size:14px;color:#BF360C;border-top:1px solid #e5e7eb;">${valorLabel}</td></tr>
+          <td style="font-weight:700;font-size:14px;color:#7a3f8f;border-top:1px solid #e5e7eb;">${valorLabel}</td></tr>
     </table>
+    <p style="font-size:13px;color:#374151;margin-top:20px;line-height:1.6;">
+      Se o cliente já concluiu o pagamento por outro meio (transferência, dinheiro, etc.),
+      lembre-se de ajustar o status do agendamento no painel administrativo.
+    </p>
+    <p style="text-align:center;margin:20px 0 0;">
+      <a href="${CFG.ADMIN_URL}" style="display:inline-block;background:#7a3f8f;color:#fff;text-decoration:none;padding:10px 24px;border-radius:8px;font-size:13px;font-weight:600;">
+        Abrir Painel Admin
+      </a>
+    </p>
     <p style="color:#9ca3af;font-size:12px;margin-top:16px;border-top:1px solid #f0f0f0;padding-top:12px;">
-      O horário fica bloqueado por 24h a partir da reserva. Se o pagamento não for concluído, o slot é liberado automaticamente.
+      O horário fica bloqueado por 3 dias. Se o pagamento não for confirmado, o slot é liberado automaticamente.
     </p>
   </td></tr>
 </table>
@@ -541,9 +553,61 @@ function sendAndreNotification(booking) {
 </table>
 </body></html>`;
 
-  const subject = '🔴 Pagamento pendente: ' + booking.nome + ' — ' + formatDateBR(booking.data);
-  const ok = sendEmailViaResend(CFG.ANDRE_EMAIL, subject, html);
-  if (ok) addLog('ANDRE_NOTIFICADO', booking.id, 'Notificado sobre ' + booking.nome, 'sendAndreNotification');
+  const subject = '⏳ Agendamento pendente: ' + booking.nome + ' — ' + formatDateBR(booking.data) + ' às ' + booking.inicio;
+  const ok = sendEmailViaResend(CFG.MARIANE_EMAIL, subject, html);
+  if (ok) addLog('VENDEDORA_NOTIFICADA', booking.id, 'Mariane notificada sobre ' + booking.nome, 'sendVendedoraNotification');
+}
+
+function sendExpiryWarning(booking) {
+  const valorNum   = parseFloat(booking.valor);
+  const valorLabel = isNaN(valorNum) ? booking.valor : 'R$ ' + valorNum.toLocaleString('pt-BR', { minimumFractionDigits: 2 });
+  const pkgInfo    = CFG.PACKAGES[booking.pacote] || {};
+
+  const html = `<!DOCTYPE html><html lang="pt-BR"><head><meta charset="UTF-8"></head>
+<body style="margin:0;padding:0;background:#f4f4f5;font-family:Arial,sans-serif;">
+<table width="100%" cellpadding="0" cellspacing="0" style="background:#f4f4f5;padding:32px 0;">
+<tr><td align="center">
+<table width="520" cellpadding="0" cellspacing="0" style="background:#ffffff;border-radius:12px;overflow:hidden;box-shadow:0 2px 8px rgba(0,0,0,0.08);">
+  <tr><td style="background:#e87060;padding:20px 28px;">
+    <h2 style="color:#ffffff;margin:0;font-size:17px;">🚨 Agendamento expira em 8 horas!</h2>
+    <p style="color:rgba(255,255,255,0.85);margin:6px 0 0;font-size:13px;">O cliente ainda não confirmou o pagamento.</p>
+  </td></tr>
+  <tr><td style="padding:24px 28px;">
+    <table width="100%" style="border-collapse:collapse;">
+      <tr><td style="color:#6b7280;padding:6px 0;font-size:13px;width:120px;">Nome</td>
+          <td style="font-weight:600;font-size:13px;">${booking.nome}</td></tr>
+      <tr><td style="color:#6b7280;padding:6px 0;font-size:13px;">E-mail</td>
+          <td style="font-size:13px;">${booking.email}</td></tr>
+      <tr><td style="color:#6b7280;padding:6px 0;font-size:13px;">WhatsApp</td>
+          <td style="font-weight:600;font-size:14px;color:#e87060;">${booking.whatsapp}</td></tr>
+      <tr><td style="color:#6b7280;padding:6px 0;font-size:13px;">Pacote</td>
+          <td style="font-size:13px;">${pkgInfo.name || booking.pacote}</td></tr>
+      <tr><td style="color:#6b7280;padding:6px 0;font-size:13px;">Data</td>
+          <td style="font-size:13px;">${formatDateBR(booking.data)} às ${booking.inicio} – ${booking.fim}</td></tr>
+      <tr><td style="color:#6b7280;padding:6px 0;font-size:13px;border-top:1px solid #e5e7eb;">Valor</td>
+          <td style="font-weight:700;font-size:14px;color:#e87060;border-top:1px solid #e5e7eb;">${valorLabel}</td></tr>
+    </table>
+    <p style="font-size:13px;color:#374151;margin-top:20px;line-height:1.6;">
+      Se o cliente já concluiu o pagamento por outro meio, ou se desistiu do agendamento,
+      atualize o status no painel administrativo para liberar ou confirmar o horário.
+    </p>
+    <p style="text-align:center;margin:20px 0 0;">
+      <a href="${CFG.ADMIN_URL}" style="display:inline-block;background:#e87060;color:#fff;text-decoration:none;padding:10px 24px;border-radius:8px;font-size:13px;font-weight:600;">
+        Abrir Painel Admin
+      </a>
+    </p>
+    <p style="color:#9ca3af;font-size:12px;margin-top:16px;border-top:1px solid #f0f0f0;padding-top:12px;">
+      Se nenhuma ação for tomada, o slot será liberado automaticamente em 8 horas.
+    </p>
+  </td></tr>
+</table>
+</td></tr>
+</table>
+</body></html>`;
+
+  const subject = '🚨 Expira em 8h: ' + booking.nome + ' — ' + formatDateBR(booking.data) + ' às ' + booking.inicio;
+  const ok = sendEmailViaResend(CFG.MARIANE_EMAIL, subject, html);
+  if (ok) addLog('EXPIRY_WARNING', booking.id, 'Aviso de expiração enviado para Mariane — ' + booking.nome, 'sendExpiryWarning');
 }
 
 // ── processReminders (trigger a cada 5 min) ───────────────────
@@ -551,7 +615,7 @@ function processReminders() {
   const sa = getSheet('Agendamentos');
   if (!sa || sa.getLastRow() < 2) return;
 
-  const numCols = Math.max(sa.getLastColumn(), 19);
+  const numCols = Math.max(sa.getLastColumn(), 20);
   const data    = sa.getRange(2, 1, sa.getLastRow() - 1, numCols).getValues();
   const now     = Date.now();
   let   calendarChanged = false;
@@ -581,7 +645,7 @@ function processReminders() {
       sa.getRange(rowNum, 13).setValue('Expirado');
       sa.getRange(rowNum, 15).setValue(nowIso());
       clearCalendarSlot(booking.data, booking.inicio, booking.fim);
-      addLog('PENDENTE_EXPIRADO', booking.id, 'Expirou após 24h', 'processReminders');
+      addLog('PENDENTE_EXPIRADO', booking.id, 'Expirou após 3 dias', 'processReminders');
       calendarChanged = true;
       return;
     }
@@ -606,9 +670,15 @@ function processReminders() {
     //   sa.getRange(rowNum, 18).setValue(nowIso());
     // }
     // ────────────────────────────────────────────────────────────
-    // Notificação para André: após 30 min
+    // Aviso de expiração para Mariane: 8h antes do prazo de 3 dias
+    if (ageMin >= (CFG.PENDING_BLOCK_H * 60 - 8 * 60) && !row[19]) {
+      sendExpiryWarning(booking);
+      sa.getRange(rowNum, 20).setValue(nowIso());
+    }
+
+    // Notificação para Mariane: após 30 min
     if (ageMin >= CFG.ANDRE_NOTIFY_MIN && !row[18]) {
-      sendAndreNotification(booking);
+      sendVendedoraNotification(booking);
       sa.getRange(rowNum, 19).setValue(nowIso());
     }
 
