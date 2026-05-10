@@ -852,7 +852,9 @@ function doGet(e) {
           instagram:           r[10],
           instagramBailarina:  r[11],
           nomeBailarina:       r[12],
+          stripeSession:       r[13],
           status:              r[15],
+          createdAt:           r[16] ? (typeof r[16] === 'string' ? r[16] : r[16].toISOString()) : '',
         }));
       }
     } else if (action === 'ping') {

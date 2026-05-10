@@ -33,8 +33,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (!auth) return res.status(401).json({ error: 'Não autorizado' });
 
   try {
-    const url = `${SCRIPT_URL}?action=bookings`;
-    const r   = await fetch(url);
+    const url = `${SCRIPT_URL}?action=bookings&t=${Date.now()}`;
+    const r   = await fetch(url, { cache: 'no-store' });
     const json = await r.json();
     return res.status(200).json(json);
   } catch (err) {
