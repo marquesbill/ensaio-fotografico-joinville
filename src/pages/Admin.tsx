@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import {
-  LogOut, Calendar, List, ChevronLeft, ChevronRight,
+  LogOut, Calendar, List,
   X, AlertCircle, Check, Loader2, RefreshCw, Search,
 } from 'lucide-react';
 
@@ -63,19 +63,31 @@ function fmtTime(t: string) {
   return t.substring(0, 5);
 }
 
-function monthDays(year: number, month: number) {
-  // Returns array of Date objects for the calendar grid (including leading/trailing blanks as null)
-  const first   = new Date(year, month, 1).getDay();  // 0=Sun
-  const total   = new Date(year, month + 1, 0).getDate();
-  const cells: (number | null)[] = [];
-  for (let i = 0; i < first; i++) cells.push(null);
-  for (let d = 1; d <= total; d++) cells.push(d);
-  return cells;
+const RANGE_START = '2026-07-20';
+const RANGE_END   = '2026-08-02';
+const DAY_FROM    = 8;    // 08:00
+const DAY_TO      = 20;   // 20:00
+const SLOT_PX     = 18;   // px per 15-min slot
+const COL_PX      = 108;  // px per day column
+const GUTTER_PX   = 44;   // px for time-label column
+
+function timeToMins(t: string) {
+  const [h, m] = t.split(':').map(Number);
+  return h * 60 + m;
 }
 
-const PT_MONTHS = ['Janeiro','Fevereiro','Março','Abril','Maio','Junho',
-                   'Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
-const PT_DAYS   = ['Dom','Seg','Ter','Qua','Qui','Sex','Sáb'];
+function getRange(): string[] {
+  const out: string[] = [];
+  let d = new Date(RANGE_START + 'T12:00:00Z');
+  const end = new Date(RANGE_END + 'T12:00:00Z');
+  while (d <= end) {
+    out.push(d.toISOString().split('T')[0]);
+    d = new Date(d.getTime() + 86_400_000);
+  }
+  return out;
+}
+
+const PT_WD = ['Dom','Seg','Ter','Qua','Qui','Sex','Sáb'];
 
 /* ─────────────────────────── Login ─────────────────────────── */
 function LoginScreen({ onLogin }: { onLogin: (token: string, user: string) => void }) {
@@ -328,129 +340,140 @@ function Toast({ msg, type, onDone }: { msg: string; type: 'ok' | 'err'; onDone:
   );
 }
 
-/* ─────────────────── Calendar View ─────────────────────────── */
-function CalendarView({
-  bookings,
-  onCancel,
-  onReschedule,
+/* ─────────────────── Timeline View ─────────────────────────── */
+function TimelineView({
+  bookings, onCancel, onReschedule,
 }: {
   bookings: Booking[];
   onCancel: (b: Booking) => void;
   onReschedule: (b: Booking) => void;
 }) {
-  const now   = new Date();
-  const [yr,  setYr]  = useState(now.getFullYear());
-  const [mo,  setMo]  = useState(now.getMonth());
-  const [sel, setSel] = useState<string | null>(null);  // "YYYY-MM-DD"
+  const [sel, setSel] = useState<Booking | null>(null);
 
-  const cells = monthDays(yr, mo);
+  const dates      = getRange();
+  const totalSlots = (DAY_TO - DAY_FROM) * 4;
+  const bodyH      = totalSlots * SLOT_PX;
 
-  // map date string → bookings
   const byDate = bookings.reduce<Record<string, Booking[]>>((acc, b) => {
-    (acc[b.date] ??= []).push(b);
-    return acc;
+    (acc[b.date] ??= []).push(b); return acc;
   }, {});
 
-  function prevMonth() {
-    if (mo === 0) { setMo(11); setYr(yr - 1); } else setMo(mo - 1);
-    setSel(null);
-  }
-  function nextMonth() {
-    if (mo === 11) { setMo(0); setYr(yr + 1); } else setMo(mo + 1);
-    setSel(null);
-  }
-
-  const selBookings = sel ? (byDate[sel] ?? []) : [];
+  const hours = Array.from({ length: DAY_TO - DAY_FROM + 1 }, (_, i) => DAY_FROM + i);
 
   return (
-    <div className="flex gap-6 flex-col lg:flex-row">
-      {/* Calendar grid */}
-      <div className="flex-1">
-        {/* Month header */}
-        <div className="flex items-center justify-between mb-4">
-          <button onClick={prevMonth} className="p-2 rounded-lg hover:bg-gray-100">
-            <ChevronLeft size={18} />
-          </button>
-          <h2 className="text-base font-bold text-[#352D39]">{PT_MONTHS[mo]} {yr}</h2>
-          <button onClick={nextMonth} className="p-2 rounded-lg hover:bg-gray-100">
-            <ChevronRight size={18} />
-          </button>
-        </div>
+    <div>
+      <div className="overflow-x-auto">
+        <div style={{ display: 'flex', minWidth: GUTTER_PX + dates.length * COL_PX }}>
 
-        {/* Day headers */}
-        <div className="grid grid-cols-7 mb-2">
-          {PT_DAYS.map(d => (
-            <div key={d} className="text-center text-xs font-semibold text-gray-400 py-1">{d}</div>
-          ))}
-        </div>
+          {/* Time gutter */}
+          <div style={{ width: GUTTER_PX, flexShrink: 0 }} className="sticky left-0 bg-white z-10">
+            <div style={{ height: 48 }} className="border-b border-gray-100" />
+            <div className="relative" style={{ height: bodyH }}>
+              {hours.map(h => (
+                <div key={h}
+                     style={{ position: 'absolute', top: (h - DAY_FROM) * 4 * SLOT_PX - 7, right: 6 }}
+                     className="text-[10px] text-gray-300 leading-none select-none">
+                  {String(h).padStart(2,'0')}:00
+                </div>
+              ))}
+            </div>
+          </div>
 
-        {/* Day cells */}
-        <div className="grid grid-cols-7 gap-1">
-          {cells.map((day, i) => {
-            if (!day) return <div key={i} />;
-            const key = `${yr}-${String(mo + 1).padStart(2,'0')}-${String(day).padStart(2,'0')}`;
-            const bks = byDate[key] ?? [];
-            const isSelected = sel === key;
-            const isToday = key === now.toISOString().split('T')[0];
+          {/* Day columns */}
+          {dates.map(date => {
+            const d       = new Date(date + 'T12:00:00Z');
+            const dow     = d.getUTCDay();
+            const day     = d.getUTCDate();
+            const mon     = d.getUTCMonth() + 1;
+            const weekend = dow === 0 || dow === 6;
+            const dayBks  = (byDate[date] ?? []).filter(b => b.status !== 'Cancelado');
+
             return (
-              <button
-                key={i}
-                onClick={() => setSel(isSelected ? null : key)}
-                className={`relative rounded-xl p-2 min-h-[52px] flex flex-col items-center transition-all border ${
-                  isSelected
-                    ? 'border-[#7a3f8f] bg-purple-50 shadow-sm'
-                    : bks.length > 0
-                    ? 'border-purple-100 bg-purple-50/30 hover:bg-purple-50'
-                    : 'border-transparent hover:bg-gray-50'
-                }`}
-              >
-                <span className={`text-xs font-semibold ${
-                  isToday ? 'bg-[#7a3f8f] text-white rounded-full w-5 h-5 flex items-center justify-center' : 'text-[#352D39]'
-                }`}>{day}</span>
-                {bks.length > 0 && (
-                  <div className="flex flex-wrap gap-0.5 justify-center mt-1">
-                    {bks.slice(0, 4).map((b, j) => (
-                      <span key={j} className={`w-2 h-2 rounded-full ${STATUS_DOT[b.status] ?? 'bg-gray-400'}`} />
-                    ))}
-                    {bks.length > 4 && <span className="text-[9px] text-gray-400">+{bks.length - 4}</span>}
-                  </div>
-                )}
-              </button>
+              <div key={date} style={{ width: COL_PX, flexShrink: 0 }}>
+                {/* Header */}
+                <div className={`h-12 flex flex-col items-center justify-center border-b border-l border-gray-100 ${weekend ? 'bg-purple-50/50' : ''}`}>
+                  <span className="text-[9px] font-medium text-gray-400 uppercase tracking-wider select-none">{PT_WD[dow]}</span>
+                  <span className="text-sm font-bold text-[#352D39]">{String(day).padStart(2,'0')}/{String(mon).padStart(2,'0')}</span>
+                </div>
+
+                {/* Body */}
+                <div className={`relative border-l border-gray-100 ${weekend ? 'bg-purple-50/20' : ''}`}
+                     style={{ height: bodyH }}>
+                  {/* Grid lines */}
+                  {Array.from({ length: totalSlots }, (_, i) => (
+                    <div key={i}
+                         className={`absolute inset-x-0 border-t ${i % 4 === 0 ? 'border-gray-100' : 'border-gray-50'}`}
+                         style={{ top: i * SLOT_PX }}
+                    />
+                  ))}
+
+                  {/* Events */}
+                  {dayBks.map(b => {
+                    const sm     = timeToMins(b.start) - DAY_FROM * 60;
+                    const em     = timeToMins(b.end)   - DAY_FROM * 60;
+                    const top    = (sm / 15) * SLOT_PX + 1;
+                    const height = Math.max((em - sm) / 15 * SLOT_PX - 2, 18);
+                    const cls    = b.status === 'Confirmado'
+                      ? 'bg-green-100 border-green-300 text-green-800'
+                      : 'bg-amber-50 border-amber-300 text-amber-700';
+                    return (
+                      <button key={b.id}
+                              style={{ position: 'absolute', top, left: 3, right: 3, height }}
+                              className={`rounded border ${cls} px-1.5 py-0.5 text-left overflow-hidden w-full hover:brightness-95 transition-all ${sel?.id === b.id ? 'ring-2 ring-offset-1 ring-[#7a3f8f]' : ''}`}
+                              onClick={() => setSel(sel?.id === b.id ? null : b)}>
+                        <p className="text-[10px] font-semibold leading-tight truncate">{b.name}</p>
+                        {height > 30 && (
+                          <p className="text-[9px] opacity-70 leading-tight truncate">{b.start} · {b.package}</p>
+                        )}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
             );
           })}
         </div>
+      </div>
 
-        {/* Legend */}
-        <div className="flex gap-4 mt-4 text-xs text-gray-500">
-          <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-full bg-green-500" />Confirmado</span>
-          <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-full bg-amber-400" />Pendente</span>
-          <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-full bg-gray-400" />Cancelado</span>
+      {/* Legend */}
+      <div className="flex gap-4 mt-3 text-xs text-gray-400">
+        <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-sm bg-green-300" />Confirmado</span>
+        <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-sm bg-amber-300" />Pendente</span>
+      </div>
+
+      {/* Detail card */}
+      {sel && (
+        <div className="mt-4 bg-white border border-gray-200 rounded-xl p-4 shadow-sm max-w-xs">
+          <div className="flex items-start justify-between mb-2">
+            <div>
+              <p className="font-semibold text-sm text-[#352D39]">{sel.name}</p>
+              <p className="text-xs text-gray-500 mt-0.5">
+                {fmtDate(sel.date)} · {fmtTime(sel.start)}–{fmtTime(sel.end)} · {sel.package}
+              </p>
+              {sel.email    && <p className="text-xs text-gray-400 mt-0.5">{sel.email}</p>}
+              {sel.whatsapp && <p className="text-xs text-gray-400">{sel.whatsapp}</p>}
+              {sel.price != null && (
+                <p className="text-xs font-medium text-[#352D39] mt-1">
+                  R$ {Number(sel.price).toFixed(2).replace('.', ',')}
+                </p>
+              )}
+            </div>
+            <button onClick={() => setSel(null)} className="text-gray-300 hover:text-gray-500 ml-2 shrink-0">
+              <X size={14} />
+            </button>
+          </div>
+          <div className="flex gap-2 mt-3">
+            <button onClick={() => { onReschedule(sel); setSel(null); }}
+                    className="flex-1 text-xs py-1.5 rounded-lg border border-[#7a3f8f] text-[#7a3f8f] hover:bg-purple-50 font-medium">
+              Remarcar
+            </button>
+            <button onClick={() => { onCancel(sel); setSel(null); }}
+                    className="flex-1 text-xs py-1.5 rounded-lg border border-red-200 text-red-500 hover:bg-red-50 font-medium">
+              Cancelar
+            </button>
+          </div>
         </div>
-      </div>
-
-      {/* Day detail */}
-      <div className="lg:w-80">
-        {sel ? (
-          <div>
-            <h3 className="text-sm font-bold text-[#352D39] mb-3">{fmtDate(sel)}</h3>
-            {selBookings.length === 0 ? (
-              <p className="text-sm text-gray-400">Nenhum agendamento neste dia.</p>
-            ) : (
-              <div className="space-y-3">
-                {selBookings
-                  .sort((a, b) => a.start.localeCompare(b.start))
-                  .map(b => (
-                    <BookingCard key={b.id} booking={b} onCancel={onCancel} onReschedule={onReschedule} />
-                  ))}
-              </div>
-            )}
-          </div>
-        ) : (
-          <div className="flex items-center justify-center h-32 text-sm text-gray-400">
-            Selecione um dia no calendário
-          </div>
-        )}
-      </div>
+      )}
     </div>
   );
 }
@@ -639,7 +662,7 @@ function Dashboard({
   user: string;
   onLogout: () => void;
 }) {
-  const [view,     setView]     = useState<'calendar' | 'list'>('calendar');
+  const [view,     setView]     = useState<'timeline' | 'list'>('timeline');
   const [bookings, setBookings] = useState<Booking[]>([]);
   const [loading,  setLoading]  = useState(true);
   const [error,    setError]    = useState('');
@@ -782,15 +805,15 @@ function Dashboard({
         {/* View toggle */}
         <div className="flex gap-2 mb-6">
           <button
-            onClick={() => setView('calendar')}
+            onClick={() => setView('timeline')}
             className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
-              view === 'calendar'
+              view === 'timeline'
                 ? 'text-white shadow-sm'
                 : 'bg-white border border-gray-200 text-gray-600 hover:bg-gray-50'
             }`}
-            style={view === 'calendar' ? { background: 'linear-gradient(135deg,#7a3f8f,#e87060)' } : {}}
+            style={view === 'timeline' ? { background: 'linear-gradient(135deg,#7a3f8f,#e87060)' } : {}}
           >
-            <Calendar size={15} /> Calendário
+            <Calendar size={15} /> Agenda
           </button>
           <button
             onClick={() => setView('list')}
@@ -816,8 +839,8 @@ function Dashboard({
           </div>
         ) : (
           <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6">
-            {view === 'calendar'
-              ? <CalendarView bookings={bookings} onCancel={setCancelTarget} onReschedule={setRescheduleTarget} />
+            {view === 'timeline'
+              ? <TimelineView bookings={bookings} onCancel={setCancelTarget} onReschedule={setRescheduleTarget} />
               : <BookingList  bookings={bookings} onCancel={setCancelTarget} onReschedule={setRescheduleTarget} />
             }
           </div>
