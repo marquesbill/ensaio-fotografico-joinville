@@ -775,6 +775,32 @@ function cancelBooking(data) {
   return { ok: true };
 }
 
+function editBooking(data) {
+  const { bookingId, name, email, whatsapp,
+          instagram, instagramBailarina, nomeBailarina } = data;
+  const sa = getSheet('Agendamentos');
+  if (!sa || sa.getLastRow() < 2) throw new Error('Planilha vazia');
+
+  const numCols = Math.max(sa.getLastColumn(), 18);
+  const rows    = sa.getRange(2, 1, sa.getLastRow() - 1, numCols).getValues();
+  const idx     = rows.findIndex(r => r[0] === bookingId);
+  if (idx < 0) throw new Error('Booking não encontrado: ' + bookingId);
+
+  const shRow = idx + 2;
+  sa.getRange(shRow, 8).setValue(name);
+  sa.getRange(shRow, 9).setValue(email);
+  sa.getRange(shRow, 10).setValue(whatsapp            || '');
+  sa.getRange(shRow, 11).setValue(instagram           || '');
+  sa.getRange(shRow, 12).setValue(instagramBailarina  || '');
+  sa.getRange(shRow, 13).setValue(nomeBailarina       || '');
+  sa.getRange(shRow, 18).setValue(nowIso());
+
+  buildClientesSheet();
+  addLog('EDITADO', bookingId, 'Dados atualizados: ' + name, 'admin-edit');
+
+  return { ok: true, bookingId: bookingId };
+}
+
 function releasePendingSlots() {
   // Agora delegado para processReminders (mantido por compatibilidade)
   processReminders();
@@ -851,6 +877,7 @@ function doPost(e) {
     if      (action === 'createPending')   result = createPending(body);
     else if (action === 'confirmBooking')  result = confirmBooking(body);
     else if (action === 'cancelBooking')   result = cancelBooking(body);
+    else if (action === 'editBooking')     result = editBooking(body);
     else if (action === 'releasePending')  result = releasePendingSlots();
     else if (action === 'initSheets')      { initSheets(); result = { ok: true }; }
     else if (action === 'refreshCalendar') { refreshCalendar(); result = { ok: true }; }

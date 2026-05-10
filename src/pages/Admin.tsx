@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import {
   LogOut, Calendar, List,
-  X, AlertCircle, Check, Loader2, RefreshCw, Search, Link2, CheckCircle, Copy, Plus,
+  X, AlertCircle, Check, Loader2, RefreshCw, Search, Link2, CheckCircle, Copy, Plus, Pencil,
 } from 'lucide-react';
 
 /* ─────────────────────────── types ─────────────────────────── */
@@ -516,6 +516,113 @@ function NewBookingModal({
   );
 }
 
+/* ─────────────────── Edit Booking Modal ────────────────────── */
+function EditBookingModal({
+  booking, onClose, onSubmit, loading,
+}: {
+  booking: Booking;
+  onClose: () => void;
+  onSubmit: (data: { name: string; email: string; whatsapp: string; instagram: string; instagramBailarina: string; nomeBailarina: string }) => void;
+  loading: boolean;
+}) {
+  const [name,               setName]               = useState(booking.name);
+  const [email,              setEmail]              = useState(booking.email ?? '');
+  const [whatsapp,           setWhatsapp]           = useState(booking.whatsapp ?? '');
+  const [instagram,          setInstagram]          = useState(booking.instagram ?? '');
+  const [instagramBailarina, setInstagramBailarina] = useState(booking.instagramBailarina ?? '');
+  const [nomeBailarina,      setNomeBailarina]      = useState(booking.nomeBailarina ?? '');
+
+  const canSave = name.trim() && email.trim();
+
+  return (
+    <Overlay onClose={onClose}>
+      <div className="flex items-center gap-3 mb-5">
+        <div className="w-10 h-10 rounded-full flex items-center justify-center shrink-0"
+             style={{ background: 'linear-gradient(135deg,#7a3f8f,#e87060)' }}>
+          <Pencil size={16} className="text-white" />
+        </div>
+        <div>
+          <h2 className="text-base font-bold text-[#352D39]">Editar Agendamento</h2>
+          <p className="text-xs text-gray-400">
+            {fmtDate(booking.date)} · {fmtTime(booking.start)}–{fmtTime(booking.end)} · {booking.package}
+          </p>
+        </div>
+      </div>
+
+      <div className="space-y-3">
+        <div className="grid grid-cols-2 gap-3">
+          <div className="col-span-2">
+            <label className="block text-xs font-semibold text-gray-600 mb-1 uppercase tracking-wide">Nome *</label>
+            <input
+              className="w-full border border-gray-200 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-purple-200"
+              value={name} onChange={e => setName(e.target.value)}
+            />
+          </div>
+          <div>
+            <label className="block text-xs font-semibold text-gray-600 mb-1 uppercase tracking-wide">E-mail *</label>
+            <input
+              type="email"
+              className="w-full border border-gray-200 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-purple-200"
+              value={email} onChange={e => setEmail(e.target.value)}
+            />
+          </div>
+          <div>
+            <label className="block text-xs font-semibold text-gray-600 mb-1 uppercase tracking-wide">WhatsApp</label>
+            <input
+              className="w-full border border-gray-200 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-purple-200"
+              value={whatsapp} onChange={e => setWhatsapp(e.target.value)} placeholder="(00) 00000-0000"
+            />
+          </div>
+          <div className="col-span-2">
+            <label className="block text-xs font-semibold text-gray-600 mb-1 uppercase tracking-wide">Instagram do cliente</label>
+            <input
+              className="w-full border border-gray-200 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-purple-200"
+              value={instagram} onChange={e => setInstagram(e.target.value)} placeholder="@usuario"
+            />
+          </div>
+        </div>
+
+        <div className="grid grid-cols-2 gap-3">
+          <div>
+            <label className="block text-xs font-semibold text-gray-600 mb-1 uppercase tracking-wide">Nome da bailarina</label>
+            <input
+              className="w-full border border-gray-200 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-purple-200"
+              value={nomeBailarina} onChange={e => setNomeBailarina(e.target.value)} placeholder="Nome completo"
+            />
+          </div>
+          <div>
+            <label className="block text-xs font-semibold text-gray-600 mb-1 uppercase tracking-wide">Instagram da bailarina</label>
+            <input
+              className="w-full border border-gray-200 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-purple-200"
+              value={instagramBailarina} onChange={e => setInstagramBailarina(e.target.value)} placeholder="@bailarina"
+            />
+          </div>
+        </div>
+      </div>
+
+      <p className="text-[10px] text-gray-400 mt-3">
+        Para alterar data, horário ou pacote use o botão <strong>Remarcar</strong>.
+      </p>
+
+      <div className="flex gap-3 mt-4">
+        <button
+          onClick={onClose}
+          className="flex-1 border border-gray-200 rounded-lg py-2.5 text-sm text-gray-600 hover:bg-gray-50"
+        >Cancelar</button>
+        <button
+          onClick={() => canSave && onSubmit({ name: name.trim(), email: email.trim(), whatsapp: whatsapp.trim(), instagram: instagram.trim(), instagramBailarina: instagramBailarina.trim(), nomeBailarina: nomeBailarina.trim() })}
+          disabled={!canSave || loading}
+          className="flex-1 text-white rounded-lg py-2.5 text-sm font-semibold disabled:opacity-50 flex items-center justify-center gap-2"
+          style={{ background: 'linear-gradient(135deg,#7a3f8f,#e87060)' }}
+        >
+          {loading ? <Loader2 size={14} className="animate-spin" /> : <Check size={14} />}
+          Salvar alterações
+        </button>
+      </div>
+    </Overlay>
+  );
+}
+
 /* ─────────────────── Payment Link Modal ────────────────────── */
 function PaymentLinkModal({ url, onClose }: { url: string; onClose: () => void }) {
   const [copied, setCopied] = useState(false);
@@ -577,13 +684,14 @@ function Toast({ msg, type, onDone }: { msg: string; type: 'ok' | 'err'; onDone:
 
 /* ─────────────────── Timeline View ─────────────────────────── */
 function TimelineView({
-  bookings, onCancel, onReschedule, onGetPaymentLink, onConfirmPayment,
+  bookings, onCancel, onReschedule, onGetPaymentLink, onConfirmPayment, onEdit,
 }: {
   bookings: Booking[];
   onCancel: (b: Booking) => void;
   onReschedule: (b: Booking) => void;
   onGetPaymentLink: (b: Booking) => void;
   onConfirmPayment: (b: Booking) => void;
+  onEdit: (b: Booking) => void;
 }) {
   const [sel, setSel]       = useState<Booking | null>(null);
   const [slotPx, setSlotPx] = useState(SLOT_PX);
@@ -729,6 +837,10 @@ function TimelineView({
             </div>
           )}
           <div className="flex gap-2 mt-2">
+            <button onClick={() => { onEdit(sel); setSel(null); }}
+                    className="flex-1 text-xs py-1.5 rounded-lg border border-[#7a3f8f] text-[#7a3f8f] hover:bg-purple-50 font-medium flex items-center justify-center gap-1">
+              <Pencil size={10} /> Editar
+            </button>
             <button onClick={() => { onReschedule(sel); setSel(null); }}
                     className="flex-1 text-xs py-1.5 rounded-lg border border-gray-200 text-gray-500 hover:bg-gray-50 font-medium">
               Remarcar
@@ -746,13 +858,14 @@ function TimelineView({
 
 /* ─────────────────── BookingCard ───────────────────────────── */
 function BookingCard({
-  booking, onCancel, onReschedule, onGetPaymentLink, onConfirmPayment,
+  booking, onCancel, onReschedule, onGetPaymentLink, onConfirmPayment, onEdit,
 }: {
   booking: Booking;
   onCancel: (b: Booking) => void;
   onReschedule: (b: Booking) => void;
   onGetPaymentLink: (b: Booking) => void;
   onConfirmPayment: (b: Booking) => void;
+  onEdit: (b: Booking) => void;
 }) {
   const active  = booking.status !== 'Cancelado';
   const pending = booking.status === 'Pendente';
@@ -790,6 +903,10 @@ function BookingCard({
       {active && (
         <div className="flex gap-2 mt-2">
           <button
+            onClick={() => onEdit(booking)}
+            className="flex-1 text-xs py-1.5 rounded-lg border border-[#7a3f8f] text-[#7a3f8f] font-semibold hover:bg-purple-50 transition-colors flex items-center justify-center gap-1"
+          ><Pencil size={10} /> Editar</button>
+          <button
             onClick={() => onReschedule(booking)}
             className="flex-1 text-xs py-1.5 rounded-lg border border-current font-semibold hover:bg-white/60 transition-colors"
           >Remarcar</button>
@@ -810,12 +927,14 @@ function BookingList({
   onReschedule,
   onGetPaymentLink,
   onConfirmPayment,
+  onEdit,
 }: {
   bookings: Booking[];
   onCancel: (b: Booking) => void;
   onReschedule: (b: Booking) => void;
   onGetPaymentLink: (b: Booking) => void;
   onConfirmPayment: (b: Booking) => void;
+  onEdit: (b: Booking) => void;
 }) {
   const [search, setSearch] = useState('');
   const [status, setStatus] = useState('');
@@ -916,6 +1035,10 @@ function BookingList({
                         ><CheckCircle size={11} /> Confirmar pgmto</button>
                       </>)}
                       <button
+                        onClick={() => onEdit(b)}
+                        className="text-xs px-2.5 py-1.5 rounded-lg border border-[#7a3f8f] text-[#7a3f8f] hover:bg-purple-50 font-medium flex items-center gap-1"
+                      ><Pencil size={11} /> Editar</button>
+                      <button
                         onClick={() => onReschedule(b)}
                         className="text-xs px-2.5 py-1.5 rounded-lg border border-gray-200 text-gray-500 hover:bg-gray-50 font-medium"
                       >Remarcar</button>
@@ -943,7 +1066,7 @@ function BookingList({
       <div className="md:hidden space-y-3">
         {filtered.map(b => (
           <BookingCard key={b.id} booking={b} onCancel={onCancel} onReschedule={onReschedule}
-                       onGetPaymentLink={onGetPaymentLink} onConfirmPayment={onConfirmPayment} />
+                       onGetPaymentLink={onGetPaymentLink} onConfirmPayment={onConfirmPayment} onEdit={onEdit} />
         ))}
         {filtered.length === 0 && (
           <p className="text-center text-sm text-gray-400 py-8">Nenhum agendamento encontrado</p>
@@ -968,6 +1091,7 @@ function Dashboard({
 
   const [cancelTarget,     setCancelTarget]     = useState<Booking | null>(null);
   const [rescheduleTarget, setRescheduleTarget] = useState<Booking | null>(null);
+  const [editTarget,       setEditTarget]       = useState<Booking | null>(null);
   const [actionLoading,    setActionLoading]    = useState(false);
   const [toast,            setToast]            = useState<{ msg: string; type: 'ok' | 'err' } | null>(null);
   const [paymentLinkUrl,   setPaymentLinkUrl]   = useState<string | null>(null);
@@ -1073,6 +1197,27 @@ function Dashboard({
       await fetchBookings();
     } catch (e) {
       setToast({ msg: e instanceof Error ? e.message : 'Erro ao criar agendamento', type: 'err' });
+    } finally {
+      setActionLoading(false);
+    }
+  }
+
+  async function handleEditBooking(
+    booking: Booking,
+    data: { name: string; email: string; whatsapp: string; instagram: string; instagramBailarina: string; nomeBailarina: string },
+  ) {
+    setActionLoading(true);
+    try {
+      const r = await fetch(`${API}/api/admin-edit-booking`, {
+        method: 'POST', headers,
+        body: JSON.stringify({ bookingId: booking.id, ...data }),
+      });
+      if (!r.ok) throw new Error((await r.json()).error || 'Erro');
+      setToast({ msg: `Agendamento de ${data.name} atualizado`, type: 'ok' });
+      setEditTarget(null);
+      await fetchBookings();
+    } catch (e) {
+      setToast({ msg: e instanceof Error ? e.message : 'Erro ao editar', type: 'err' });
     } finally {
       setActionLoading(false);
     }
@@ -1233,9 +1378,9 @@ function Dashboard({
             <div className={`h-full p-5 ${view === 'timeline' ? 'overflow-hidden' : 'overflow-auto'}`}>
               {view === 'timeline'
                 ? <TimelineView bookings={bookings} onCancel={setCancelTarget} onReschedule={setRescheduleTarget}
-                                onGetPaymentLink={handleGetPaymentLink} onConfirmPayment={handleConfirmPayment} />
+                                onGetPaymentLink={handleGetPaymentLink} onConfirmPayment={handleConfirmPayment} onEdit={setEditTarget} />
                 : <BookingList  bookings={bookings} onCancel={setCancelTarget} onReschedule={setRescheduleTarget}
-                                onGetPaymentLink={handleGetPaymentLink} onConfirmPayment={handleConfirmPayment} />
+                                onGetPaymentLink={handleGetPaymentLink} onConfirmPayment={handleConfirmPayment} onEdit={setEditTarget} />
               }
             </div>
           )}
@@ -1266,6 +1411,14 @@ function Dashboard({
           loading={actionLoading}
         />
       )}
+      {editTarget && (
+        <EditBookingModal
+          booking={editTarget}
+          onClose={() => setEditTarget(null)}
+          onSubmit={data => handleEditBooking(editTarget, data)}
+          loading={actionLoading}
+        />
+      )}
 
       {/* Payment link modal */}
       {paymentLinkUrl && (
@@ -1273,7 +1426,7 @@ function Dashboard({
       )}
 
       {/* Action loading overlay (for get-payment-link / confirm-payment, not modals) */}
-      {actionLoading && !cancelTarget && !rescheduleTarget && !showNewBooking && (
+      {actionLoading && !cancelTarget && !rescheduleTarget && !editTarget && !showNewBooking && (
         <div className="fixed inset-0 z-50 flex items-center justify-center"
              style={{ background: 'rgba(0,0,0,0.25)' }}>
           <div className="bg-white rounded-2xl px-8 py-6 shadow-2xl flex items-center gap-3">
