@@ -84,7 +84,7 @@ function useCountdown(targetDate: Date) {
 }
 
 // ⚠️ ATENÇÃO: Atualize esta data conforme necessário
-const PROMO_DEADLINE = new Date('2026-05-12T23:59:59');
+const PROMO_DEADLINE = new Date('2026-05-15T23:59:59');
 
 function CountdownTimer() {
   const { days, hours, minutes, seconds } = useCountdown(PROMO_DEADLINE);
