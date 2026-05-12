@@ -748,7 +748,7 @@ function TimelineView({
             const day     = d.getUTCDate();
             const mon     = d.getUTCMonth() + 1;
             const weekend = dow === 0 || dow === 6;
-            const dayBks  = (byDate[date] ?? []).filter(b => b.status !== 'Cancelado');
+            const dayBks  = (byDate[date] ?? []).filter(b => !['Cancelado','Expirado'].includes((b.status ?? '').trim()));
 
             return (
               <div key={date} style={{ width: COL_PX, flexShrink: 0 }}>
@@ -775,9 +775,9 @@ function TimelineView({
                     const em     = timeToMins(b.end)   - DAY_FROM * 60;
                     const top    = (sm / 15) * slotPx + 1;
                     const height = Math.max((em - sm) / 15 * slotPx - 2, 18);
-                    const cls    = b.status === 'Confirmado'
+                    const cls    = (b.status ?? '').trim() === 'Confirmado'
                       ? 'bg-green-100 border-green-300 text-green-800'
-                      : 'bg-amber-50 border-amber-300 text-amber-700';
+                      : 'bg-red-100 border-red-300 text-red-800';
                     return (
                       <button key={b.id}
                               style={{ position: 'absolute', top, left: 3, right: 3, height }}
@@ -797,7 +797,7 @@ function TimelineView({
       {/* Legend */}
       <div className="flex gap-4 mt-3 text-xs text-gray-400">
         <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-sm bg-green-300" />Confirmado</span>
-        <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-sm bg-amber-300" />Pendente</span>
+        <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-sm bg-red-300" />Pendente</span>
       </div>
 
       {/* Detail card */}
@@ -1122,6 +1122,43 @@ function Dashboard({
 
   useEffect(() => { fetchBookings(); }, [fetchBookings]);
 
+  // Auto-refresh: a cada 15s, refaz o fetch em background.
+  // Pausa quando: aba escondida, modal aberto, ou ação em andamento.
+  useEffect(() => {
+    const POLL_MS = 15_000;
+    const isBusy = () =>
+      !!cancelTarget || !!rescheduleTarget || !!editTarget ||
+      showNewBooking || actionLoading || !!paymentLinkUrl ||
+      document.visibilityState !== 'visible';
+
+    const silentRefetch = async () => {
+      if (isBusy()) return;
+      try {
+        const r = await fetch(`${API}/api/admin-bookings`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        if (!r.ok) return;
+        const json = await r.json();
+        const raw: Booking[] = Array.isArray(json) ? json : (json.bookings ?? []);
+        setBookings(raw.map(b => ({
+          ...b,
+          date:  b.date?.includes('T')  ? b.date.split('T')[0]            : (b.date  ?? ''),
+          start: b.start?.includes('T') ? b.start.split('T')[1].slice(0,5) : (b.start ?? ''),
+          end:   b.end?.includes('T')   ? b.end.split('T')[1].slice(0,5)   : (b.end   ?? ''),
+        })));
+      } catch { /* silent */ }
+    };
+
+    const id = window.setInterval(silentRefetch, POLL_MS);
+    // Refresh imediato quando a aba volta a ficar visível
+    const onVis = () => { if (document.visibilityState === 'visible' && !isBusy()) silentRefetch(); };
+    document.addEventListener('visibilitychange', onVis);
+    return () => {
+      window.clearInterval(id);
+      document.removeEventListener('visibilitychange', onVis);
+    };
+  }, [token, cancelTarget, rescheduleTarget, editTarget, showNewBooking, actionLoading, paymentLinkUrl]);
+
   async function handleCancel(booking: Booking, reason: string) {
     setActionLoading(true);
     try {
@@ -1276,9 +1313,11 @@ function Dashboard({
     }
   }
 
-  const confirmed = bookings.filter(b => b.status === 'Confirmado').length;
-  const pending   = bookings.filter(b => b.status === 'Pendente').length;
-  const cancelled = bookings.filter(b => b.status === 'Cancelado').length;
+  const norm = (s?: string) => (s ?? '').trim().toLowerCase();
+  const confirmed = bookings.filter(b => norm(b.status) === 'confirmado').length;
+  const pending   = bookings.filter(b => norm(b.status) === 'pendente').length;
+  const cancelled = bookings.filter(b => norm(b.status) === 'cancelado').length;
+  const expired   = bookings.filter(b => norm(b.status) === 'expirado').length;
 
   return (
     <div className="h-screen flex flex-col bg-gray-50 overflow-hidden">
@@ -1323,11 +1362,12 @@ function Dashboard({
 
       <main className="flex-1 overflow-hidden flex flex-col max-w-7xl w-full mx-auto px-4 py-4">
         {/* Stats */}
-        <div className="grid grid-cols-3 gap-3 mb-3 shrink-0">
+        <div className="grid grid-cols-4 gap-3 mb-3 shrink-0">
           {[
-            { label: 'Confirmados', value: confirmed, color: 'text-green-600', bg: 'bg-green-50', border: 'border-green-100' },
-            { label: 'Pendentes',   value: pending,   color: 'text-amber-600', bg: 'bg-amber-50',  border: 'border-amber-100'  },
-            { label: 'Cancelados',  value: cancelled, color: 'text-gray-500',  bg: 'bg-gray-50',   border: 'border-gray-100'   },
+            { label: 'Confirmados', value: confirmed, color: 'text-green-600', bg: 'bg-green-50',  border: 'border-green-100' },
+            { label: 'Pendentes',   value: pending,   color: 'text-red-600',   bg: 'bg-red-50',    border: 'border-red-100'   },
+            { label: 'Cancelados',  value: cancelled, color: 'text-gray-500',  bg: 'bg-gray-50',   border: 'border-gray-100'  },
+            { label: 'Expirados',   value: expired,   color: 'text-orange-500',bg: 'bg-orange-50', border: 'border-orange-100'},
           ].map(s => (
             <div key={s.label} className={`${s.bg} border ${s.border} rounded-xl px-4 py-3 text-center`}>
               <p className={`text-xl font-bold ${s.color}`}>{s.value}</p>
