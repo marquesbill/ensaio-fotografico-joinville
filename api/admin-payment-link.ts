@@ -59,9 +59,15 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (!bookingId || !date || !time || !packageKey || !name || !email) {
     return res.status(400).json({ error: 'Campos obrigatórios faltando' });
   }
-  const nb = Number(numBailarinas);
-  if (!Number.isInteger(nb) || nb < 1 || nb > 9) {
-    return res.status(400).json({ error: 'Nº Bailarinas deve ser um inteiro entre 1 e 9' });
+  // numBailarinas opcional para clientes do painel ainda em cache antigo;
+  // default = 1 quando não enviado.
+  let nb = 1;
+  if (numBailarinas !== undefined && numBailarinas !== null && String(numBailarinas) !== '') {
+    const parsed = Number(numBailarinas);
+    if (!Number.isInteger(parsed) || parsed < 1 || parsed > 9) {
+      return res.status(400).json({ error: 'Nº Bailarinas deve ser um inteiro entre 1 e 9' });
+    }
+    nb = parsed;
   }
 
   const pkg = PACKAGES[packageKey];

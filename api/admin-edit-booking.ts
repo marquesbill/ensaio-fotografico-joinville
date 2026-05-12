@@ -49,9 +49,14 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (!bookingId || !name || !email) {
     return res.status(400).json({ error: 'Campos obrigatórios faltando' });
   }
-  const nb = Number(numBailarinas);
-  if (!Number.isInteger(nb) || nb < 1 || nb > 9) {
-    return res.status(400).json({ error: 'Nº Bailarinas deve ser um inteiro entre 1 e 9' });
+  // numBailarinas opcional aqui — só valida se enviado.
+  // Se ausente, o Apps Script (editBooking) não toca na coluna.
+  let nb: number | undefined;
+  if (numBailarinas !== undefined && numBailarinas !== null && String(numBailarinas) !== '') {
+    nb = Number(numBailarinas);
+    if (!Number.isInteger(nb) || nb < 1 || nb > 9) {
+      return res.status(400).json({ error: 'Nº Bailarinas deve ser um inteiro entre 1 e 9' });
+    }
   }
 
   try {
@@ -67,7 +72,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         instagram:          instagram          || '',
         instagramBailarina: instagramBailarina || '',
         nomeBailarina:      nomeBailarina      || '',
-        numBailarinas:      nb,
+        ...(nb !== undefined ? { numBailarinas: nb } : {}),
       }),
     });
 
