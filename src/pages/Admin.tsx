@@ -646,7 +646,21 @@ function EditBookingModal({
           className="flex-1 border border-gray-200 rounded-lg py-2.5 text-sm text-gray-600 hover:bg-gray-50"
         >Cancelar</button>
         <button
-          onClick={() => canSave && onSubmit({ name: name.trim(), email: email.trim(), whatsapp: whatsapp.trim(), instagram: instagram.trim(), instagramBailarina: instagramBailarina.trim(), nomeBailarina: nomeBailarina.trim(), numBailarinas })}
+          onClick={() => {
+            // eslint-disable-next-line no-console
+            console.log('[edit-save] click', { canSave, loading, name: name.trim(), email: email.trim(), numBailarinas });
+            if (!canSave) {
+              alert('Não foi possível salvar. Verifique que Nome e E-mail estão preenchidos.');
+              return;
+            }
+            try {
+              onSubmit({ name: name.trim(), email: email.trim(), whatsapp: whatsapp.trim(), instagram: instagram.trim(), instagramBailarina: instagramBailarina.trim(), nomeBailarina: nomeBailarina.trim(), numBailarinas });
+            } catch (err) {
+              // eslint-disable-next-line no-console
+              console.error('[edit-save] threw synchronously', err);
+              alert('Erro inesperado ao chamar salvar: ' + (err instanceof Error ? err.message : String(err)));
+            }
+          }}
           disabled={!canSave || loading}
           className="flex-1 text-white rounded-lg py-2.5 text-sm font-semibold disabled:opacity-50 flex items-center justify-center gap-2"
           style={{ background: 'linear-gradient(135deg,#7a3f8f,#e87060)' }}
