@@ -41,7 +41,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   const auth = verifyToken(req.headers.authorization as string | undefined);
   if (!auth) return res.status(401).json({ error: 'Não autorizado' });
 
-  const { bookingId, name, email, whatsapp, instagram, instagramBailarina, nomeBailarina,
+  const { bookingId, name, email, whatsapp, instagram, instagramBailarina, nomeBailarina, numBailarinas,
           date, time, packageKey } = req.body as {
     bookingId:           string;
     name:                string;
@@ -50,6 +50,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     instagram?:          string;
     instagramBailarina?: string;
     nomeBailarina?:      string;
+    numBailarinas?:      number;
     date:                string;
     time:                string;
     packageKey:          PkgKey;
@@ -57,6 +58,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
   if (!bookingId || !date || !time || !packageKey || !name || !email) {
     return res.status(400).json({ error: 'Campos obrigatórios faltando' });
+  }
+  const nb = Number(numBailarinas);
+  if (!Number.isInteger(nb) || nb < 1 || nb > 9) {
+    return res.status(400).json({ error: 'Nº Bailarinas deve ser um inteiro entre 1 e 9' });
   }
 
   const pkg = PACKAGES[packageKey];
@@ -87,7 +92,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         },
         auto_return:     'approved',
         payment_methods: { installments: 6 },
-        external_reference: JSON.stringify({ date, time, packageKey, name, email, whatsapp }),
+        external_reference: JSON.stringify({ date, time, packageKey, name, email, whatsapp, numBailarinas: nb }),
         notification_url:   `${SITE_URL}/api/webhook`,
         expires:              true,
         expiration_date_to:   expiry,
@@ -121,6 +126,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         instagram: instagram || '',
         instagramBailarina: instagramBailarina || '',
         nomeBailarina: nomeBailarina || '',
+        numBailarinas: nb,
         stripeSession: pref.id,
         source:        'admin',
       }),

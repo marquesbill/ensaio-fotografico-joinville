@@ -55,7 +55,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   const auth = verifyToken(req.headers.authorization as string | undefined);
   if (!auth) return res.status(401).json({ error: 'Não autorizado' });
 
-  const { name, email, whatsapp, instagram, instagramBailarina, nomeBailarina,
+  const { name, email, whatsapp, instagram, instagramBailarina, nomeBailarina, numBailarinas,
           date, time, packageKey, confirm } = req.body as {
     name:                string;
     email:               string;
@@ -63,6 +63,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     instagram?:          string;
     instagramBailarina?: string;
     nomeBailarina?:      string;
+    numBailarinas?:      number;
     date:                string;
     time:                string;
     packageKey:          PkgKey;
@@ -71,6 +72,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
   if (!name || !email || !date || !time || !packageKey) {
     return res.status(400).json({ error: 'Campos obrigatórios faltando' });
+  }
+  const nb = Number(numBailarinas);
+  if (!Number.isInteger(nb) || nb < 1 || nb > 9) {
+    return res.status(400).json({ error: 'Nº Bailarinas deve ser um inteiro entre 1 e 9' });
   }
 
   const pkg = PACKAGES[packageKey];
@@ -121,6 +126,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           instagram: instagram || '',
           instagramBailarina: instagramBailarina || '',
           nomeBailarina: nomeBailarina || '',
+          numBailarinas: nb,
           stripeSession: pref.id,
           source: 'admin',
         }),
@@ -155,6 +161,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         instagram: instagram || '',
         instagramBailarina: instagramBailarina || '',
         nomeBailarina: nomeBailarina || '',
+        numBailarinas: nb,
         stripeSession: sessionId,
         source: 'admin',
       }),

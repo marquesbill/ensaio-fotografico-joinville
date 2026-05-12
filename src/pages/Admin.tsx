@@ -18,6 +18,7 @@ interface Booking {
   instagram?:           string;
   instagramBailarina?:  string;
   nomeBailarina?:       string;
+  numBailarinas?:       number;
   stripeSession?:       string;
   status:               string;   // "Confirmado" | "Pendente" | "Cancelado"
   createdAt?:           string;
@@ -335,7 +336,7 @@ function NewBookingModal({
   onClose, onSubmit, loading,
 }: {
   onClose: () => void;
-  onSubmit: (data: { name: string; email: string; whatsapp: string; instagram: string; instagramBailarina: string; nomeBailarina: string; date: string; time: string; packageKey: string }, confirm: boolean) => void;
+  onSubmit: (data: { name: string; email: string; whatsapp: string; instagram: string; instagramBailarina: string; nomeBailarina: string; numBailarinas: number; date: string; time: string; packageKey: string }, confirm: boolean) => void;
   loading: boolean;
 }) {
   const [name,                setName]                = useState('');
@@ -344,6 +345,7 @@ function NewBookingModal({
   const [instagram,           setInstagram]           = useState('');
   const [instagramBailarina,  setInstagramBailarina]  = useState('');
   const [nomeBailarina,       setNomeBailarina]       = useState('');
+  const [numBailarinas,       setNumBailarinas]       = useState<number>(1);
   const [pkgKey,              setPkgKey]              = useState('lembranca');
   const [date,     setDate]     = useState('');
   const [time,     setTime]     = useState('');
@@ -366,13 +368,15 @@ function NewBookingModal({
       .finally(() => setSlotsLoading(false));
   }, [date, pkgKey]);
 
-  const canSubmit = name.trim() && email.trim() && date && time && pkgKey;
+  const canSubmit = name.trim() && email.trim() && date && time && pkgKey
+                    && Number.isInteger(numBailarinas) && numBailarinas >= 1 && numBailarinas <= 9;
 
   function submit(confirm: boolean) {
     if (!canSubmit) return;
     onSubmit({
       name: name.trim(), email: email.trim(), whatsapp: whatsapp.trim(),
       instagram: instagram.trim(), instagramBailarina: instagramBailarina.trim(), nomeBailarina: nomeBailarina.trim(),
+      numBailarinas,
       date, time, packageKey: pkgKey,
     }, confirm);
   }
@@ -425,8 +429,8 @@ function NewBookingModal({
         </div>
 
         {/* Bailarina */}
-        <div className="grid grid-cols-2 gap-3">
-          <div>
+        <div className="grid grid-cols-3 gap-3">
+          <div className="col-span-2">
             <label className="block text-xs font-semibold text-gray-600 mb-1 uppercase tracking-wide">Nome da bailarina</label>
             <input
               className="w-full border border-gray-200 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-purple-200"
@@ -434,6 +438,19 @@ function NewBookingModal({
             />
           </div>
           <div>
+            <label className="block text-xs font-semibold text-gray-600 mb-1 uppercase tracking-wide">Nº Bailarinas *</label>
+            <input
+              type="number" min={1} max={9} step={1} inputMode="numeric"
+              className="w-full border border-gray-200 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-purple-200"
+              value={numBailarinas}
+              onChange={e => {
+                const v = parseInt(e.target.value, 10);
+                if (Number.isNaN(v)) return setNumBailarinas(1);
+                setNumBailarinas(Math.max(1, Math.min(9, v)));
+              }}
+            />
+          </div>
+          <div className="col-span-3">
             <label className="block text-xs font-semibold text-gray-600 mb-1 uppercase tracking-wide">Instagram da bailarina</label>
             <input
               className="w-full border border-gray-200 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-purple-200"
@@ -522,7 +539,7 @@ function EditBookingModal({
 }: {
   booking: Booking;
   onClose: () => void;
-  onSubmit: (data: { name: string; email: string; whatsapp: string; instagram: string; instagramBailarina: string; nomeBailarina: string }) => void;
+  onSubmit: (data: { name: string; email: string; whatsapp: string; instagram: string; instagramBailarina: string; nomeBailarina: string; numBailarinas: number }) => void;
   loading: boolean;
 }) {
   const [name,               setName]               = useState(booking.name);
@@ -531,8 +548,10 @@ function EditBookingModal({
   const [instagram,          setInstagram]          = useState(booking.instagram ?? '');
   const [instagramBailarina, setInstagramBailarina] = useState(booking.instagramBailarina ?? '');
   const [nomeBailarina,      setNomeBailarina]      = useState(booking.nomeBailarina ?? '');
+  const [numBailarinas,      setNumBailarinas]      = useState<number>(Number(booking.numBailarinas) || 1);
 
-  const canSave = name.trim() && email.trim();
+  const canSave = name.trim() && email.trim()
+                  && Number.isInteger(numBailarinas) && numBailarinas >= 1 && numBailarinas <= 9;
 
   return (
     <Overlay onClose={onClose}>
@@ -582,8 +601,8 @@ function EditBookingModal({
           </div>
         </div>
 
-        <div className="grid grid-cols-2 gap-3">
-          <div>
+        <div className="grid grid-cols-3 gap-3">
+          <div className="col-span-2">
             <label className="block text-xs font-semibold text-gray-600 mb-1 uppercase tracking-wide">Nome da bailarina</label>
             <input
               className="w-full border border-gray-200 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-purple-200"
@@ -591,6 +610,19 @@ function EditBookingModal({
             />
           </div>
           <div>
+            <label className="block text-xs font-semibold text-gray-600 mb-1 uppercase tracking-wide">Nº Bailarinas *</label>
+            <input
+              type="number" min={1} max={9} step={1} inputMode="numeric"
+              className="w-full border border-gray-200 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-purple-200"
+              value={numBailarinas}
+              onChange={e => {
+                const v = parseInt(e.target.value, 10);
+                if (Number.isNaN(v)) return setNumBailarinas(1);
+                setNumBailarinas(Math.max(1, Math.min(9, v)));
+              }}
+            />
+          </div>
+          <div className="col-span-3">
             <label className="block text-xs font-semibold text-gray-600 mb-1 uppercase tracking-wide">Instagram da bailarina</label>
             <input
               className="w-full border border-gray-200 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-purple-200"
@@ -610,7 +642,7 @@ function EditBookingModal({
           className="flex-1 border border-gray-200 rounded-lg py-2.5 text-sm text-gray-600 hover:bg-gray-50"
         >Cancelar</button>
         <button
-          onClick={() => canSave && onSubmit({ name: name.trim(), email: email.trim(), whatsapp: whatsapp.trim(), instagram: instagram.trim(), instagramBailarina: instagramBailarina.trim(), nomeBailarina: nomeBailarina.trim() })}
+          onClick={() => canSave && onSubmit({ name: name.trim(), email: email.trim(), whatsapp: whatsapp.trim(), instagram: instagram.trim(), instagramBailarina: instagramBailarina.trim(), nomeBailarina: nomeBailarina.trim(), numBailarinas })}
           disabled={!canSave || loading}
           className="flex-1 text-white rounded-lg py-2.5 text-sm font-semibold disabled:opacity-50 flex items-center justify-center gap-2"
           style={{ background: 'linear-gradient(135deg,#7a3f8f,#e87060)' }}
@@ -814,6 +846,7 @@ function TimelineView({
               {sel.instagram          && <p className="text-xs text-gray-400">📷 {sel.instagram}</p>}
               {sel.nomeBailarina      && <p className="text-xs text-purple-600 font-medium mt-0.5">💃 {sel.nomeBailarina}</p>}
               {sel.instagramBailarina && <p className="text-xs text-purple-400">📷 {sel.instagramBailarina}</p>}
+              <p className="text-xs text-purple-600 mt-0.5">👯 Nº Bailarinas: <strong>{sel.numBailarinas ?? 1}</strong></p>
               {sel.price != null && (
                 <p className="text-xs font-medium text-[#352D39] mt-1">
                   R$ {Number(sel.price).toFixed(2).replace('.', ',')}
@@ -880,6 +913,7 @@ function BookingCard({
           {booking.instagram          && <p className="text-xs text-gray-400">📷 {booking.instagram}</p>}
           {booking.nomeBailarina      && <p className="text-xs text-purple-600 font-medium mt-0.5">💃 {booking.nomeBailarina}</p>}
           {booking.instagramBailarina && <p className="text-xs text-purple-400">📷 {booking.instagramBailarina}</p>}
+          <p className="text-xs text-purple-600 mt-0.5">👯 Nº Bailarinas: <strong>{booking.numBailarinas ?? 1}</strong></p>
           {booking.price != null && (
             <p className="text-xs font-medium text-[#352D39] mt-1">R$ {Number(booking.price).toFixed(2).replace('.', ',')}</p>
           )}
@@ -1214,7 +1248,7 @@ function Dashboard({
   }
 
   async function handleCreateBooking(
-    data: { name: string; email: string; whatsapp: string; instagram: string; instagramBailarina: string; nomeBailarina: string; date: string; time: string; packageKey: string },
+    data: { name: string; email: string; whatsapp: string; instagram: string; instagramBailarina: string; nomeBailarina: string; numBailarinas: number; date: string; time: string; packageKey: string },
     confirm: boolean,
   ) {
     setActionLoading(true);
@@ -1241,7 +1275,7 @@ function Dashboard({
 
   async function handleEditBooking(
     booking: Booking,
-    data: { name: string; email: string; whatsapp: string; instagram: string; instagramBailarina: string; nomeBailarina: string },
+    data: { name: string; email: string; whatsapp: string; instagram: string; instagramBailarina: string; nomeBailarina: string; numBailarinas: number },
   ) {
     setActionLoading(true);
     try {

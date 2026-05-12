@@ -28,12 +28,11 @@ const CFG = {
   ADMIN_URL:      'https://www.ensaiofotograficoemjoinville.com/admin',
 };
 
-// ── Colunas de "Agendamentos" (índices 0-based para .getValues()) ──
-// 0:ID  1:Data  2:Início  3:Fim  4:Pacote  5:Duração  6:Valor
-// 7:Nome  8:E-mail  9:WhatsApp  10:InstaCliente  11:InstaBailarina  12:NomeBailarina
-// 13:StripeSession  14:StripePayment  15:Status  16:Criado em  17:Atualizado em
-// 18:Rem1Sent(admin48h)  19:Rem2Sent  20:Rem3Sent  21:AndreNotified(site30min)  22:ExpiryWarnSent
-// 23:Source ('site' | 'admin')
+// ── Colunas de "Agendamentos" (referência — leitura/escrita usa header-based detection) ──
+// ID, Data, Início, Fim, Pacote, Duração (min), Valor (R$),
+// Nome, E-mail, WhatsApp, Instagram Cliente, Instagram Bailarina, Nome Bailarina, Nº Bailarinas,
+// Stripe Session, Stripe Payment, Status, Criado em, Atualizado em,
+// Rem1Sent, Rem2Sent, Rem3Sent, AndreNotified, ExpiryWarnSent, Source
 
 // ── Helpers de tempo ──────────────────────────────────────────
 function timeToMin(hhmm) {
@@ -109,9 +108,9 @@ function initSheets() {
 
   const agHeaders = [
     'ID','Data','Início','Fim','Pacote','Duração (min)','Valor (R$)',
-    'Nome','E-mail','WhatsApp','Instagram Cliente','Instagram Bailarina','Nome Bailarina',
+    'Nome','E-mail','WhatsApp','Instagram Cliente','Instagram Bailarina','Nome Bailarina','Nº Bailarinas',
     'Stripe Session','Stripe Payment','Status','Criado em','Atualizado em',
-    'Rem1Sent','Rem2Sent','Rem3Sent','AndreNotified','ExpiryWarnSent'
+    'Rem1Sent','Rem2Sent','Rem3Sent','AndreNotified','ExpiryWarnSent','Source'
   ];
   ensureSheet('Agendamentos', agHeaders, '#4CAF50');
   ensureSheet('Bloqueios',    ['Data','Início','Fim','Motivo'],                '#FF9800');
@@ -141,7 +140,7 @@ function buildClientesSheet() {
   if (!cl) { cl = ss.insertSheet('Clientes'); cl.setTabColor('#009688'); }
   else      { cl.clearContents(); }
 
-  const headers = ['Nome','E-mail','WhatsApp','Instagram','Instagram Bailarina','Nome Bailarina',
+  const headers = ['Nome','E-mail','WhatsApp','Instagram','Instagram Bailarina','Nome Bailarina','Nº Bailarinas',
                    'Último pacote','Última data','Qtd ensaios','Status atual','Último ID'];
   cl.appendRow(headers);
   cl.getRange(1, 1, 1, headers.length)
@@ -199,6 +198,7 @@ function buildClientesSheet() {
       get(latest, 'Instagram Cliente'),
       get(latest, 'Instagram Bailarina'),
       get(latest, 'Nome Bailarina'),
+      Number(get(latest, 'Nº Bailarinas')) || 1,
       pkg.name || pkgKey,
       formatDateBR(dateStr),
       count,
@@ -321,10 +321,13 @@ function _bookingSummaryRows(booking) {
   const valorNum   = parseFloat(booking.valor);
   const valorLabel = isNaN(valorNum) ? booking.valor : 'R$ ' + valorNum.toLocaleString('pt-BR', { minimumFractionDigits: 2 });
   const pkgInfo    = CFG.PACKAGES[booking.pacote] || {};
+  const numB       = Number(booking.numBailarinas) || 1;
   return `
     <table width="100%" style="border-collapse:collapse;">
       <tr><td style="color:#6b7280;padding:5px 0;font-size:13px;">Pacote</td>
           <td style="color:#111827;font-size:13px;font-weight:600;text-align:right;">${pkgInfo.name || booking.pacote}</td></tr>
+      <tr><td style="color:#6b7280;padding:5px 0;font-size:13px;">Nº Bailarinas</td>
+          <td style="color:#111827;font-size:13px;font-weight:600;text-align:right;">${numB}</td></tr>
       <tr><td style="color:#6b7280;padding:5px 0;font-size:13px;">Data</td>
           <td style="color:#111827;font-size:13px;font-weight:600;text-align:right;">${formatDateBR(booking.data)}</td></tr>
       <tr><td style="color:#6b7280;padding:5px 0;font-size:13px;">Horário</td>
@@ -398,6 +401,8 @@ function sendVendedoraNotification(booking) {
           <td style="font-weight:600;font-size:14px;color:#7a3f8f;">${booking.whatsapp}</td></tr>
       <tr><td style="color:#6b7280;padding:6px 0;font-size:13px;">Bailarina</td>
           <td style="font-size:13px;">${booking.nomeBailarina || '—'}</td></tr>
+      <tr><td style="color:#6b7280;padding:6px 0;font-size:13px;">Nº Bailarinas</td>
+          <td style="font-weight:600;font-size:13px;">${Number(booking.numBailarinas) || 1}</td></tr>
       <tr><td style="color:#6b7280;padding:6px 0;font-size:13px;">Pacote</td>
           <td style="font-size:13px;">${pkgInfo.name || booking.pacote}</td></tr>
       <tr><td style="color:#6b7280;padding:6px 0;font-size:13px;">Data</td>
@@ -500,6 +505,8 @@ function sendExpiryWarning(booking) {
           <td style="font-weight:600;font-size:14px;color:#e87060;">${booking.whatsapp}</td></tr>
       <tr><td style="color:#6b7280;padding:6px 0;font-size:13px;">Bailarina</td>
           <td style="font-size:13px;">${booking.nomeBailarina || '—'}</td></tr>
+      <tr><td style="color:#6b7280;padding:6px 0;font-size:13px;">Nº Bailarinas</td>
+          <td style="font-weight:600;font-size:13px;">${Number(booking.numBailarinas) || 1}</td></tr>
       <tr><td style="color:#6b7280;padding:6px 0;font-size:13px;">Pacote</td>
           <td style="font-size:13px;">${pkgInfo.name || booking.pacote}</td></tr>
       <tr><td style="color:#6b7280;padding:6px 0;font-size:13px;">Data</td>
@@ -567,6 +574,7 @@ function processReminders() {
       instagram:          _val(row, cm, 'Instagram Cliente'),
       instagramBailarina: _val(row, cm, 'Instagram Bailarina'),
       nomeBailarina:      _val(row, cm, 'Nome Bailarina'),
+      numBailarinas:      Number(_val(row, cm, 'Nº Bailarinas')) || 1,
       criadoEm: criadoEm,
     };
 
@@ -603,7 +611,7 @@ function processReminders() {
 // ── Booking CRUD ──────────────────────────────────────────────
 function createPending(data) {
   const { date, start, packageKey, name, email, whatsapp,
-          instagram, instagramBailarina, nomeBailarina,
+          instagram, instagramBailarina, nomeBailarina, numBailarinas,
           stripeSession, source } = data;
   const pkg = CFG.PACKAGES[packageKey];
   if (!pkg) throw new Error('Pacote inválido: ' + packageKey);
@@ -635,6 +643,7 @@ function createPending(data) {
   set('Instagram Cliente',     instagram          || '');
   set('Instagram Bailarina',   instagramBailarina || '');
   set('Nome Bailarina',        nomeBailarina      || '');
+  set('Nº Bailarinas',         Number(numBailarinas) || 1);
   set('Stripe Session',        stripeSession      || '',           13);
   set('Stripe Payment',        '',                                 14);
   set('Status',                'Pendente',                         15);
@@ -713,7 +722,7 @@ function cancelBooking(data) {
 
 function editBooking(data) {
   const { bookingId, name, email, whatsapp,
-          instagram, instagramBailarina, nomeBailarina } = data;
+          instagram, instagramBailarina, nomeBailarina, numBailarinas } = data;
   const sa = getSheet('Agendamentos');
   if (!sa || sa.getLastRow() < 2) throw new Error('Planilha vazia');
 
@@ -737,6 +746,9 @@ function editBooking(data) {
   if (cm['Instagram Cliente']    !== undefined) sa.getRange(shRow, cm['Instagram Cliente']    + 1).setValue(instagram          || '');
   if (cm['Instagram Bailarina']  !== undefined) sa.getRange(shRow, cm['Instagram Bailarina']  + 1).setValue(instagramBailarina || '');
   if (cm['Nome Bailarina']       !== undefined) sa.getRange(shRow, cm['Nome Bailarina']       + 1).setValue(nomeBailarina      || '');
+  if (cm['Nº Bailarinas']        !== undefined && numBailarinas !== undefined) {
+    sa.getRange(shRow, cm['Nº Bailarinas'] + 1).setValue(Number(numBailarinas) || 1);
+  }
   sa.getRange(shRow, _col1(cm, 'Atualizado em', 18)).setValue(nowIso());
 
   buildClientesSheet();
@@ -960,6 +972,45 @@ function repairHeaders() {
   return msg;
 }
 
+// ── Migração: adiciona coluna "Nº Bailarinas" ────────────────
+// Insere a coluna logo após "Nome Bailarina" (ou no fim se não achar).
+// Preenche 1 como default em todas as linhas existentes.
+// Idempotente: se a coluna já existir, só retorna sem mexer.
+function migrateAddNumBailarinas() {
+  const sa = getSheet('Agendamentos');
+  if (!sa) throw new Error('Aba Agendamentos não existe');
+
+  const numCols = sa.getLastColumn();
+  const hdrs    = sa.getRange(1, 1, 1, numCols).getValues()[0];
+  if (hdrs.findIndex(h => String(h).trim() === 'Nº Bailarinas') >= 0) {
+    const msg = 'Coluna já existe — nada a fazer';
+    Logger.log(msg); return msg;
+  }
+
+  // Acha a posição (1-indexed) de "Nome Bailarina" para inserir depois
+  const nomeBIdx = hdrs.findIndex(h => String(h).trim() === 'Nome Bailarina');
+  const insertAfter = nomeBIdx >= 0 ? (nomeBIdx + 1) : numCols; // 1-indexed
+  sa.insertColumnAfter(insertAfter);
+  const newColPos = insertAfter + 1;
+
+  // Header
+  sa.getRange(1, newColPos).setValue('Nº Bailarinas')
+    .setFontWeight('bold').setBackground('#1a1a2e').setFontColor('#ffffff');
+
+  // Preenche 1 em todas as linhas de dados
+  const lastRow = sa.getLastRow();
+  if (lastRow >= 2) {
+    const fill = Array.from({ length: lastRow - 1 }, () => [1]);
+    sa.getRange(2, newColPos, fill.length, 1).setValues(fill);
+  }
+
+  const msg = 'Coluna "Nº Bailarinas" inserida na posição ' + newColPos +
+              ' | linhas preenchidas com 1: ' + Math.max(0, lastRow - 1);
+  Logger.log(msg);
+  addLog('MIGRATION_NUMBAILARINAS', '', msg, 'sistema');
+  return msg;
+}
+
 // ── Mover "Agendamentos Arquivados" para o backup mais recente ────
 // e apagar a aba Sheet1 default da planilha principal, se existir.
 function moveArchivedToBackup() {
@@ -1123,6 +1174,7 @@ function doGet(e) {
         const iInsta    = ci['Instagram Cliente']    ?? -1;
         const iInstaB   = ci['Instagram Bailarina']  ?? -1;
         const iNomeB    = ci['Nome Bailarina']       ?? -1;
+        const iNumB     = ci['Nº Bailarinas']        ?? -1;
         const iSession  = ci['Stripe Session']       ?? (iInsta === -1 ? 10 : 13);
         const iStatus   = ci['Status']               ?? (iInsta === -1 ? 12 : 15);
         const iCreated  = ci['Criado em']            ?? (iInsta === -1 ? 13 : 16);
@@ -1143,6 +1195,7 @@ function doGet(e) {
             instagram:           iInsta  >= 0 ? r[iInsta]  : '',
             instagramBailarina:  iInstaB >= 0 ? r[iInstaB] : '',
             nomeBailarina:       iNomeB  >= 0 ? r[iNomeB]  : '',
+            numBailarinas:       iNumB   >= 0 ? Number(r[iNumB]) || 1 : 1,
             stripeSession:       r[iSession],
             status:              r[iStatus],
             createdAt:           fmtIso(r[iCreated]),

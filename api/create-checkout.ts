@@ -21,14 +21,19 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return res.status(500).json({ error: 'MERCADOPAGO_ACCESS_TOKEN não configurada' });
   }
 
-  const { date, time, packageKey, name, email, whatsapp, instagram, instagramBailarina, nomeBailarina } = req.body as {
+  const { date, time, packageKey, name, email, whatsapp, instagram, instagramBailarina, nomeBailarina, numBailarinas } = req.body as {
     date: string; time: string; packageKey: PkgKey;
     name: string; email: string; whatsapp: string;
     instagram?: string; instagramBailarina?: string; nomeBailarina?: string;
+    numBailarinas?: number;
   };
 
   if (!date || !time || !packageKey || !name || !email || !whatsapp) {
     return res.status(400).json({ error: 'Campos obrigatórios faltando' });
+  }
+  const nb = Number(numBailarinas);
+  if (!Number.isInteger(nb) || nb < 1 || nb > 9) {
+    return res.status(400).json({ error: 'Nº Bailarinas deve ser um inteiro entre 1 e 9' });
   }
 
   const pkg = PACKAGES[packageKey];
@@ -60,7 +65,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         payment_methods: {
           installments: 6,
         },
-        external_reference: JSON.stringify({ date, time, packageKey, name, email, whatsapp }),
+        external_reference: JSON.stringify({ date, time, packageKey, name, email, whatsapp, numBailarinas: nb }),
         notification_url: `${SITE_URL}/api/webhook`,
         expires: true,
         expiration_date_to: new Date(Date.now() + 30 * 60 * 1000).toISOString(),
@@ -82,7 +87,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         instagram: instagram || '',
         instagramBailarina: instagramBailarina || '',
         nomeBailarina: nomeBailarina || '',
+        numBailarinas: nb,
         stripeSession: pref.id,   // reusing field — stores MP preference ID
+        source: 'site',
       }),
     });
 

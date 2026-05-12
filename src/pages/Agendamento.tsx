@@ -141,8 +141,8 @@ export default function Agendamento() {
   const [slotsError, setSlotsError]   = useState('');
   const [selectedPeriod, setSelectedPeriod] = useState<Period | null>(null);
   const [selectedTime, setSelectedTime] = useState<string | null>(null);
-  const [form, setForm]               = useState({ nome: '', email: '', whatsapp: '', instagram: '' });
-  const [formErrors, setFormErrors]   = useState({ nome: '', email: '', whatsapp: '' });
+  const [form, setForm]               = useState({ nome: '', email: '', whatsapp: '', instagram: '', numBailarinas: 1 });
+  const [formErrors, setFormErrors]   = useState({ nome: '', email: '', whatsapp: '', numBailarinas: '' });
   const [submitting, setSubmitting]   = useState(false);
   const [submitError, setSubmitError] = useState('');
   const [preferenceId, setPreferenceId] = useState<string | null>(null);
@@ -173,7 +173,7 @@ export default function Agendamento() {
 
   // Called on submit — only checks format (empty fields are already blocked by disabled button)
   function validateForm(): boolean {
-    const errors = { nome: '', email: '', whatsapp: '' };
+    const errors = { nome: '', email: '', whatsapp: '', numBailarinas: '' };
 
     if (form.nome.trim().split(/\s+/).length < 2) {
       errors.nome = 'Informe nome e sobrenome. Ex: Maria Silva';
@@ -185,9 +185,13 @@ export default function Agendamento() {
     if (digits.length < 10 || digits.length > 11) {
       errors.whatsapp = 'Número inválido. Ex: (47) 99999-9999';
     }
+    const nb = Number(form.numBailarinas);
+    if (!Number.isInteger(nb) || nb < 1 || nb > 9) {
+      errors.numBailarinas = 'Informe entre 1 e 9 bailarinas';
+    }
 
     setFormErrors(errors);
-    return !errors.nome && !errors.email && !errors.whatsapp;
+    return !errors.nome && !errors.email && !errors.whatsapp && !errors.numBailarinas;
   }
 
   // Inline validators — only fire when field has content
@@ -227,7 +231,7 @@ export default function Agendamento() {
       const res = await fetch('/api/create-checkout', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ date: selectedDate, time: selectedTime, packageKey: pkg, name: form.nome, email: form.email, whatsapp: form.whatsapp, instagram: form.instagram }),
+        body: JSON.stringify({ date: selectedDate, time: selectedTime, packageKey: pkg, name: form.nome, email: form.email, whatsapp: form.whatsapp, instagram: form.instagram, numBailarinas: form.numBailarinas }),
       });
       const data = await res.json();
       if (data.error) throw new Error(data.error);
@@ -251,6 +255,7 @@ export default function Agendamento() {
           preferenceId,
           date: selectedDate, time: selectedTime, packageKey: pkg,
           name: form.nome, email: form.email, whatsapp: form.whatsapp, instagram: form.instagram,
+          numBailarinas: form.numBailarinas,
         }),
       });
       const data = await res.json();
@@ -271,7 +276,8 @@ export default function Agendamento() {
   const canGoStep2 = !!pkg;
   const canGoStep3 = !!selectedDate;
   const canGoStep4 = !!selectedTime;
-  const canSubmit  = form.nome.trim() && form.email.trim() && form.whatsapp.trim();
+  const canSubmit  = form.nome.trim() && form.email.trim() && form.whatsapp.trim()
+                     && Number.isInteger(form.numBailarinas) && form.numBailarinas >= 1 && form.numBailarinas <= 9;
 
   return (
     <div className="min-h-screen bg-surface" style={{ fontFamily: 'inherit' }}>
@@ -570,6 +576,27 @@ export default function Agendamento() {
                   {formErrors.whatsapp && (
                     <p className="mt-1.5 text-xs text-red-600 flex items-center gap-1">
                       <AlertCircle className="w-3.5 h-3.5 shrink-0" />{formErrors.whatsapp}
+                    </p>
+                  )}
+                </div>
+
+                {/* Nº Bailarinas */}
+                <div>
+                  <label className="block text-sm font-semibold text-on-surface mb-1.5">Nº Bailarinas <span className="font-normal text-on-surface-variant text-xs">(quantas vão posar?)</span></label>
+                  <input
+                    className={`w-full bg-white/90 border focus:ring-2 focus:ring-primary focus:bg-white rounded-xl px-4 py-3 text-on-surface font-medium shadow-sm transition-colors ${formErrors.numBailarinas ? 'border-red-400 bg-red-50/50' : 'border-outline-variant'}`}
+                    type="number" min={1} max={9} step={1} inputMode="numeric"
+                    value={form.numBailarinas}
+                    onChange={e => {
+                      const v = parseInt(e.target.value, 10);
+                      const nb = Number.isNaN(v) ? 1 : Math.max(1, Math.min(9, v));
+                      setForm(f => ({ ...f, numBailarinas: nb }));
+                      setFormErrors(fe => ({ ...fe, numBailarinas: '' }));
+                    }}
+                  />
+                  {formErrors.numBailarinas && (
+                    <p className="mt-1.5 text-xs text-red-600 flex items-center gap-1">
+                      <AlertCircle className="w-3.5 h-3.5 shrink-0" />{formErrors.numBailarinas}
                     </p>
                   )}
                 </div>
