@@ -6,6 +6,7 @@ const SECRET = process.env.ADMIN_SECRET || 'dev-secret-change-me';
 const USERS: Record<string, string> = {
   andre:  '145414',
   mari:   '234237',
+  elisa:  '234241',
 };
 
 function validateCredentials(user: string, pass: string): string | null {
