@@ -69,6 +69,28 @@ function addLog(action, bookingId, detail, origin) {
   sh.appendRow([nowIso(), action, bookingId || '', detail || '', origin || '']);
 }
 
+// ── Mapa header → índice (header-based column detection) ──────
+// Usado para escrever/ler em "Agendamentos" sem assumir posição fixa.
+function _colMap(sa) {
+  const numCols = sa.getLastColumn();
+  const hdrs    = sa.getRange(1, 1, 1, numCols).getValues()[0];
+  const map = {};
+  hdrs.forEach((h, i) => { map[String(h).trim()] = i; });
+  return map;
+}
+// Retorna número 1-indexed da coluna para uso com getRange.
+// Se não achar pelo header, usa fallback1 (1-indexed).
+function _col1(map, name, fallback1) {
+  const i = map[name];
+  return (i !== undefined && i >= 0) ? (i + 1) : fallback1;
+}
+// Retorna o valor da linha pela coluna (header-based).
+function _val(row, map, name, fallback0) {
+  const i = map[name];
+  if (i !== undefined && i >= 0) return row[i];
+  return fallback0 !== undefined ? row[fallback0] : '';
+}
+
 // ── Inicialização das abas ────────────────────────────────────
 function initSheets() {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
@@ -119,7 +141,8 @@ function buildClientesSheet() {
   if (!cl) { cl = ss.insertSheet('Clientes'); cl.setTabColor('#009688'); }
   else      { cl.clearContents(); }
 
-  const headers = ['Nome','E-mail','WhatsApp','Instagram','Instagram Bailarina','Nome Bailarina','Pacote','Duração','Data','Horário de início','Valor (R$)','Confirmado em','ID'];
+  const headers = ['Nome','E-mail','WhatsApp','Instagram','Instagram Bailarina','Nome Bailarina',
+                   'Último pacote','Última data','Qtd ensaios','Status atual','Último ID'];
   cl.appendRow(headers);
   cl.getRange(1, 1, 1, headers.length)
     .setFontWeight('bold').setBackground('#1a1a2e').setFontColor('#ffffff');
@@ -131,28 +154,61 @@ function buildClientesSheet() {
     return;
   }
 
-  const numCols = Math.max(sa.getLastColumn(), 18);
+  // Header-based column detection (works com schema antigo e novo)
+  const numCols = sa.getLastColumn();
+  const hdrs    = sa.getRange(1, 1, 1, numCols).getValues()[0];
+  const ci = {};
+  hdrs.forEach((h, i) => { ci[String(h).trim()] = i; });
+  const get = (row, name) => {
+    const i = ci[name];
+    return i !== undefined && i >= 0 ? row[i] : '';
+  };
+
   const data = sa.getRange(2, 1, sa.getLastRow() - 1, numCols).getValues();
-  const rows = [];
+  const byKey = {};
 
   data.forEach(row => {
-    if (row[15] !== 'Confirmado') return;
-    const pkg       = CFG.PACKAGES[row[4]] || {};
-    const valorNum  = parseFloat(row[6]);
-    const valorLabel = isNaN(valorNum) ? row[6] : 'R$ ' + valorNum.toLocaleString('pt-BR', { minimumFractionDigits: 2 });
-    const dateStr   = row[1] ? (typeof row[1] === 'string' ? row[1] : Utilities.formatDate(row[1], 'America/Sao_Paulo', 'yyyy-MM-dd')) : '';
-    rows.push([
-      row[7], row[8], row[9],
-      row[10] || '', row[11] || '', row[12] || '',
-      pkg.name || row[4],
-      (pkg.duration || row[5]) + ' min',
-      formatDateBR(dateStr),
-      row[2] ? row[2].toString() : '',
-      valorLabel,
-      row[17] || '',
-      row[0],
-    ]);
+    const email = String(get(row, 'E-mail') || '').trim().toLowerCase();
+    const wa    = String(get(row, 'WhatsApp') || '').trim();
+    const key   = email || wa;
+    if (!key) return;
+
+    const createdRaw = get(row, 'Criado em');
+    const createdTs  = createdRaw ? new Date(createdRaw).getTime() : 0;
+
+    if (!byKey[key]) byKey[key] = { count: 0, latest: row, latestTs: createdTs };
+    byKey[key].count++;
+    if (createdTs >= byKey[key].latestTs) {
+      byKey[key].latest   = row;
+      byKey[key].latestTs = createdTs;
+    }
   });
+
+  const rows = Object.keys(byKey).map(k => {
+    const { count, latest } = byKey[k];
+    const pkgKey   = get(latest, 'Pacote');
+    const pkg      = CFG.PACKAGES[pkgKey] || {};
+    const dateRaw  = get(latest, 'Data');
+    const dateStr  = dateRaw ? (typeof dateRaw === 'string'
+                       ? dateRaw
+                       : Utilities.formatDate(dateRaw, 'America/Sao_Paulo', 'yyyy-MM-dd')) : '';
+    return [
+      get(latest, 'Nome'),
+      get(latest, 'E-mail'),
+      get(latest, 'WhatsApp'),
+      get(latest, 'Instagram Cliente'),
+      get(latest, 'Instagram Bailarina'),
+      get(latest, 'Nome Bailarina'),
+      pkg.name || pkgKey,
+      formatDateBR(dateStr),
+      count,
+      get(latest, 'Status'),
+      get(latest, 'ID'),
+    ];
+  });
+
+  // Sort by name asc (pt-BR)
+  rows.sort((a, b) => String(a[0] || '').localeCompare(String(b[0] || ''), 'pt-BR'));
 
   if (rows.length > 0) {
     cl.getRange(2, 1, rows.length, headers.length).setValues(rows);
@@ -479,61 +535,68 @@ function processReminders() {
   const sa = getSheet('Agendamentos');
   if (!sa || sa.getLastRow() < 2) return;
 
-  const numCols = Math.max(sa.getLastColumn(), 23);
+  const cm      = _colMap(sa);
+  const numCols = sa.getLastColumn();
   const data    = sa.getRange(2, 1, sa.getLastRow() - 1, numCols).getValues();
   const now     = Date.now();
 
   data.forEach((row, i) => {
-    if (row[15] !== 'Pendente') return;
-    const criadoEm = row[16];
+    const status = String(_val(row, cm, 'Status', 15) || '').trim();
+    if (status !== 'Pendente') return;
+    const criadoEm = _val(row, cm, 'Criado em', 16);
     if (!criadoEm) return;
 
-    const rowNum  = i + 2;
-    const ageMin  = (now - new Date(criadoEm).getTime()) / 60000;
+    const rowNum   = i + 2;
+    const ageMin   = (now - new Date(criadoEm).getTime()) / 60000;
+    const dataRaw  = _val(row, cm, 'Data', 1);
+    const dataStr  = dataRaw ? (typeof dataRaw === 'string'
+                       ? dataRaw
+                       : Utilities.formatDate(dataRaw, 'America/Sao_Paulo', 'yyyy-MM-dd')) : '';
+    const inicioR  = _val(row, cm, 'Início', 2);
+    const fimR     = _val(row, cm, 'Fim', 3);
     const booking = {
-      id:       row[0],
-      data:     row[1] ? (typeof row[1] === 'string' ? row[1] : Utilities.formatDate(row[1], 'America/Sao_Paulo', 'yyyy-MM-dd')) : '',
-      inicio:   row[2] ? row[2].toString() : '',
-      fim:      row[3] ? row[3].toString() : '',
-      pacote:   row[4],
-      valor:    row[6],
-      nome:     row[7],
-      email:    row[8],
-      whatsapp: row[9],
-      instagram:           row[10],
-      instagramBailarina:  row[11],
-      nomeBailarina:       row[12],
+      id:       _val(row, cm, 'ID', 0),
+      data:     dataStr,
+      inicio:   inicioR ? inicioR.toString() : '',
+      fim:      fimR    ? fimR.toString()    : '',
+      pacote:   _val(row, cm, 'Pacote', 4),
+      valor:    _val(row, cm, 'Valor (R$)', 6),
+      nome:     _val(row, cm, 'Nome', 7),
+      email:    _val(row, cm, 'E-mail', 8),
+      whatsapp: _val(row, cm, 'WhatsApp', 9),
+      instagram:          _val(row, cm, 'Instagram Cliente'),
+      instagramBailarina: _val(row, cm, 'Instagram Bailarina'),
+      nomeBailarina:      _val(row, cm, 'Nome Bailarina'),
       criadoEm: criadoEm,
     };
 
     // 24h sem pagamento → expirar e liberar slot
     if (ageMin >= CFG.PENDING_BLOCK_H * 60) {
-      sa.getRange(rowNum, 16).setValue('Expirado');
-      sa.getRange(rowNum, 18).setValue(nowIso());
+      sa.getRange(rowNum, _col1(cm, 'Status', 16)).setValue('Expirado');
+      sa.getRange(rowNum, _col1(cm, 'Atualizado em', 18)).setValue(nowIso());
       addLog('PENDENTE_EXPIRADO', booking.id, 'Expirou após 3 dias', 'sistema');
       return;
     }
 
-    const source = row[23] || 'site';
+    const source = _val(row, cm, 'Source') || 'site';
 
     // Aviso de expiração para Mariane: 8h antes do prazo de 3 dias
-    if (ageMin >= (CFG.PENDING_BLOCK_H * 60 - 8 * 60) && !row[22]) {
+    if (ageMin >= (CFG.PENDING_BLOCK_H * 60 - 8 * 60) && !_val(row, cm, 'ExpiryWarnSent')) {
       sendExpiryWarning(booking);
-      sa.getRange(rowNum, 23).setValue(nowIso());
+      sa.getRange(rowNum, _col1(cm, 'ExpiryWarnSent', 23)).setValue(nowIso());
     }
 
     // ── Avisos para Mariane por tipo de origem ─────────────────
     // Site: 30min sem pagar → avisa que cliente começou mas não concluiu
-    if (source === 'site' && ageMin >= 30 && !row[21]) {
+    if (source === 'site' && ageMin >= 30 && !_val(row, cm, 'AndreNotified')) {
       sendVendedoraNotification(booking);
-      sa.getRange(rowNum, 22).setValue(nowIso());
+      sa.getRange(rowNum, _col1(cm, 'AndreNotified', 22)).setValue(nowIso());
     }
     // Admin (link gerado por Mariane): 48h sem pagar → avisa para fazer follow-up
-    if (source === 'admin' && ageMin >= 48 * 60 && !row[18]) {
+    if (source === 'admin' && ageMin >= 48 * 60 && !_val(row, cm, 'Rem1Sent')) {
       sendAdmin48hNotification(booking);
-      sa.getRange(rowNum, 19).setValue(nowIso());
+      sa.getRange(rowNum, _col1(cm, 'Rem1Sent', 19)).setValue(nowIso());
     }
-
   });
 }
 
@@ -550,13 +613,36 @@ function createPending(data) {
   const now       = nowIso();
 
   const sa = getSheet('Agendamentos');
-  sa.appendRow([
-    bookingId, date, start, endTime, packageKey, pkg.duration,
-    (pkg.price / 100).toFixed(2), name, email, whatsapp,
-    instagram || '', instagramBailarina || '', nomeBailarina || '',
-    stripeSession || '', '', 'Pendente', now, now,
-    '', '', '', '', '', source || 'site'   // col 23: source
-  ]);
+  const cm = _colMap(sa);
+
+  // Monta a linha header-by-header — funciona com schema antigo ou novo.
+  const numCols = Math.max(sa.getLastColumn(), 23);
+  const newRow  = new Array(numCols).fill('');
+  const set = (name, value, fallback0) => {
+    const i = cm[name] !== undefined ? cm[name] : fallback0;
+    if (i !== undefined && i >= 0) newRow[i] = value;
+  };
+  set('ID',                    bookingId,                          0);
+  set('Data',                  date,                               1);
+  set('Início',                start,                              2);
+  set('Fim',                   endTime,                            3);
+  set('Pacote',                packageKey,                         4);
+  set('Duração (min)',         pkg.duration,                       5);
+  set('Valor (R$)',            (pkg.price / 100).toFixed(2),       6);
+  set('Nome',                  name,                               7);
+  set('E-mail',                email,                              8);
+  set('WhatsApp',              whatsapp,                           9);
+  set('Instagram Cliente',     instagram          || '');
+  set('Instagram Bailarina',   instagramBailarina || '');
+  set('Nome Bailarina',        nomeBailarina      || '');
+  set('Stripe Session',        stripeSession      || '',           13);
+  set('Stripe Payment',        '',                                 14);
+  set('Status',                'Pendente',                         15);
+  set('Criado em',             now,                                16);
+  set('Atualizado em',         now,                                17);
+  set('Source',                source || 'site');
+
+  sa.appendRow(newRow);
 
   addLog('PENDENTE_CRIADO', bookingId,
     name + ' | ' + (pkg.name) + ' | ' + date + ' ' + start + '–' + endTime + ' | Stripe: ' + stripeSession,
@@ -570,29 +656,38 @@ function confirmBooking(data) {
   const sa = getSheet('Agendamentos');
   if (!sa || sa.getLastRow() < 2) throw new Error('Planilha vazia');
 
-  const numCols = Math.max(sa.getLastColumn(), 18);
+  const cm      = _colMap(sa);
+  const numCols = sa.getLastColumn();
   const rows    = sa.getRange(2, 1, sa.getLastRow() - 1, numCols).getValues();
-  const idx     = rows.findIndex(r => r[13] === stripeSession);
+  const iSes    = cm['Stripe Session'] !== undefined ? cm['Stripe Session'] : 13;
+  const idx     = rows.findIndex(r => r[iSes] === stripeSession);
   if (idx < 0) throw new Error('Session não encontrada: ' + stripeSession);
 
-  const row  = rows[idx];
+  const row   = rows[idx];
   const shRow = idx + 2;
-  sa.getRange(shRow, 15).setValue(stripePayment || '');
-  sa.getRange(shRow, 16).setValue('Confirmado');
-  sa.getRange(shRow, 18).setValue(nowIso());
+  sa.getRange(shRow, _col1(cm, 'Stripe Payment', 15)).setValue(stripePayment || '');
+  sa.getRange(shRow, _col1(cm, 'Status',         16)).setValue('Confirmado');
+  sa.getRange(shRow, _col1(cm, 'Atualizado em',  18)).setValue(nowIso());
 
-  const dateStr = row[1] ? (typeof row[1] === 'string' ? row[1] : Utilities.formatDate(row[1], 'America/Sao_Paulo', 'yyyy-MM-dd')) : '';
+  const dataRaw = _val(row, cm, 'Data', 1);
+  const dateStr = dataRaw ? (typeof dataRaw === 'string'
+                    ? dataRaw
+                    : Utilities.formatDate(dataRaw, 'America/Sao_Paulo', 'yyyy-MM-dd')) : '';
 
   buildClientesSheet();
-  addLog('PAGAMENTO_CONFIRMADO', row[0],
+  addLog('PAGAMENTO_CONFIRMADO', _val(row, cm, 'ID', 0),
     'Stripe session: ' + stripeSession + ' | payment: ' + stripePayment, 'webhook');
 
   return {
     ok: true,
-    bookingId: row[0], date: dateStr,
-    start: row[2] ? row[2].toString() : '',
-    end:   row[3] ? row[3].toString() : '',
-    name: row[7], email: row[8], whatsapp: row[9], package: row[4]
+    bookingId: _val(row, cm, 'ID', 0),
+    date:      dateStr,
+    start:     (_val(row, cm, 'Início', 2) || '').toString(),
+    end:       (_val(row, cm, 'Fim',    3) || '').toString(),
+    name:      _val(row, cm, 'Nome',     7),
+    email:     _val(row, cm, 'E-mail',   8),
+    whatsapp:  _val(row, cm, 'WhatsApp', 9),
+    package:   _val(row, cm, 'Pacote',   4),
   };
 }
 
@@ -601,18 +696,18 @@ function cancelBooking(data) {
   const sa = getSheet('Agendamentos');
   if (!sa || sa.getLastRow() < 2) throw new Error('Planilha vazia');
 
-  const numCols = Math.max(sa.getLastColumn(), 18);
+  const cm      = _colMap(sa);
+  const numCols = sa.getLastColumn();
   const rows    = sa.getRange(2, 1, sa.getLastRow() - 1, numCols).getValues();
-  const idx     = rows.findIndex(r => r[0] === bookingId);
+  const iId     = cm['ID'] !== undefined ? cm['ID'] : 0;
+  const idx     = rows.findIndex(r => r[iId] === bookingId);
   if (idx < 0) throw new Error('Booking não encontrado: ' + bookingId);
 
-  const row   = rows[idx];
   const shRow = idx + 2;
-  sa.getRange(shRow, 16).setValue('Cancelado');
-  sa.getRange(shRow, 18).setValue(nowIso());
+  sa.getRange(shRow, _col1(cm, 'Status',        16)).setValue('Cancelado');
+  sa.getRange(shRow, _col1(cm, 'Atualizado em', 18)).setValue(nowIso());
 
   addLog('CANCELADO', bookingId, reason || 'sem motivo', origin || 'painel');
-
   return { ok: true };
 }
 
@@ -622,19 +717,27 @@ function editBooking(data) {
   const sa = getSheet('Agendamentos');
   if (!sa || sa.getLastRow() < 2) throw new Error('Planilha vazia');
 
-  const numCols = Math.max(sa.getLastColumn(), 18);
+  const cm      = _colMap(sa);
+  const numCols = sa.getLastColumn();
   const rows    = sa.getRange(2, 1, sa.getLastRow() - 1, numCols).getValues();
-  const idx     = rows.findIndex(r => r[0] === bookingId);
+  const iId     = cm['ID'] !== undefined ? cm['ID'] : 0;
+  const idx     = rows.findIndex(r => r[iId] === bookingId);
   if (idx < 0) throw new Error('Booking não encontrado: ' + bookingId);
 
   const shRow = idx + 2;
-  sa.getRange(shRow, 8).setValue(name);
-  sa.getRange(shRow, 9).setValue(email);
-  sa.getRange(shRow, 10).setValue(whatsapp            || '');
-  sa.getRange(shRow, 11).setValue(instagram           || '');
-  sa.getRange(shRow, 12).setValue(instagramBailarina  || '');
-  sa.getRange(shRow, 13).setValue(nomeBailarina       || '');
-  sa.getRange(shRow, 18).setValue(nowIso());
+  const setIf = (header, fallback1, value) => {
+    const col = cm[header] !== undefined ? cm[header] + 1 : fallback1;
+    // Para colunas Instagram/Bailarina, só escreve se header existe (-1 = skip)
+    if (col > 0) sa.getRange(shRow, col).setValue(value);
+  };
+  setIf('Nome',                 8,  name);
+  setIf('E-mail',               9,  email);
+  setIf('WhatsApp',             10, whatsapp || '');
+  // Estas três só existem no schema novo — não cria coluna se header não existir
+  if (cm['Instagram Cliente']    !== undefined) sa.getRange(shRow, cm['Instagram Cliente']    + 1).setValue(instagram          || '');
+  if (cm['Instagram Bailarina']  !== undefined) sa.getRange(shRow, cm['Instagram Bailarina']  + 1).setValue(instagramBailarina || '');
+  if (cm['Nome Bailarina']       !== undefined) sa.getRange(shRow, cm['Nome Bailarina']       + 1).setValue(nomeBailarina      || '');
+  sa.getRange(shRow, _col1(cm, 'Atualizado em', 18)).setValue(nowIso());
 
   buildClientesSheet();
   addLog('EDITADO', bookingId, 'Dados atualizados: ' + name, 'painel');
@@ -646,6 +749,269 @@ function releasePendingSlots() {
   // Agora delegado para processReminders (mantido por compatibilidade)
   processReminders();
   return { ok: true };
+}
+
+// ── Backup ────────────────────────────────────────────────────
+// Cria um arquivo NOVO de planilha no Drive com cópia integral
+// da aba "Agendamentos" (valores + formatação). Não toca em nada.
+// Logs no painel. Retorna a URL do backup no log de execução.
+function backupAgendamentos() {
+  const src = getSheet('Agendamentos');
+  if (!src) throw new Error('Aba Agendamentos não encontrada');
+
+  const stamp = Utilities.formatDate(new Date(), 'America/Sao_Paulo', 'yyyy-MM-dd HH:mm');
+  const name  = 'Agendamentos backup ' + stamp;
+  const dest  = SpreadsheetApp.create(name);
+
+  // Copia a aba original para o destino e remove a "Sheet1" default
+  const copied = src.copyTo(dest);
+  copied.setName('Agendamentos');
+  const def = dest.getSheetByName('Sheet1') || dest.getSheets()[0];
+  if (def && def.getName() !== 'Agendamentos') dest.deleteSheet(def);
+
+  const url = dest.getUrl();
+  Logger.log('Backup criado: ' + url);
+  addLog('BACKUP_CRIADO', '', 'Arquivo: ' + name + ' | URL: ' + url, 'sistema');
+  return url;
+}
+
+// ── Cleanup ───────────────────────────────────────────────────
+// Mantém em "Agendamentos" só Confirmado + Pendente.
+// Tudo o mais (Cancelado, Expirado, lixo com status inválido) vai
+// pra "Agendamentos Arquivados" com timestamp de arquivamento.
+// RODAR DEPOIS DE backupAgendamentos().
+function cleanupAgendamentos() {
+  const sa = getSheet('Agendamentos');
+  if (!sa) throw new Error('Aba Agendamentos não encontrada');
+  if (sa.getLastRow() < 2) {
+    Logger.log('Nada a fazer — planilha vazia');
+    return { kept: 0, archived: 0 };
+  }
+
+  const numCols = sa.getLastColumn();
+  const hdrs    = sa.getRange(1, 1, 1, numCols).getValues()[0];
+  const rows    = sa.getRange(2, 1, sa.getLastRow() - 1, numCols).getValues();
+
+  // Detecta coluna Status dinamicamente (header-based)
+  let iStatus = hdrs.findIndex(h => String(h).trim() === 'Status');
+  if (iStatus < 0) {
+    const hasInsta = hdrs.findIndex(h => String(h).trim() === 'Instagram Cliente') >= 0;
+    iStatus = hasInsta ? 15 : 12;
+  }
+
+  const VALID = { 'Confirmado': true, 'Pendente': true };
+  const kept    = [];
+  const archive = [];
+  rows.forEach(function (r) {
+    const status = String(r[iStatus] || '').trim();
+    if (VALID[status]) kept.push(r); else archive.push(r);
+  });
+
+  // Garante aba de arquivo
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  let arch = ss.getSheetByName('Agendamentos Arquivados');
+  if (!arch) {
+    arch = ss.insertSheet('Agendamentos Arquivados');
+    arch.setTabColor('#9E9E9E');
+    arch.appendRow([].concat(hdrs, ['Arquivado em']));
+    arch.getRange(1, 1, 1, hdrs.length + 1)
+      .setFontWeight('bold').setBackground('#1a1a2e').setFontColor('#ffffff');
+    arch.setFrozenRows(1);
+  }
+
+  // Anexa linhas arquivadas com timestamp
+  if (archive.length > 0) {
+    const now = nowIso();
+    const archRows = archive.map(function (r) { return [].concat(r, [now]); });
+    const startRow = arch.getLastRow() + 1;
+    arch.getRange(startRow, 1, archRows.length, archRows[0].length).setValues(archRows);
+  }
+
+  // Reescreve Agendamentos só com as linhas mantidas
+  sa.getRange(2, 1, sa.getLastRow() - 1, numCols).clearContent();
+  if (kept.length > 0) {
+    sa.getRange(2, 1, kept.length, numCols).setValues(kept);
+  }
+
+  const msg = 'Mantidas: ' + kept.length + ' | Arquivadas: ' + archive.length;
+  Logger.log(msg);
+  addLog('CLEANUP_EXECUTADO', '', msg, 'sistema');
+  return { kept: kept.length, archived: archive.length };
+}
+
+// ── Diagnóstico: inspecionar headers atuais ───────────────────
+// Roda e mostra no Execution log o nome de cada coluna e
+// uma amostra da 1ª linha de dados, para você verificar se há
+// desalinhamento entre headers e valores.
+function inspectAgendamentosHeaders() {
+  const sa = getSheet('Agendamentos');
+  if (!sa) { Logger.log('Aba não existe'); return; }
+  const numCols = sa.getLastColumn();
+  const hdrs = sa.getRange(1, 1, 1, numCols).getValues()[0];
+  const sample = sa.getLastRow() >= 2
+    ? sa.getRange(2, 1, 1, numCols).getValues()[0]
+    : new Array(numCols).fill('');
+  const lines = ['col | letter | header | sample'];
+  for (let i = 0; i < numCols; i++) {
+    const letter = String.fromCharCode(65 + (i % 26)) +
+                   (i >= 26 ? String.fromCharCode(65 + Math.floor(i / 26) - 1) : '');
+    const h = hdrs[i] === undefined || hdrs[i] === '' ? '(vazio)' : String(hdrs[i]);
+    const v = sample[i] instanceof Date
+              ? Utilities.formatDate(sample[i], 'America/Sao_Paulo', 'yyyy-MM-dd HH:mm')
+              : String(sample[i] || '').slice(0, 40);
+    lines.push((i + 1).toString().padStart(2) + '  | ' + letter.padEnd(3) + '   | ' + h.padEnd(22) + ' | ' + v);
+  }
+  const out = lines.join('\n');
+  Logger.log(out);
+  addLog('SCHEMA_INSPECIONADO', '', 'numCols=' + numCols + ' | headers=[' + hdrs.join('|') + ']', 'sistema');
+  return out;
+}
+
+// ── Reparo de headers + limpeza de reminder columns ───────────
+// 1) Adiciona headers em colunas "tail" que estiverem vazias
+//    (Rem1Sent, Rem2Sent, Rem3Sent, AndreNotified, ExpiryWarnSent, Source)
+// 2) Limpa o lixo em Rem1..ExpiryWarnSent (dados embaralhados de versões antigas)
+// 3) Para cada Pendente, marca os reminders cujo prazo JÁ PASSOU
+//    com o "Atualizado em" — assim o processReminders não dispara
+//    emails atrasados em massa.
+function repairHeaders() {
+  const sa = getSheet('Agendamentos');
+  if (!sa) throw new Error('Aba Agendamentos não existe');
+  const numCols = Math.max(sa.getLastColumn(), 23);
+  const hdrs    = sa.getRange(1, 1, 1, numCols).getValues()[0];
+
+  const expectedNew = ['ID','Data','Início','Fim','Pacote','Duração (min)','Valor (R$)',
+                       'Nome','E-mail','WhatsApp','Instagram Cliente','Instagram Bailarina','Nome Bailarina',
+                       'Stripe Session','Stripe Payment','Status','Criado em','Atualizado em',
+                       'Rem1Sent','Rem2Sent','Rem3Sent','AndreNotified','ExpiryWarnSent','Source'];
+  const expectedOld = ['ID','Data','Início','Fim','Pacote','Duração (min)','Valor (R$)',
+                       'Nome','E-mail','WhatsApp','Stripe Session','Stripe Payment','Status','Criado em','Atualizado em',
+                       'Rem1Sent','Rem2Sent','Rem3Sent','AndreNotified','ExpiryWarnSent','Source'];
+
+  const statusIdx = hdrs.findIndex(h => String(h).trim() === 'Status');
+  let expected;
+  if (statusIdx === 15) expected = expectedNew;
+  else if (statusIdx === 12) expected = expectedOld;
+  else throw new Error('Não consigo determinar schema. Rode inspectAgendamentosHeaders primeiro.');
+
+  // ── 1. Adiciona headers faltantes ───────────────────────────
+  const newHdrs = hdrs.slice();
+  let headersAdded = 0;
+  for (let i = 0; i < expected.length; i++) {
+    const cur = String(newHdrs[i] || '').trim();
+    if (!cur) { newHdrs[i] = expected[i]; headersAdded++; }
+  }
+  while (newHdrs.length < expected.length) newHdrs.push('');
+  sa.getRange(1, 1, 1, newHdrs.length).setValues([newHdrs]);
+  sa.getRange(1, 1, 1, newHdrs.length)
+    .setFontWeight('bold').setBackground('#1a1a2e').setFontColor('#ffffff');
+
+  // Re-lê headers para construir o map atualizado
+  const cm = _colMap(sa);
+
+  // ── 2. Limpa as 5 colunas de reminders + Source nas linhas de dados ──
+  if (sa.getLastRow() >= 2) {
+    const reminderCols = ['Rem1Sent','Rem2Sent','Rem3Sent','AndreNotified','ExpiryWarnSent'];
+    reminderCols.forEach(name => {
+      const col1 = _col1(cm, name, -1);
+      if (col1 > 0) {
+        sa.getRange(2, col1, sa.getLastRow() - 1, 1).clearContent();
+      }
+    });
+  }
+
+  // ── 3. Inibe lembretes para Pendentes velhos ────────────────
+  let inhibited = 0;
+  if (sa.getLastRow() >= 2) {
+    const rows = sa.getRange(2, 1, sa.getLastRow() - 1, sa.getLastColumn()).getValues();
+    const now  = Date.now();
+    rows.forEach((row, i) => {
+      const status = String(_val(row, cm, 'Status') || '').trim();
+      if (status !== 'Pendente') return;
+      const criadoEm = _val(row, cm, 'Criado em');
+      if (!criadoEm) return;
+      const rowNum = i + 2;
+      const ageMin = (now - new Date(criadoEm).getTime()) / 60000;
+      const stamp  = nowIso();
+      // Site 30min
+      if (ageMin >= 30) {
+        const c = _col1(cm, 'AndreNotified', -1);
+        if (c > 0) sa.getRange(rowNum, c).setValue(stamp);
+      }
+      // Admin 48h
+      if (ageMin >= 48 * 60) {
+        const c = _col1(cm, 'Rem1Sent', -1);
+        if (c > 0) sa.getRange(rowNum, c).setValue(stamp);
+      }
+      // Expiry warning (8h antes do prazo de 72h)
+      if (ageMin >= (CFG.PENDING_BLOCK_H * 60 - 8 * 60)) {
+        const c = _col1(cm, 'ExpiryWarnSent', -1);
+        if (c > 0) sa.getRange(rowNum, c).setValue(stamp);
+      }
+      inhibited++;
+    });
+  }
+
+  const msg = 'Schema: ' + (expected === expectedNew ? 'novo' : 'antigo') +
+              ' | headers adicionados: ' + headersAdded +
+              ' | linhas Pendente com reminders inibidos: ' + inhibited;
+  Logger.log(msg);
+  addLog('HEADERS_REPARADOS', '', msg, 'sistema');
+  return msg;
+}
+
+// ── Mover "Agendamentos Arquivados" para o backup mais recente ────
+// e apagar a aba Sheet1 default da planilha principal, se existir.
+function moveArchivedToBackup() {
+  const mainSs = SpreadsheetApp.getActiveSpreadsheet();
+  const src    = mainSs.getSheetByName('Agendamentos Arquivados');
+  if (!src) throw new Error('Aba "Agendamentos Arquivados" não existe');
+
+  // Acha o backup mais recente no Drive (criado por backupAgendamentos)
+  const it = DriveApp.searchFiles(
+    'title contains "Agendamentos backup" and mimeType = "application/vnd.google-apps.spreadsheet" and trashed = false'
+  );
+  let mostRecent = null;
+  while (it.hasNext()) {
+    const f = it.next();
+    if (!mostRecent || f.getDateCreated() > mostRecent.getDateCreated()) mostRecent = f;
+  }
+  if (!mostRecent) throw new Error('Nenhum backup encontrado. Rode backupAgendamentos() primeiro.');
+
+  const backupSs = SpreadsheetApp.openById(mostRecent.getId());
+
+  // Se já existir aba "Agendamentos Arquivados" no backup, renomeia a anterior
+  const existing = backupSs.getSheetByName('Agendamentos Arquivados');
+  if (existing) {
+    const stamp = Utilities.formatDate(new Date(), 'America/Sao_Paulo', 'yyyy-MM-dd HHmm');
+    existing.setName('Agendamentos Arquivados (' + stamp + ')');
+  }
+
+  // Copia a aba para o backup
+  const copied = src.copyTo(backupSs);
+  copied.setName('Agendamentos Arquivados');
+
+  // Remove do principal
+  mainSs.deleteSheet(src);
+
+  // Limpa Sheet1 do principal se existir e estiver vazio
+  let sheet1Removed = false;
+  const sheet1 = mainSs.getSheetByName('Sheet1') || mainSs.getSheetByName('Página1');
+  if (sheet1 && sheet1.getLastRow() <= 1 && sheet1.getLastColumn() <= 1) {
+    // Apps Script não deixa apagar a última aba — protege contra isso
+    if (mainSs.getSheets().length > 1) {
+      mainSs.deleteSheet(sheet1);
+      sheet1Removed = true;
+    }
+  }
+
+  const url = backupSs.getUrl();
+  const msg = 'Movida para: ' + mostRecent.getName() +
+              ' (' + url + ')' +
+              (sheet1Removed ? ' | Sheet1 removida do principal' : '');
+  Logger.log(msg);
+  addLog('ARQUIVO_MOVIDO', '', msg, 'sistema');
+  return msg;
 }
 
 // ── Triggers ──────────────────────────────────────────────────
@@ -868,16 +1234,18 @@ function doPost(e) {
     } else if (action === 'markReminderSent') {
       const { bookingId, type } = body;
       const sa      = getSheet('Agendamentos');
-      const numCols = Math.max(sa.getLastColumn(), 24);
+      const cm      = _colMap(sa);
+      const numCols = sa.getLastColumn();
       const rows    = sa.getRange(2, 1, sa.getLastRow() - 1, numCols).getValues();
-      const idx     = rows.findIndex(function(r) { return r[0] === bookingId; });
+      const iId     = cm['ID'] !== undefined ? cm['ID'] : 0;
+      const idx     = rows.findIndex(function(r) { return r[iId] === bookingId; });
       if (idx < 0) throw new Error('Booking não encontrado: ' + bookingId);
       const rowNum = idx + 2;
       const ts     = nowIso();
       if (type === 'site30min') {
-        sa.getRange(rowNum, 22).setValue(ts); // col 21 (0-based) = AndreNotified
+        sa.getRange(rowNum, _col1(cm, 'AndreNotified', 22)).setValue(ts);
       } else if (type === 'admin48h') {
-        sa.getRange(rowNum, 19).setValue(ts); // col 18 (0-based) = Rem1Sent
+        sa.getRange(rowNum, _col1(cm, 'Rem1Sent',      19)).setValue(ts);
       }
       addLog('REMINDER_SENT', bookingId, 'Tipo: ' + type, 'cron-reminders');
       result = { ok: true };
