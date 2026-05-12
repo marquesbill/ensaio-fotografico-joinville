@@ -69,7 +69,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   await fetch(SCRIPT_URL, {
     method: 'POST',
     headers: { 'Content-Type': 'text/plain' },
-    body: JSON.stringify({ action: 'addLog', message: logMsg }),
+    body: JSON.stringify({ action: 'addLog', message: logMsg, origin: 'painel' }),
   }).catch(e => console.error('[admin-cancel] addLog error', e));
 
   // 3. Send cancellation email to client

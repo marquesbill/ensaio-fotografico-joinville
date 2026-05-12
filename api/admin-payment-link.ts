@@ -122,6 +122,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         instagramBailarina: instagramBailarina || '',
         nomeBailarina: nomeBailarina || '',
         stripeSession: pref.id,
+        source:        'admin',
       }),
     }).catch(e => console.error('[admin-payment-link] createPending error', e));
 
@@ -132,6 +133,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       body: JSON.stringify({
         action:  'addLog',
         message: `${auth.user} gerou novo link de pagamento para ${name} (${date} ${time})`,
+        origin:  'painel',
       }),
     }).catch(() => {});
 

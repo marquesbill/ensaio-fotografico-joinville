@@ -94,7 +94,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   await fetch(SCRIPT_URL, {
     method: 'POST',
     headers: { 'Content-Type': 'text/plain' },
-    body: JSON.stringify({ action: 'addLog', message: logMsg }),
+    body: JSON.stringify({ action: 'addLog', message: logMsg, origin: 'painel' }),
   }).catch(() => {});
 
   // 3. Send confirmation email to client

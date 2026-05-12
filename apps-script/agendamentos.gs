@@ -32,7 +32,8 @@ const CFG = {
 // 0:ID  1:Data  2:Início  3:Fim  4:Pacote  5:Duração  6:Valor
 // 7:Nome  8:E-mail  9:WhatsApp  10:InstaCliente  11:InstaBailarina  12:NomeBailarina
 // 13:StripeSession  14:StripePayment  15:Status  16:Criado em  17:Atualizado em
-// 18:Rem1Sent  19:Rem2Sent  20:Rem3Sent  21:AndreNotified  22:ExpiryWarnSent
+// 18:Rem1Sent(admin48h)  19:Rem2Sent  20:Rem3Sent  21:AndreNotified(site30min)  22:ExpiryWarnSent
+// 23:Source ('site' | 'admin')
 
 // ── Helpers de tempo ──────────────────────────────────────────
 function timeToMin(hhmm) {
@@ -100,186 +101,16 @@ function initSheets() {
     const existingHeaders = sa.getRange(1, 1, 1, sa.getLastColumn()).getValues()[0];
     if (existingHeaders.indexOf('Instagram Cliente') === -1) {
       // New fields added — reinitialise headers fully via initSheets
-      addLog('HEADERS_DESATUALIZADOS', '', 'Execute initSheets para adicionar novos campos', 'ensureAgendamentosHeaders');
+      addLog('HEADERS_DESATUALIZADOS', '', 'Execute initSheets para adicionar novos campos', 'sistema');
     }
   }
 
-  buildCalendarSheet();
   buildClientesSheet();
 
   return ContentService.createTextOutput(JSON.stringify({ ok: true, msg: 'Sheets inicializadas' }))
     .setMimeType(ContentService.MimeType.JSON);
 }
 
-// ── Calendário visual ─────────────────────────────────────────
-function buildCalendarSheet() {
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
-  let cal = ss.getSheetByName('Calendário');
-  if (cal) ss.deleteSheet(cal);
-  cal = ss.insertSheet('Calendário');
-  cal.setTabColor('#9C27B0');
-
-  const startDate = new Date(CFG.DATES_START + 'T12:00:00');
-  const endDate   = new Date(CFG.DATES_END   + 'T12:00:00');
-  const dates = [];
-  for (let d = new Date(startDate); d <= endDate; d.setDate(d.getDate() + 1))
-    dates.push(new Date(d));
-
-  const times = [];
-  for (let m = CFG.WORK_START_H * 60; m < CFG.WORK_END_H * 60; m += CFG.SLOT_STEP_MIN)
-    times.push(minToTime(m));
-
-  const DOW = ['Dom','Seg','Ter','Qua','Qui','Sex','Sáb'];
-  const MON = ['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago'];
-
-  const headerRow = ['Horário', ...dates.map(d =>
-    DOW[d.getDay()] + '\n' + d.getDate() + ' ' + MON[d.getMonth()]
-  )];
-  cal.appendRow(headerRow);
-  cal.getRange(1, 1, 1, headerRow.length)
-    .setFontWeight('bold').setBackground('#1a1a2e').setFontColor('#ffffff')
-    .setHorizontalAlignment('center').setWrap(true);
-  cal.setRowHeight(1, 45);
-
-  times.forEach((t, ri) => {
-    cal.appendRow([t, ...dates.map(() => '')]);
-    const r = ri + 2;
-    cal.getRange(r, 1).setFontColor('#444444').setFontWeight('bold').setHorizontalAlignment('right');
-    if (ri % 4 === 0)
-      cal.getRange(r, 1, 1, headerRow.length).setBackground('#f0f0f0');
-  });
-
-  cal.setColumnWidth(1, 65);
-  for (let c = 2; c <= dates.length + 1; c++) cal.setColumnWidth(c, 130);
-  cal.setFrozenRows(1);
-  cal.setFrozenColumns(1);
-
-  refreshCalendar();
-}
-
-function _buildDateColMap() {
-  const map = {};
-  let ci = 2;
-  const s = new Date(CFG.DATES_START + 'T12:00:00');
-  const e = new Date(CFG.DATES_END   + 'T12:00:00');
-  for (let d = new Date(s); d <= e; d.setDate(d.getDate() + 1)) {
-    const ds = Utilities.formatDate(d, 'America/Sao_Paulo', 'yyyy-MM-dd');
-    map[ds] = ci++;
-  }
-  return map;
-}
-
-function _buildTimeRowMap(cal) {
-  const map = {};
-  if (cal.getLastRow() < 2) return map;
-  const vals = cal.getRange(2, 1, cal.getLastRow() - 1, 1).getValues();
-  vals.forEach((r, i) => { if (r[0]) map[r[0].toString()] = i + 2; });
-  return map;
-}
-
-function _statusIndicator(status, criadoEm) {
-  if (status === 'Confirmado') return '🟢';
-  const ageMin = criadoEm ? (Date.now() - new Date(criadoEm).getTime()) / 60000 : 999;
-  return ageMin < 30 ? '🟡' : '🔴';
-}
-
-function refreshCalendar() {
-  const cal = getSheet('Calendário');
-  const sa  = getSheet('Agendamentos');
-  if (!cal || !sa || sa.getLastRow() < 2) return;
-
-  const numTimeRows = cal.getLastRow() - 1;
-  const numDateCols = cal.getLastColumn() - 1;
-  if (numTimeRows < 1 || numDateCols < 1) return;
-
-  // Bulk-clear data cells
-  const emptyVals = Array(numTimeRows).fill(null).map(() => Array(numDateCols).fill(''));
-  const bgVals    = Array(numTimeRows).fill(null).map((_, i) => Array(numDateCols).fill(i % 4 === 0 ? '#f0f0f0' : '#ffffff'));
-  const fgVals    = Array(numTimeRows).fill(null).map(() => Array(numDateCols).fill('#444444'));
-  const fwVals    = Array(numTimeRows).fill(null).map(() => Array(numDateCols).fill('normal'));
-  const dataRange = cal.getRange(2, 2, numTimeRows, numDateCols);
-  dataRange.setValues(emptyVals);
-  dataRange.setBackgrounds(bgVals);
-  dataRange.setFontColors(fgVals);
-  dataRange.setFontWeights(fwVals);
-
-  const dateColMap = _buildDateColMap();
-  const timeRowMap = _buildTimeRowMap(cal);
-  const numCols    = sa.getLastColumn();
-  const data = sa.getRange(2, 1, sa.getLastRow() - 1, numCols).getValues();
-
-  data.forEach(row => {
-    const status = row[15];
-    if (status !== 'Confirmado' && status !== 'Pendente') return;
-
-    const dateStr  = row[1] ? (typeof row[1] === 'string' ? row[1] : Utilities.formatDate(row[1], 'America/Sao_Paulo', 'yyyy-MM-dd')) : '';
-    const startStr = row[2] ? row[2].toString() : '';
-    const endStr   = row[3] ? row[3].toString() : '';
-    const pkgKey   = row[4];
-    const nome     = row[7];
-    const criadoEm = row[16];
-    const pkg      = CFG.PACKAGES[pkgKey] || CFG.PACKAGES.completo;
-
-    const colIdx = dateColMap[dateStr];
-    if (!colIdx) return;
-
-    const indicator = _statusIndicator(status, criadoEm);
-    const startMin  = timeToMin(startStr);
-    const endMin    = timeToMin(endStr);
-
-    for (let m = startMin; m < endMin; m += CFG.SLOT_STEP_MIN) {
-      const rowIdx = timeRowMap[minToTime(m)];
-      if (!rowIdx) continue;
-      const cell = cal.getRange(rowIdx, colIdx);
-      cell.setBackground(pkg.color).setFontColor(pkg.textColor)
-          .setFontWeight('bold').setWrap(true)
-          .setHorizontalAlignment('center').setVerticalAlignment('middle');
-      cell.setValue(m === startMin ? indicator + ' ' + nome + '\n' + pkg.name : '▓');
-    }
-  });
-}
-
-function paintCalendarSlot(dateStr, startTime, endTime, clientName, packageKey, status, criadoEm) {
-  const cal = getSheet('Calendário');
-  if (!cal) return;
-  const dateColMap = _buildDateColMap();
-  const timeRowMap = _buildTimeRowMap(cal);
-  const colIdx = dateColMap[typeof dateStr === 'string' ? dateStr : Utilities.formatDate(dateStr, 'America/Sao_Paulo', 'yyyy-MM-dd')];
-  if (!colIdx) return;
-  const pkg       = CFG.PACKAGES[packageKey] || CFG.PACKAGES.completo;
-  const indicator = _statusIndicator(status, criadoEm);
-  const startMin  = timeToMin(startTime);
-  const endMin    = timeToMin(endTime);
-  for (let m = startMin; m < endMin; m += CFG.SLOT_STEP_MIN) {
-    const rowIdx = timeRowMap[minToTime(m)];
-    if (!rowIdx) continue;
-    const cell = cal.getRange(rowIdx, colIdx);
-    cell.setBackground(pkg.color).setFontColor(pkg.textColor)
-        .setFontWeight('bold').setWrap(true)
-        .setHorizontalAlignment('center').setVerticalAlignment('middle');
-    cell.setValue(m === startMin ? indicator + ' ' + clientName + '\n' + pkg.name : '▓');
-  }
-}
-
-function clearCalendarSlot(dateStr, startTime, endTime) {
-  const cal = getSheet('Calendário');
-  if (!cal) return;
-  const dateColMap = _buildDateColMap();
-  const timeRowMap = _buildTimeRowMap(cal);
-  const colIdx = dateColMap[typeof dateStr === 'string' ? dateStr : Utilities.formatDate(dateStr, 'America/Sao_Paulo', 'yyyy-MM-dd')];
-  if (!colIdx) return;
-  const startMin = timeToMin(startTime);
-  const endMin   = timeToMin(endTime);
-  for (let m = startMin; m < endMin; m += CFG.SLOT_STEP_MIN) {
-    const rowIdx = timeRowMap[minToTime(m)];
-    if (!rowIdx) continue;
-    const ri = rowIdx - 2; // 0-based
-    cal.getRange(rowIdx, colIdx)
-      .clearContent()
-      .setBackground(ri % 4 === 0 ? '#f0f0f0' : '#ffffff')
-      .setFontColor('#444444').setFontWeight('normal').setWrap(false);
-  }
-}
 
 // ── Aba Clientes ──────────────────────────────────────────────
 function buildClientesSheet() {
@@ -402,23 +233,8 @@ function computeAvailableSlots(dateStr, pkgKey) {
 
 // ── E-mail via Resend ─────────────────────────────────────────
 function sendEmailViaResend(to, subject, html) {
-  const key = getResendKey();
-  if (!key) {
-    addLog('EMAIL_ERRO', '', 'RESEND_API_KEY não configurada em Script Properties', 'sendEmailViaResend');
-    return false;
-  }
   try {
-    const resp = UrlFetchApp.fetch('https://api.resend.com/emails', {
-      method: 'POST',
-      headers: { 'Authorization': 'Bearer ' + key, 'Content-Type': 'application/json' },
-      payload: JSON.stringify({ from: CFG.FROM_EMAIL, to: [to], subject: subject, html: html }),
-      muteHttpExceptions: true,
-    });
-    const code = resp.getResponseCode();
-    if (code >= 400) {
-      addLog('EMAIL_ERRO', '', 'Resend HTTP ' + code + ': ' + resp.getContentText(), 'sendEmailViaResend');
-      return false;
-    }
+    MailApp.sendEmail({ to: to, subject: subject, htmlBody: html });
     return true;
   } catch (err) {
     addLog('EMAIL_ERRO', '', err.toString(), 'sendEmailViaResend');
@@ -533,27 +349,75 @@ function sendVendedoraNotification(booking) {
       <tr><td style="color:#6b7280;padding:6px 0;font-size:13px;border-top:1px solid #e5e7eb;">Valor</td>
           <td style="font-weight:700;font-size:14px;color:#7a3f8f;border-top:1px solid #e5e7eb;">${valorLabel}</td></tr>
     </table>
-    <p style="font-size:13px;color:#374151;margin-top:20px;line-height:1.6;">
-      Se o cliente já concluiu o pagamento por outro meio (transferência, dinheiro, etc.),
-      lembre-se de ajustar o status do agendamento no painel administrativo.
-    </p>
-    <p style="text-align:center;margin:20px 0 0;">
-      <a href="${CFG.ADMIN_URL}" style="display:inline-block;background:#7a3f8f;color:#fff;text-decoration:none;padding:10px 24px;border-radius:8px;font-size:13px;font-weight:600;">
-        Abrir Painel Admin
+    <div style="margin-top:16px;padding:12px 16px;background:#fff8f0;border-left:3px solid #e87060;border-radius:4px;font-size:13px;color:#555;line-height:1.5;">
+      O horário escolhido ainda está disponível. Você pode entrar em contato para ajudar o cliente a concluir.
+    </div>
+    <div style="margin-top:16px;text-align:center;">
+      <a href="${toWaLink(booking.whatsapp, 'Oi ' + booking.nome + '! Vi que você começou um agendamento no site do ensaio em Joinville mas não concluiu. Posso te ajudar a finalizar? 😊')}" style="display:inline-block;background:#128C7E;color:#fff;font-weight:bold;font-size:14px;text-decoration:none;padding:12px 28px;border-radius:8px;">
+        💬 Abrir conversa no WhatsApp
       </a>
-    </p>
-    <p style="color:#9ca3af;font-size:12px;margin-top:16px;border-top:1px solid #f0f0f0;padding-top:12px;">
-      O horário fica bloqueado por 3 dias. Se o pagamento não for confirmado, o slot é liberado automaticamente.
-    </p>
+    </div>
+    <p style="font-size:12px;color:#9ca3af;margin-top:14px;text-align:center;">Toque no botão para abrir direto o chat com o cliente.</p>
   </td></tr>
 </table>
 </td></tr>
 </table>
 </body></html>`;
 
-  const subject = '⏳ Agendamento pendente: ' + booking.nome + ' — ' + formatDateBR(booking.data) + ' às ' + booking.inicio;
+  const subject = '🔔 ' + booking.nome + ' não concluiu o pagamento — ' + formatDateBR(booking.data) + ' às ' + booking.inicio;
   const ok = sendEmailViaResend(CFG.MARIANE_EMAIL, subject, html);
   if (ok) addLog('VENDEDORA_NOTIFICADA', booking.id, 'Mariane notificada sobre ' + booking.nome, 'sendVendedoraNotification');
+}
+
+function toWaLink(phone, msg) {
+  const digits     = phone.replace(/\D/g, '');
+  const normalized = digits.length >= 12 ? digits : '55' + digits;
+  return 'https://wa.me/' + normalized + '?text=' + encodeURIComponent(msg);
+}
+
+function sendAdmin48hNotification(booking) {
+  const valorNum   = parseFloat(booking.valor);
+  const valorLabel = isNaN(valorNum) ? booking.valor : 'R$ ' + valorNum.toLocaleString('pt-BR', { minimumFractionDigits: 2 });
+  const pkgInfo    = CFG.PACKAGES[booking.pacote] || {};
+  const waLink     = toWaLink(booking.whatsapp, 'Oi ' + booking.nome + '! Vi que você ainda não concluiu o pagamento do seu ensaio em Joinville. Posso te ajudar? 😊');
+
+  const html = `<!DOCTYPE html><html lang="pt-BR"><head><meta charset="UTF-8"></head>
+<body style="margin:0;padding:0;background:#f4f4f5;font-family:Arial,sans-serif;">
+<table width="100%" cellpadding="0" cellspacing="0" style="background:#f4f4f5;padding:32px 0;">
+<tr><td align="center">
+<table width="520" cellpadding="0" cellspacing="0" style="background:#ffffff;border-radius:12px;overflow:hidden;box-shadow:0 2px 8px rgba(0,0,0,0.08);">
+  <tr><td style="background:linear-gradient(135deg,#7a3f8f,#e87060);padding:20px 28px;">
+    <h2 style="color:#ffffff;margin:0;font-size:17px;">⏰ Link não pago — 48 horas</h2>
+    <p style="color:rgba(255,255,255,0.85);margin:6px 0 0;font-size:13px;">O cliente ainda não concluiu o pagamento do link que você enviou.</p>
+  </td></tr>
+  <tr><td style="padding:24px 28px;">
+    <table width="100%" style="border-collapse:collapse;">
+      <tr><td style="color:#6b7280;padding:7px 0;font-size:13px;width:130px;">Cliente</td>
+          <td style="font-weight:600;font-size:13px;">${booking.nome}</td></tr>
+      <tr><td style="color:#6b7280;padding:7px 0;font-size:13px;">WhatsApp</td>
+          <td style="font-weight:600;font-size:14px;color:#7a3f8f;">${booking.whatsapp}</td></tr>
+      <tr><td style="color:#6b7280;padding:7px 0;font-size:13px;">Pacote</td>
+          <td style="font-size:13px;">${pkgInfo.name || booking.pacote}</td></tr>
+      <tr><td style="color:#6b7280;padding:7px 0;font-size:13px;">Data</td>
+          <td style="font-size:13px;">${formatDateBR(booking.data)} às ${booking.inicio} – ${booking.fim}</td></tr>
+      <tr><td style="color:#6b7280;padding:7px 0;font-size:13px;border-top:1px solid #e5e7eb;">Valor</td>
+          <td style="font-weight:700;font-size:14px;color:#7a3f8f;border-top:1px solid #e5e7eb;">${valorLabel}</td></tr>
+    </table>
+    <div style="margin-top:20px;text-align:center;">
+      <a href="${waLink}" style="display:inline-block;background:#128C7E;color:#fff;font-weight:bold;font-size:14px;text-decoration:none;padding:12px 28px;border-radius:8px;">
+        💬 Abrir conversa no WhatsApp
+      </a>
+    </div>
+    <p style="font-size:12px;color:#9ca3af;margin-top:14px;text-align:center;">Toque no botão para abrir direto o chat com o cliente.</p>
+  </td></tr>
+</table>
+</td></tr>
+</table>
+</body></html>`;
+
+  const subject = '⏰ ' + booking.nome + ' não pagou há 48h — ' + formatDateBR(booking.data) + ' às ' + booking.inicio;
+  const ok = sendEmailViaResend(CFG.MARIANE_EMAIL, subject, html);
+  if (ok) addLog('ADMIN_48H_NOTIFICADA', booking.id, 'Mariane notificada (48h) sobre ' + booking.nome, 'sendAdmin48hNotification');
 }
 
 function sendExpiryWarning(booking) {
@@ -618,7 +482,6 @@ function processReminders() {
   const numCols = Math.max(sa.getLastColumn(), 23);
   const data    = sa.getRange(2, 1, sa.getLastRow() - 1, numCols).getValues();
   const now     = Date.now();
-  let   calendarChanged = false;
 
   data.forEach((row, i) => {
     if (row[15] !== 'Pendente') return;
@@ -647,56 +510,38 @@ function processReminders() {
     if (ageMin >= CFG.PENDING_BLOCK_H * 60) {
       sa.getRange(rowNum, 16).setValue('Expirado');
       sa.getRange(rowNum, 18).setValue(nowIso());
-      clearCalendarSlot(booking.data, booking.inicio, booking.fim);
-      addLog('PENDENTE_EXPIRADO', booking.id, 'Expirou após 3 dias', 'processReminders');
-      calendarChanged = true;
+      addLog('PENDENTE_EXPIRADO', booking.id, 'Expirou após 3 dias', 'sistema');
       return;
     }
 
-    // ── Lembretes automáticos desativados temporariamente ──────
-    // A vendedora envia os lembretes manualmente via WhatsApp.
-    // Para reativar, remova os comentários abaixo.
-    //
-    // Lembrete 1: após 5 min
-    // if (ageMin >= 5 && !row[18]) {
-    //   sendReminderEmail(booking, 1);
-    //   sa.getRange(rowNum, 19).setValue(nowIso());
-    // }
-    // Lembrete 2: após 2h
-    // if (ageMin >= 120 && !row[19]) {
-    //   sendReminderEmail(booking, 2);
-    //   sa.getRange(rowNum, 20).setValue(nowIso());
-    // }
-    // Lembrete 3: após 22h
-    // if (ageMin >= 22 * 60 && !row[20]) {
-    //   sendReminderEmail(booking, 3);
-    //   sa.getRange(rowNum, 21).setValue(nowIso());
-    // }
-    // ────────────────────────────────────────────────────────────
+    const source = row[23] || 'site';
+
     // Aviso de expiração para Mariane: 8h antes do prazo de 3 dias
     if (ageMin >= (CFG.PENDING_BLOCK_H * 60 - 8 * 60) && !row[22]) {
       sendExpiryWarning(booking);
       sa.getRange(rowNum, 23).setValue(nowIso());
     }
 
-    // Notificação para Mariane: após 30 min
-    if (ageMin >= CFG.ANDRE_NOTIFY_MIN && !row[21]) {
+    // ── Avisos para Mariane por tipo de origem ─────────────────
+    // Site: 30min sem pagar → avisa que cliente começou mas não concluiu
+    if (source === 'site' && ageMin >= 30 && !row[21]) {
       sendVendedoraNotification(booking);
       sa.getRange(rowNum, 22).setValue(nowIso());
     }
+    // Admin (link gerado por Mariane): 48h sem pagar → avisa para fazer follow-up
+    if (source === 'admin' && ageMin >= 48 * 60 && !row[18]) {
+      sendAdmin48hNotification(booking);
+      sa.getRange(rowNum, 19).setValue(nowIso());
+    }
 
-    // Atualiza indicador no calendário (🟡 → 🔴 quando passa de 30 min)
-    calendarChanged = true;
   });
-
-  if (calendarChanged) refreshCalendar();
 }
 
 // ── Booking CRUD ──────────────────────────────────────────────
 function createPending(data) {
   const { date, start, packageKey, name, email, whatsapp,
           instagram, instagramBailarina, nomeBailarina,
-          stripeSession } = data;
+          stripeSession, source } = data;
   const pkg = CFG.PACKAGES[packageKey];
   if (!pkg) throw new Error('Pacote inválido: ' + packageKey);
 
@@ -710,12 +555,12 @@ function createPending(data) {
     (pkg.price / 100).toFixed(2), name, email, whatsapp,
     instagram || '', instagramBailarina || '', nomeBailarina || '',
     stripeSession || '', '', 'Pendente', now, now,
-    '', '', '', '', ''
+    '', '', '', '', '', source || 'site'   // col 23: source
   ]);
 
-  paintCalendarSlot(date, start, endTime, name, packageKey, 'Pendente', now);
   addLog('PENDENTE_CRIADO', bookingId,
-    name + ' | ' + (pkg.name) + ' | ' + date + ' ' + start + '–' + endTime + ' | Stripe: ' + stripeSession, 'webhook');
+    name + ' | ' + (pkg.name) + ' | ' + date + ' ' + start + '–' + endTime + ' | Stripe: ' + stripeSession,
+    source === 'admin' ? 'painel' : 'site');
 
   return { ok: true, bookingId: bookingId, endTime: endTime };
 }
@@ -737,8 +582,6 @@ function confirmBooking(data) {
   sa.getRange(shRow, 18).setValue(nowIso());
 
   const dateStr = row[1] ? (typeof row[1] === 'string' ? row[1] : Utilities.formatDate(row[1], 'America/Sao_Paulo', 'yyyy-MM-dd')) : '';
-  clearCalendarSlot(dateStr, row[2] ? row[2].toString() : '', row[3] ? row[3].toString() : '');
-  paintCalendarSlot(dateStr, row[2] ? row[2].toString() : '', row[3] ? row[3].toString() : '', row[7], row[4], 'Confirmado', row[16]);
 
   buildClientesSheet();
   addLog('PAGAMENTO_CONFIRMADO', row[0],
@@ -768,9 +611,7 @@ function cancelBooking(data) {
   sa.getRange(shRow, 16).setValue('Cancelado');
   sa.getRange(shRow, 18).setValue(nowIso());
 
-  const dateStr = row[1] ? (typeof row[1] === 'string' ? row[1] : Utilities.formatDate(row[1], 'America/Sao_Paulo', 'yyyy-MM-dd')) : '';
-  clearCalendarSlot(dateStr, row[2] ? row[2].toString() : '', row[3] ? row[3].toString() : '');
-  addLog('CANCELADO', bookingId, reason || 'sem motivo', origin || 'admin');
+  addLog('CANCELADO', bookingId, reason || 'sem motivo', origin || 'painel');
 
   return { ok: true };
 }
@@ -796,7 +637,7 @@ function editBooking(data) {
   sa.getRange(shRow, 18).setValue(nowIso());
 
   buildClientesSheet();
-  addLog('EDITADO', bookingId, 'Dados atualizados: ' + name, 'admin-edit');
+  addLog('EDITADO', bookingId, 'Dados atualizados: ' + name, 'painel');
 
   return { ok: true, bookingId: bookingId };
 }
@@ -807,13 +648,72 @@ function releasePendingSlots() {
   return { ok: true };
 }
 
-// ── Trigger ───────────────────────────────────────────────────
-function setupTrigger() {
-  // Execute manualmente UMA vez para instalar o trigger
+// ── Triggers ──────────────────────────────────────────────────
+// Execute setupTriggers() manualmente UMA vez para instalar
+// (autoriza acessos quando perguntar)
+function setupTriggers() {
   ScriptApp.getProjectTriggers().forEach(t => ScriptApp.deleteTrigger(t));
-  ScriptApp.newTrigger('processReminders')
-    .timeBased().everyMinutes(5).create();
-  addLog('TRIGGER_INSTALADO', '', 'processReminders a cada 5min', 'setupTrigger');
+  ScriptApp.newTrigger('processReminders').timeBased().everyMinutes(5).create();
+  ScriptApp.newTrigger('onEditAgendamentos')
+    .forSpreadsheet(SpreadsheetApp.getActiveSpreadsheet())
+    .onEdit()
+    .create();
+  addLog('TRIGGER_INSTALADO', '', 'processReminders (5min) + onEditAgendamentos', 'sistema');
+}
+// Compat: alias do nome antigo
+function setupTrigger() { setupTriggers(); }
+
+// ── onEdit: registra edições manuais na planilha ───────────────
+// Disparado automaticamente quando alguém edita uma célula em "Agendamentos".
+// Apenas registra no Log — efeitos colaterais (e-mails, etc.) ficam por conta
+// das ações do painel admin para evitar envios não autorizados.
+function onEditAgendamentos(e) {
+  try {
+    if (!e || !e.range) return;
+    const sh = e.range.getSheet();
+    if (sh.getName() !== 'Agendamentos') return;
+    const row = e.range.getRow();
+    if (row < 2) return; // ignora alteração no cabeçalho
+
+    const numCols = sh.getLastColumn();
+    const col     = e.range.getColumn();
+    const hdrs    = sh.getRange(1, 1, 1, numCols).getValues()[0];
+    const colName = String(hdrs[col - 1] || ('Coluna ' + col)).trim();
+
+    // Evita loop com a coluna que o próprio trigger atualiza
+    if (colName === 'Atualizado em') return;
+
+    const id      = sh.getRange(row, 1).getValue();
+    const nomeIdx = hdrs.findIndex(h => String(h).trim() === 'Nome');
+    const nome    = nomeIdx >= 0 ? sh.getRange(row, nomeIdx + 1).getValue() : '';
+
+    const fmt = v => {
+      if (v === undefined || v === null || v === '') return '(vazio)';
+      if (v instanceof Date) return Utilities.formatDate(v, 'America/Sao_Paulo', 'yyyy-MM-dd HH:mm');
+      return String(v);
+    };
+    const oldV = fmt(e.oldValue);
+    const newV = fmt(e.value);
+
+    let user = 'desconhecido';
+    try {
+      user = (e.user && e.user.getEmail && e.user.getEmail()) ||
+             (Session.getActiveUser && Session.getActiveUser().getEmail()) ||
+             'desconhecido';
+    } catch (_) {}
+
+    // Toca "Atualizado em" para refletir a edição externa
+    const updIdx = hdrs.findIndex(h => String(h).trim() === 'Atualizado em');
+    if (updIdx >= 0) sh.getRange(row, updIdx + 1).setValue(nowIso());
+
+    addLog('EDICAO_MANUAL',
+           id || '',
+           user + ' alterou "' + colName + '" de ' + (nome || '?') +
+           ': "' + oldV + '" → "' + newV + '"',
+           'planilha');
+  } catch (err) {
+    try { addLog('ERRO_ONEDIT', '', String(err && err.message || err), 'planilha'); } catch (_) {}
+  }
 }
 
 // ── HTTP handlers ─────────────────────────────────────────────
@@ -838,24 +738,96 @@ function doGet(e) {
       const sa = getSheet('Agendamentos');
       if (!sa || sa.getLastRow() < 2) { result = []; }
       else {
-        const TZ = 'America/Sao_Paulo';
-        result = sa.getRange(2, 1, sa.getLastRow() - 1, 18).getValues().map(r => ({
-          id:                  r[0],
-          date:                r[1] ? (typeof r[1] === 'string' ? r[1] : Utilities.formatDate(r[1], TZ, 'yyyy-MM-dd')) : '',
-          start:               r[2] ? (typeof r[2] === 'string' ? r[2] : Utilities.formatDate(r[2], TZ, 'HH:mm'))      : '',
-          end:                 r[3] ? (typeof r[3] === 'string' ? r[3] : Utilities.formatDate(r[3], TZ, 'HH:mm'))      : '',
-          package:             r[4],
-          price:               r[6],
-          name:                r[7],
-          email:               r[8],
-          whatsapp:            r[9],
-          instagram:           r[10],
-          instagramBailarina:  r[11],
-          nomeBailarina:       r[12],
-          stripeSession:       r[13],
-          status:              r[15],
-          createdAt:           r[16] ? (typeof r[16] === 'string' ? r[16] : r[16].toISOString()) : '',
-        }));
+        const TZ      = 'America/Sao_Paulo';
+        const numCols = sa.getLastColumn();
+        // Build header→index map so we handle both old and new schema
+        const hdrs = sa.getRange(1, 1, 1, numCols).getValues()[0];
+        const ci   = {};
+        hdrs.forEach(function(h, i) { ci[String(h).trim()] = i; });
+        // Fallback indices for old schema (no Instagram/Bailarina cols)
+        const iId       = ci['ID']                   ?? 0;
+        const iDate     = ci['Data']                 ?? 1;
+        const iStart    = ci['Início']               ?? 2;
+        const iEnd      = ci['Fim']                  ?? 3;
+        const iPkg      = ci['Pacote']               ?? 4;
+        const iPrice    = ci['Valor (R$)']           ?? 6;
+        const iNome     = ci['Nome']                 ?? 7;
+        const iEmail    = ci['E-mail']               ?? 8;
+        const iWa       = ci['WhatsApp']             ?? 9;
+        const iInsta    = ci['Instagram Cliente']    ?? -1;
+        const iInstaB   = ci['Instagram Bailarina']  ?? -1;
+        const iNomeB    = ci['Nome Bailarina']       ?? -1;
+        const iSession  = ci['Stripe Session']       ?? (iInsta === -1 ? 10 : 13);
+        const iStatus   = ci['Status']               ?? (iInsta === -1 ? 12 : 15);
+        const iCreated  = ci['Criado em']            ?? (iInsta === -1 ? 13 : 16);
+        result = sa.getRange(2, 1, sa.getLastRow() - 1, numCols).getValues().map(function(r) {
+          var fmtDate = function(v) { return v ? (typeof v === 'string' ? v : Utilities.formatDate(v, TZ, 'yyyy-MM-dd')) : ''; };
+          var fmtTime = function(v) { return v ? (typeof v === 'string' ? v : Utilities.formatDate(v, TZ, 'HH:mm')) : ''; };
+          var fmtIso  = function(v) { return v ? (typeof v === 'string' ? v : v.toISOString()) : ''; };
+          return {
+            id:                  r[iId],
+            date:                fmtDate(r[iDate]),
+            start:               fmtTime(r[iStart]),
+            end:                 fmtTime(r[iEnd]),
+            package:             r[iPkg],
+            price:               r[iPrice],
+            name:                r[iNome],
+            email:               r[iEmail],
+            whatsapp:            r[iWa],
+            instagram:           iInsta  >= 0 ? r[iInsta]  : '',
+            instagramBailarina:  iInstaB >= 0 ? r[iInstaB] : '',
+            nomeBailarina:       iNomeB  >= 0 ? r[iNomeB]  : '',
+            stripeSession:       r[iSession],
+            status:              r[iStatus],
+            createdAt:           fmtIso(r[iCreated]),
+          };
+        });
+      }
+    } else if (action === 'getPendingForReminders') {
+      const sa = getSheet('Agendamentos');
+      if (!sa || sa.getLastRow() < 2) {
+        result = { site30min: [], admin48h: [] };
+      } else {
+        const TZ      = 'America/Sao_Paulo';
+        const numCols = Math.max(sa.getLastColumn(), 24);
+        const rows    = sa.getRange(2, 1, sa.getLastRow() - 1, numCols).getValues();
+        const now     = Date.now();
+        const site30min = [];
+        const admin48h  = [];
+
+        rows.forEach(function(r) {
+          if (r[15] !== 'Pendente') return;
+          const criadoEm = r[16];
+          if (!criadoEm) return;
+          const ageMin = (now - new Date(criadoEm).getTime()) / 60000;
+          const source = r[23] || 'site';
+
+          const booking = {
+            id:            r[0],
+            date:          r[1] ? (typeof r[1] === 'string' ? r[1] : Utilities.formatDate(r[1], TZ, 'yyyy-MM-dd')) : '',
+            start:         r[2] ? (typeof r[2] === 'string' ? r[2] : Utilities.formatDate(r[2], TZ, 'HH:mm')) : '',
+            end:           r[3] ? (typeof r[3] === 'string' ? r[3] : Utilities.formatDate(r[3], TZ, 'HH:mm')) : '',
+            package:       r[4],
+            price:         r[6],
+            name:          r[7],
+            email:         r[8],
+            whatsapp:      r[9],
+            nomeBailarina: r[12],
+            createdAt:     typeof criadoEm === 'string' ? criadoEm : criadoEm.toISOString(),
+            source:        source,
+          };
+
+          // 30min site: age >= 30min, source=site, AndreNotified (col 21) vazio
+          if (source === 'site' && ageMin >= 30 && !r[21]) {
+            site30min.push(booking);
+          }
+          // 48h admin: age >= 48h, source=admin, Rem1Sent (col 18) vazio
+          if (source === 'admin' && ageMin >= 48 * 60 && !r[18]) {
+            admin48h.push(booking);
+          }
+        });
+
+        result = { site30min: site30min, admin48h: admin48h };
       }
     } else if (action === 'ping') {
       result = { ok: true, ts: new Date().toISOString() };
@@ -882,10 +854,32 @@ function doPost(e) {
     else if (action === 'editBooking')     result = editBooking(body);
     else if (action === 'releasePending')  result = releasePendingSlots();
     else if (action === 'initSheets')      { initSheets(); result = { ok: true }; }
-    else if (action === 'refreshCalendar') { refreshCalendar(); result = { ok: true }; }
     else if (action === 'buildClientes')   { buildClientesSheet(); result = { ok: true }; }
     else if (action === 'addLog') {
-      addLog(body.logAction, body.bookingId, body.detail, body.origin);
+      // Accept both formats:
+      //   {logAction, bookingId, detail, origin}  — legacy / internal
+      //   {message, bookingId?, origin?}          — Vercel admin endpoints
+      if (body.message !== undefined && body.logAction === undefined && body.detail === undefined) {
+        addLog('LOG', body.bookingId || '', body.message, body.origin || 'painel');
+      } else {
+        addLog(body.logAction, body.bookingId, body.detail, body.origin);
+      }
+      result = { ok: true };
+    } else if (action === 'markReminderSent') {
+      const { bookingId, type } = body;
+      const sa      = getSheet('Agendamentos');
+      const numCols = Math.max(sa.getLastColumn(), 24);
+      const rows    = sa.getRange(2, 1, sa.getLastRow() - 1, numCols).getValues();
+      const idx     = rows.findIndex(function(r) { return r[0] === bookingId; });
+      if (idx < 0) throw new Error('Booking não encontrado: ' + bookingId);
+      const rowNum = idx + 2;
+      const ts     = nowIso();
+      if (type === 'site30min') {
+        sa.getRange(rowNum, 22).setValue(ts); // col 21 (0-based) = AndreNotified
+      } else if (type === 'admin48h') {
+        sa.getRange(rowNum, 19).setValue(ts); // col 18 (0-based) = Rem1Sent
+      }
+      addLog('REMINDER_SENT', bookingId, 'Tipo: ' + type, 'cron-reminders');
       result = { ok: true };
     } else {
       result = { error: 'Ação desconhecida: ' + action };

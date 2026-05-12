@@ -122,6 +122,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           instagramBailarina: instagramBailarina || '',
           nomeBailarina: nomeBailarina || '',
           stripeSession: pref.id,
+          source: 'admin',
         }),
       });
       const pendingJson = await pendingRes.json() as { bookingId?: string };
@@ -130,7 +131,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       await fetch(SCRIPT_URL, {
         method: 'POST',
         headers: { 'Content-Type': 'text/plain' },
-        body: JSON.stringify({ action: 'addLog', message: `${logUser} criou agendamento pendente para ${name} (${date} ${time}) e gerou link de pgmto` }),
+        body: JSON.stringify({ action: 'addLog', message: `${logUser} criou agendamento pendente para ${name} (${date} ${time}) e gerou link de pgmto`, origin: 'painel' }),
       }).catch(() => {});
 
       return res.status(200).json({ bookingId, paymentUrl: pref.init_point });
@@ -155,6 +156,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         instagramBailarina: instagramBailarina || '',
         nomeBailarina: nomeBailarina || '',
         stripeSession: sessionId,
+        source: 'admin',
       }),
     });
 
@@ -176,7 +178,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     await fetch(SCRIPT_URL, {
       method: 'POST',
       headers: { 'Content-Type': 'text/plain' },
-      body: JSON.stringify({ action: 'addLog', message: logMsg }),
+      body: JSON.stringify({ action: 'addLog', message: logMsg, origin: 'painel' }),
     }).catch(() => {});
 
     // 4. Confirmation email to client

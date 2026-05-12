@@ -75,6 +75,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       body: JSON.stringify({
         action:  'addLog',
         message: `${auth.user} editou dados do agendamento ${bookingId} (${name})`,
+        origin:  'painel',
       }),
     }).catch(() => {});
 
