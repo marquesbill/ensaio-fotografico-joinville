@@ -548,10 +548,14 @@ function EditBookingModal({
   const [instagram,          setInstagram]          = useState(booking.instagram ?? '');
   const [instagramBailarina, setInstagramBailarina] = useState(booking.instagramBailarina ?? '');
   const [nomeBailarina,      setNomeBailarina]      = useState(booking.nomeBailarina ?? '');
-  const [numBailarinas,      setNumBailarinas]      = useState<number>(Number(booking.numBailarinas) || 1);
+  const initialNb = (() => {
+    const n = Math.floor(Number(booking.numBailarinas));
+    return Number.isFinite(n) && n >= 1 && n <= 9 ? n : 1;
+  })();
+  const [numBailarinas, setNumBailarinas] = useState<number>(initialNb);
 
-  const canSave = name.trim() && email.trim()
-                  && Number.isInteger(numBailarinas) && numBailarinas >= 1 && numBailarinas <= 9;
+  // numBailarinas tem default seguro, então não bloqueia o save.
+  const canSave = name.trim() && email.trim();
 
   return (
     <Overlay onClose={onClose}>
