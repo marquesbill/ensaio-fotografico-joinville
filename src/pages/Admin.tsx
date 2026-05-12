@@ -542,12 +542,15 @@ function EditBookingModal({
   onSubmit: (data: { name: string; email: string; whatsapp: string; instagram: string; instagramBailarina: string; nomeBailarina: string; numBailarinas: number }) => void;
   loading: boolean;
 }) {
-  const [name,               setName]               = useState(booking.name);
-  const [email,              setEmail]              = useState(booking.email ?? '');
-  const [whatsapp,           setWhatsapp]           = useState(booking.whatsapp ?? '');
-  const [instagram,          setInstagram]          = useState(booking.instagram ?? '');
-  const [instagramBailarina, setInstagramBailarina] = useState(booking.instagramBailarina ?? '');
-  const [nomeBailarina,      setNomeBailarina]      = useState(booking.nomeBailarina ?? '');
+  // Defensive: Sheets pode devolver number/null para campos como WhatsApp.
+  // Convertendo tudo pra string para .trim() não quebrar.
+  const s = (v: unknown) => v === null || v === undefined ? '' : String(v);
+  const [name,               setName]               = useState(s(booking.name));
+  const [email,              setEmail]              = useState(s(booking.email));
+  const [whatsapp,           setWhatsapp]           = useState(s(booking.whatsapp));
+  const [instagram,          setInstagram]          = useState(s(booking.instagram));
+  const [instagramBailarina, setInstagramBailarina] = useState(s(booking.instagramBailarina));
+  const [nomeBailarina,      setNomeBailarina]      = useState(s(booking.nomeBailarina));
   const initialNb = (() => {
     const n = Math.floor(Number(booking.numBailarinas));
     return Number.isFinite(n) && n >= 1 && n <= 9 ? n : 1;
@@ -646,21 +649,7 @@ function EditBookingModal({
           className="flex-1 border border-gray-200 rounded-lg py-2.5 text-sm text-gray-600 hover:bg-gray-50"
         >Cancelar</button>
         <button
-          onClick={() => {
-            // eslint-disable-next-line no-console
-            console.log('[edit-save] click', { canSave, loading, name: name.trim(), email: email.trim(), numBailarinas });
-            if (!canSave) {
-              alert('Não foi possível salvar. Verifique que Nome e E-mail estão preenchidos.');
-              return;
-            }
-            try {
-              onSubmit({ name: name.trim(), email: email.trim(), whatsapp: whatsapp.trim(), instagram: instagram.trim(), instagramBailarina: instagramBailarina.trim(), nomeBailarina: nomeBailarina.trim(), numBailarinas });
-            } catch (err) {
-              // eslint-disable-next-line no-console
-              console.error('[edit-save] threw synchronously', err);
-              alert('Erro inesperado ao chamar salvar: ' + (err instanceof Error ? err.message : String(err)));
-            }
-          }}
+          onClick={() => canSave && onSubmit({ name: name.trim(), email: email.trim(), whatsapp: whatsapp.trim(), instagram: instagram.trim(), instagramBailarina: instagramBailarina.trim(), nomeBailarina: nomeBailarina.trim(), numBailarinas })}
           disabled={!canSave || loading}
           className="flex-1 text-white rounded-lg py-2.5 text-sm font-semibold disabled:opacity-50 flex items-center justify-center gap-2"
           style={{ background: 'linear-gradient(135deg,#7a3f8f,#e87060)' }}
