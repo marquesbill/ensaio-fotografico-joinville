@@ -1,20 +1,14 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
-import nodemailer from 'nodemailer';
+import { Resend } from 'resend';
 
 const EMAIL_BG_URL  = 'https://www.ensaiofotograficoemjoinville.com/email-bg3.jpg';
 const SCRIPT_URL    = process.env.SHEETS_SCRIPT_URL!;
 const MP_TOKEN      = process.env.MERCADOPAGO_ACCESS_TOKEN!;
-const GMAIL_USER    = process.env.GMAIL_USER!;
-const GMAIL_PASS    = process.env.GMAIL_APP_PASSWORD!;
 const ANDRE_EMAIL   = 'andreffotografia@gmail.com';
 const MARIANE_EMAIL = 'mariane.sslourenco@gmail.com';
+const FROM_EMAIL    = 'Ensaio Joinville <confirmacao@ensaiofotograficoemjoinville.com>';
 
-const transporter = nodemailer.createTransport({
-  host:   'smtp.gmail.com',
-  port:   587,
-  secure: false,
-  auth: { user: GMAIL_USER, pass: GMAIL_PASS },
-});
+const resend = new Resend(process.env.RESEND_API_KEY!);
 
 const PACKAGES: Record<string, { name: string; duration: number; price: number }> = {
   lembranca: { name: 'Lembrança',  duration: 30,  price: 1400 },
@@ -164,20 +158,20 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     numBailarinas,
   });
   try {
-    await transporter.sendMail({
-      from:    `"Ensaio Joinville" <${GMAIL_USER}>`,
+    await resend.emails.send({
+      from:    FROM_EMAIL,
       to:      email,
       subject: `Reserva confirmada — ${pkg.name} · ${date.split('-').reverse().join('/')} às ${time}`,
       html:    htmlBody,
     });
   } catch (e) {
-    console.error('[webhook] sendMail client error', e);
+    console.error('[webhook] Resend client error', e);
   }
 
   // 3. Notify André
   try {
-    await transporter.sendMail({
-      from:    `"Ensaio Joinville" <${GMAIL_USER}>`,
+    await resend.emails.send({
+      from:    FROM_EMAIL,
       to:      ANDRE_EMAIL,
       subject: `Nova reserva: ${name} — ${pkg.name} ${date.split('-').reverse().join('/')} ${time}`,
       html:    `<p><strong>Nova reserva confirmada</strong><br>
@@ -188,7 +182,7 @@ Parcelas: ${payment.installments || 1}x<br>
 Booking ID: ${bookingId}<br>MP Payment: ${payment.id}</p>`,
     });
   } catch (e) {
-    console.error('[webhook] sendMail andre error', e);
+    console.error('[webhook] Resend andre error', e);
   }
 
   // 4. Notify Mariane
@@ -226,14 +220,14 @@ Booking ID: ${bookingId}<br>MP Payment: ${payment.id}</p>`,
 </table>
 </body></html>`;
 
-    await transporter.sendMail({
-      from:    `"Ensaio Joinville" <${GMAIL_USER}>`,
+    await resend.emails.send({
+      from:    FROM_EMAIL,
       to:      MARIANE_EMAIL,
       subject: `✅ ${name} concluiu o pagamento — ${pkg.name} · ${fmtDate(date)} às ${time}`,
       html:    marianeHtml,
     });
   } catch (e) {
-    console.error('[webhook] sendMail mariane error', e);
+    console.error('[webhook] Resend mariane error', e);
   }
 
   return res.status(200).json({ received: true });
