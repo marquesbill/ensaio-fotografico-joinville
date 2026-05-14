@@ -62,7 +62,7 @@ const ANDRE_EMAIL = 'andreffotografia@gmail.com';
 
 const PACKAGES = {
   lembranca: { name: 'Lembrança',  duration: 30,  price: 1400, maxBailarinas: 2 },
-  economico: { name: 'Econômico',  duration: 90,  price: 1900, maxBailarinas: 3 },
+  economico: { name: 'Econômico',  duration: 60,  price: 1900, maxBailarinas: 3 },
   completo:  { name: 'Completo',   duration: 120, price: 2200, maxBailarinas: 4 },
 } as const;
 type PkgKey = keyof typeof PACKAGES;

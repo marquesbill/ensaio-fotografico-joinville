@@ -30,7 +30,7 @@ const API = import.meta.env.DEV ? '' : '';
 
 const PACKAGES = [
   { key: 'lembranca', name: 'Lembrança',  duration: 30,  price: 1400, maxBailarinas: 2 },
-  { key: 'economico', name: 'Econômico',  duration: 90,  price: 1900, maxBailarinas: 3 },
+  { key: 'economico', name: 'Econômico',  duration: 60,  price: 1900, maxBailarinas: 3 },
   { key: 'completo',  name: 'Completo',   duration: 120, price: 2200, maxBailarinas: 4 },
 ];
 const MAX_BAILARINAS: Record<string, number> = {

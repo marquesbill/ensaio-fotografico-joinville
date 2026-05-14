@@ -18,11 +18,11 @@ const PACKAGES = [
   {
     key: 'economico',
     name: 'Econômico',
-    duration: 90,
+    duration: 60,
     price: 1900,
     maxBailarinas: 3,
     desc: 'Experiência completa com tempo para explorar diferentes looks.',
-    features: ['90 min de sessão', 'Até 3 pessoas', 'Fotos editadas em alta resolução'],
+    features: ['60 min de sessão', 'Até 3 pessoas', 'Fotos editadas em alta resolução'],
     calBg: '#888888', calText: '#FFFFFF', calBold: true,
     popular: true,
   },

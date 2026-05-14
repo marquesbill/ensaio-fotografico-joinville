@@ -60,7 +60,7 @@ const ANDRE_EMAIL = 'andreffotografia@gmail.com';
 
 const PACKAGES: Record<string, { name: string; duration: number; price: number }> = {
   lembranca: { name: 'Lembrança',  duration: 30,  price: 1400 },
-  economico: { name: 'Econômico',  duration: 90,  price: 1900 },
+  economico: { name: 'Econômico',  duration: 60,  price: 1900 },
   completo:  { name: 'Completo',   duration: 120, price: 2200 },
 };
 

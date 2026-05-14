@@ -16,7 +16,7 @@ const CFG = {
   ANDRE_NOTIFY_MIN: 30,         // minutos até Mariane receber aviso de pagamento não concluído
   PACKAGES: {
     lembranca: { name: 'Lembrança', duration: 30,  price: 140000, color: '#6A0DAD', textColor: '#FFFFFF', bold: false, maxBailarinas: 2 },
-    economico: { name: 'Econômico', duration: 90,  price: 190000, color: '#0277BD', textColor: '#FFFFFF', bold: true,  maxBailarinas: 3 },
+    economico: { name: 'Econômico', duration: 60,  price: 190000, color: '#0277BD', textColor: '#FFFFFF', bold: true,  maxBailarinas: 3 },
     completo:  { name: 'Completo',  duration: 120, price: 220000, color: '#BF360C', textColor: '#FFFFFF', bold: false, maxBailarinas: 4 },
   },
   DATES_START:  '2026-07-20',
