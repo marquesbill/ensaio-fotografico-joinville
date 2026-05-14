@@ -27,10 +27,40 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
   if (req.method === 'OPTIONS') return res.status(200).end();
-  if (req.method !== 'GET') return res.status(405).end();
 
   const auth = verifyToken(req.headers.authorization as string | undefined);
   if (!auth) return res.status(401).json({ error: 'Não autorizado' });
+
+  // POST: proxy de ações específicas para o Apps Script
+  // (mantemos aqui em vez de criar nova função pra não estourar
+  //  o limite de 12 serverless functions do plano Hobby.)
+  if (req.method === 'POST') {
+    try {
+      const body = req.body as { action?: string; bookingId?: string; extraCc?: string };
+      if (body?.action === 'resendConfirmation') {
+        if (!body.bookingId) return res.status(400).json({ error: 'bookingId obrigatório' });
+        const r = await fetch(SCRIPT_URL, {
+          method: 'POST',
+          headers: { 'Content-Type': 'text/plain' },
+          body: JSON.stringify({
+            action:    'resendConfirmation',
+            bookingId: body.bookingId,
+            extraCc:   body.extraCc || '',
+          }),
+        });
+        const json = await r.json();
+        if (json && json.error) return res.status(400).json(json);
+        return res.status(200).json(json);
+      }
+      return res.status(400).json({ error: 'Ação desconhecida' });
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      console.error('[admin-bookings] POST', msg);
+      return res.status(500).json({ error: msg });
+    }
+  }
+
+  if (req.method !== 'GET') return res.status(405).end();
 
   try {
     const url = `${SCRIPT_URL}?action=bookings&t=${Date.now()}`;

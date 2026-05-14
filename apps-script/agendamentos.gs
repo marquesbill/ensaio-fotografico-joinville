@@ -892,6 +892,100 @@ function cleanupAgendamentos() {
   return { kept: kept.length, archived: archive.length };
 }
 
+// ── Reenvia o email de confirmação de uma reserva ─────────────
+// Lê os dados da reserva pelo bookingId e envia o mesmo HTML do
+// webhook, com CC para André + Mariane por padrão.
+function resendBookingConfirmationEmail(bookingId, extraCc) {
+  const sa = getSheet('Agendamentos');
+  if (!sa) throw new Error('Aba Agendamentos não encontrada');
+
+  const cm      = _colMap(sa);
+  const numCols = sa.getLastColumn();
+  const rows    = sa.getRange(2, 1, sa.getLastRow() - 1, numCols).getValues();
+  const iId     = cm['ID'] !== undefined ? cm['ID'] : 0;
+  const idx     = rows.findIndex(r => r[iId] === bookingId);
+  if (idx < 0) throw new Error('Booking não encontrado: ' + bookingId);
+  const row = rows[idx];
+
+  const pkgKey   = _val(row, cm, 'Pacote', 4);
+  const pkg      = CFG.PACKAGES[pkgKey] || { name: pkgKey, duration: 0, price: 0 };
+  const dataRaw  = _val(row, cm, 'Data', 1);
+  const dateStr  = dataRaw ? (typeof dataRaw === 'string'
+                    ? dataRaw
+                    : Utilities.formatDate(dataRaw, 'America/Sao_Paulo', 'yyyy-MM-dd')) : '';
+  const start    = _toHHMM(_val(row, cm, 'Início', 2));
+  const endTime  = _toHHMM(_val(row, cm, 'Fim',    3));
+  const name     = String(_val(row, cm, 'Nome',  7) || '');
+  const email    = String(_val(row, cm, 'E-mail', 8) || '').trim();
+  const numB     = Number(_val(row, cm, 'Nº Bailarinas')) || 1;
+  const valorNum = parseFloat(_val(row, cm, 'Valor (R$)', 6)) || (pkg.price / 100);
+  const valorLabel = 'R$ ' + valorNum.toLocaleString('pt-BR', { minimumFractionDigits: 2 });
+
+  if (!email) throw new Error('Reserva não tem email cadastrado');
+
+  // CC default: André + Mariane. Pode adicionar mais com extraCc (string separada por vírgula).
+  const ccList = [CFG.ANDRE_EMAIL, CFG.MARIANE_EMAIL];
+  if (extraCc) String(extraCc).split(',').forEach(e => { const t = e.trim(); if (t) ccList.push(t); });
+  const cc = ccList.join(',');
+
+  const html = `<!DOCTYPE html>
+<html lang="pt-BR">
+<head><meta charset="UTF-8"><style>
+  body{font-family:Georgia,serif;background:#f5f0fa;margin:0;padding:0}
+  .header{background:linear-gradient(135deg,#7a3f8f,#e87060);padding:32px 32px 24px;text-align:center}
+  .header h1{color:#fff;font-size:22px;margin:0 0 4px;letter-spacing:.5px}
+  .header p{color:rgba(255,255,255,.85);font-size:13px;margin:0}
+  .body{padding:32px}
+  .tag{display:inline-block;background:#7a3f8f;color:#fff;font-size:11px;font-weight:bold;letter-spacing:1px;text-transform:uppercase;border-radius:20px;padding:4px 12px;margin-bottom:16px}
+  h2{font-size:20px;color:#352D39;margin:0 0 20px}
+  .card{background:rgba(249,246,252,0.88);border:1px solid #e8d8f0;border-radius:12px;padding:20px;margin-bottom:20px}
+  .row{display:flex;justify-content:space-between;padding:10px 0;border-bottom:1px solid #eee;font-size:14px}
+  .row:last-child{border:none}
+  .label{color:#888}
+  .value{font-weight:bold;color:#352D39}
+  .id{font-size:11px;color:#aaa;text-align:center;margin-top:8px;font-family:monospace}
+  .footer{background:rgba(249,246,252,0.88);padding:20px 32px;text-align:center;font-size:12px;color:#aaa;border-top:1px solid #eee}
+  .footer a{color:#7a3f8f}
+</style></head>
+<body>
+<div style="max-width:560px;margin:32px auto;background-color:#fff;border-radius:16px;overflow:hidden;box-shadow:0 4px 24px rgba(0,0,0,.10)">
+  <div class="header">
+    <h1>Ensaio Fotográfico em Joinville</h1>
+    <p>André Ferreira · @affotografia</p>
+  </div>
+  <div class="body">
+    <span class="tag">Reserva Confirmada</span>
+    <h2>Olá, ${name}!</h2>
+    <p style="color:#555;font-size:14px;line-height:1.6">Sua reserva está confirmada. Anote os detalhes abaixo.</p>
+    <div class="card">
+      <div class="row"><span class="label">Data:</span><span class="value">${formatDateBR(dateStr)}</span></div>
+      <div class="row"><span class="label">Horário:</span><span class="value">${start} – ${endTime}</span></div>
+      <div class="row"><span class="label">Pacote:</span><span class="value">${pkg.name} (${pkg.duration}min)</span></div>
+      <div class="row"><span class="label">Nº Bailarinas:</span><span class="value">${numB}</span></div>
+      <div class="row"><span class="label">Local:</span><span class="value"><a href="https://www.google.com/maps/search/Hotel+Le+Village+Joinville+SC" style="color:#7a3f8f;text-decoration:none;font-weight:bold;">Hotel Le Village · Sala Esmeralda · Joinville/SC</a></span></div>
+      <div class="row"><span class="label">Valor:</span><span class="value">${valorLabel}</span></div>
+    </div>
+    <p style="font-size:13px;color:#666;line-height:1.6">Em caso de dúvidas ou necessidade de remarcação, entre em contato pelo <a href="https://wa.me/5511519606272" style="color:#128C7E;font-weight:bold;text-decoration:none;">WhatsApp (11) 5196-0627</a>.</p>
+    <p class="id">Código da reserva: ${bookingId}</p>
+  </div>
+  <div class="footer">
+    © 2026 André Ferreira Fotografia · Joinville, SC<br>
+    <a href="https://www.instagram.com/affotografia">@affotografia</a>
+  </div>
+</div>
+</body></html>`;
+
+  MailApp.sendEmail({
+    to:       email,
+    cc:       cc,
+    subject:  `Reserva confirmada — ${pkg.name} · ${formatDateBR(dateStr)} às ${start}`,
+    htmlBody: html,
+  });
+  addLog('CONFIRMACAO_REENVIADA', bookingId,
+    'Reenvio para ' + email + ' (CC: ' + cc + ')', 'painel');
+  return { ok: true, to: email, cc: cc };
+}
+
 // ── Diagnóstico: simula o cálculo de slots ────────────────────
 // Roda direto do editor (não precisa deploy) e mostra:
 //  - O que getBookingsForDate enxerga
@@ -1480,6 +1574,7 @@ function doPost(e) {
     else if (action === 'confirmBooking')  result = confirmBooking(body);
     else if (action === 'cancelBooking')   result = cancelBooking(body);
     else if (action === 'editBooking')     result = editBooking(body);
+    else if (action === 'resendConfirmation') result = resendBookingConfirmationEmail(body.bookingId, body.extraCc);
     else if (action === 'releasePending')  result = releasePendingSlots();
     else if (action === 'initSheets')      { initSheets(); result = { ok: true }; }
     else if (action === 'buildClientes')   { buildClientesSheet(); result = { ok: true }; }

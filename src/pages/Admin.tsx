@@ -733,7 +733,7 @@ function Toast({ msg, type, onDone }: { msg: string; type: 'ok' | 'err'; onDone:
 
 /* ─────────────────── Timeline View ─────────────────────────── */
 function TimelineView({
-  bookings, onCancel, onReschedule, onGetPaymentLink, onConfirmPayment, onEdit,
+  bookings, onCancel, onReschedule, onGetPaymentLink, onConfirmPayment, onEdit, onResendEmail,
 }: {
   bookings: Booking[];
   onCancel: (b: Booking) => void;
@@ -741,6 +741,7 @@ function TimelineView({
   onGetPaymentLink: (b: Booking) => void;
   onConfirmPayment: (b: Booking) => void;
   onEdit: (b: Booking) => void;
+  onResendEmail: (b: Booking) => void;
 }) {
   const [sel, setSel]       = useState<Booking | null>(null);
   const [slotPx, setSlotPx] = useState(SLOT_PX);
@@ -886,6 +887,14 @@ function TimelineView({
               </button>
             </div>
           )}
+          {sel.status === 'Confirmado' && (
+            <div className="flex gap-2 mt-3">
+              <button onClick={() => { onResendEmail(sel); setSel(null); }}
+                      className="flex-1 text-xs py-1.5 rounded-lg border border-blue-300 text-blue-600 hover:bg-blue-50 font-medium flex items-center justify-center gap-1">
+                ✉️ Reenviar email
+              </button>
+            </div>
+          )}
           <div className="flex gap-2 mt-2">
             <button onClick={() => { onEdit(sel); setSel(null); }}
                     className="flex-1 text-xs py-1.5 rounded-lg border border-[#7a3f8f] text-[#7a3f8f] hover:bg-purple-50 font-medium flex items-center justify-center gap-1">
@@ -908,7 +917,7 @@ function TimelineView({
 
 /* ─────────────────── BookingCard ───────────────────────────── */
 function BookingCard({
-  booking, onCancel, onReschedule, onGetPaymentLink, onConfirmPayment, onEdit,
+  booking, onCancel, onReschedule, onGetPaymentLink, onConfirmPayment, onEdit, onResendEmail,
 }: {
   booking: Booking;
   onCancel: (b: Booking) => void;
@@ -916,9 +925,11 @@ function BookingCard({
   onGetPaymentLink: (b: Booking) => void;
   onConfirmPayment: (b: Booking) => void;
   onEdit: (b: Booking) => void;
+  onResendEmail: (b: Booking) => void;
 }) {
-  const active  = booking.status !== 'Cancelado';
-  const pending = booking.status === 'Pendente';
+  const active    = booking.status !== 'Cancelado';
+  const pending   = booking.status === 'Pendente';
+  const confirmed = booking.status === 'Confirmado';
   return (
     <div className={`rounded-xl border p-4 ${STATUS_COLOR[booking.status] ?? 'bg-gray-50 border-gray-200'}`}>
       <div className="flex items-start justify-between gap-2">
@@ -967,6 +978,12 @@ function BookingCard({
           >Cancelar</button>
         </div>
       )}
+      {confirmed && (
+        <button
+          onClick={() => onResendEmail(booking)}
+          className="w-full text-xs py-1.5 rounded-lg border border-blue-300 text-blue-600 font-semibold hover:bg-blue-50 transition-colors mt-2 flex items-center justify-center gap-1"
+        >✉️ Reenviar email de confirmação</button>
+      )}
     </div>
   );
 }
@@ -979,6 +996,7 @@ function BookingList({
   onGetPaymentLink,
   onConfirmPayment,
   onEdit,
+  onResendEmail,
 }: {
   bookings: Booking[];
   onCancel: (b: Booking) => void;
@@ -986,6 +1004,7 @@ function BookingList({
   onGetPaymentLink: (b: Booking) => void;
   onConfirmPayment: (b: Booking) => void;
   onEdit: (b: Booking) => void;
+  onResendEmail: (b: Booking) => void;
 }) {
   const [search, setSearch] = useState('');
   const [status, setStatus] = useState('');
@@ -1085,6 +1104,12 @@ function BookingList({
                           className="text-xs px-2.5 py-1.5 rounded-lg border border-green-300 text-green-600 hover:bg-green-50 font-medium flex items-center gap-1"
                         ><CheckCircle size={11} /> Confirmar pgmto</button>
                       </>)}
+                      {b.status === 'Confirmado' && (
+                        <button
+                          onClick={() => onResendEmail(b)}
+                          className="text-xs px-2.5 py-1.5 rounded-lg border border-blue-300 text-blue-600 hover:bg-blue-50 font-medium flex items-center gap-1"
+                        >✉️ Reenviar email</button>
+                      )}
                       <button
                         onClick={() => onEdit(b)}
                         className="text-xs px-2.5 py-1.5 rounded-lg border border-[#7a3f8f] text-[#7a3f8f] hover:bg-purple-50 font-medium flex items-center gap-1"
@@ -1117,7 +1142,8 @@ function BookingList({
       <div className="md:hidden space-y-3">
         {filtered.map(b => (
           <BookingCard key={b.id} booking={b} onCancel={onCancel} onReschedule={onReschedule}
-                       onGetPaymentLink={onGetPaymentLink} onConfirmPayment={onConfirmPayment} onEdit={onEdit} />
+                       onGetPaymentLink={onGetPaymentLink} onConfirmPayment={onConfirmPayment} onEdit={onEdit}
+                       onResendEmail={onResendEmail} />
         ))}
         {filtered.length === 0 && (
           <p className="text-center text-sm text-gray-400 py-8">Nenhum agendamento encontrado</p>
@@ -1364,6 +1390,24 @@ function Dashboard({
     }
   }
 
+  async function handleResendEmail(booking: Booking) {
+    if (!confirm(`Reenviar email de confirmação para ${booking.name} (${booking.email})? Você e a Mari receberão em cópia.`)) return;
+    setActionLoading(true);
+    try {
+      const r = await fetch(`${API}/api/admin-bookings`, {
+        method: 'POST', headers,
+        body:   JSON.stringify({ action: 'resendConfirmation', bookingId: booking.id }),
+      });
+      const json = await r.json();
+      if (!r.ok || json.error) throw new Error(json.error || 'Erro ao reenviar');
+      setToast({ msg: `Email reenviado para ${booking.name}`, type: 'ok' });
+    } catch (e) {
+      setToast({ msg: e instanceof Error ? e.message : 'Erro ao reenviar email', type: 'err' });
+    } finally {
+      setActionLoading(false);
+    }
+  }
+
   const norm = (s?: string) => (s ?? '').trim().toLowerCase();
   const confirmed = bookings.filter(b => norm(b.status) === 'confirmado').length;
   const pending   = bookings.filter(b => norm(b.status) === 'pendente').length;
@@ -1469,9 +1513,11 @@ function Dashboard({
             <div className={`h-full p-5 ${view === 'timeline' ? 'overflow-hidden' : 'overflow-auto'}`}>
               {view === 'timeline'
                 ? <TimelineView bookings={bookings} onCancel={setCancelTarget} onReschedule={setRescheduleTarget}
-                                onGetPaymentLink={handleGetPaymentLink} onConfirmPayment={handleConfirmPayment} onEdit={setEditTarget} />
+                                onGetPaymentLink={handleGetPaymentLink} onConfirmPayment={handleConfirmPayment} onEdit={setEditTarget}
+                                onResendEmail={handleResendEmail} />
                 : <BookingList  bookings={bookings} onCancel={setCancelTarget} onReschedule={setRescheduleTarget}
-                                onGetPaymentLink={handleGetPaymentLink} onConfirmPayment={handleConfirmPayment} onEdit={setEditTarget} />
+                                onGetPaymentLink={handleGetPaymentLink} onConfirmPayment={handleConfirmPayment} onEdit={setEditTarget}
+                                onResendEmail={handleResendEmail} />
               }
             </div>
           )}
