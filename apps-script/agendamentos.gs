@@ -12,7 +12,7 @@ const CFG = {
   WORK_END_H: 19,
   BUFFER_MIN: 10,
   SLOT_STEP_MIN: 10,
-  PENDING_BLOCK_H: 72,          // horas que o slot fica bloqueado para pagamento pendente (3 dias)
+  PENDING_BLOCK_H: 168,         // horas que o slot fica bloqueado p/ pgmto pendente (7d — cobre validade do boleto MP)
   ANDRE_NOTIFY_MIN: 30,         // minutos até Mariane receber aviso de pagamento não concluído
   PACKAGES: {
     lembranca: { name: 'Lembrança', duration: 30,  price: 140000, color: '#6A0DAD', textColor: '#FFFFFF', bold: false, maxBailarinas: 2 },
@@ -726,24 +726,95 @@ function confirmBooking(data) {
   const idx     = rows.findIndex(r => r[iSes] === stripeSession);
   if (idx < 0) throw new Error('Session não encontrada: ' + stripeSession);
 
-  const row   = rows[idx];
-  const shRow = idx + 2;
-  sa.getRange(shRow, _col1(cm, 'Stripe Payment', 15)).setValue(stripePayment || '');
-  sa.getRange(shRow, _col1(cm, 'Status',         16)).setValue('Confirmado');
-  sa.getRange(shRow, _col1(cm, 'Atualizado em',  18)).setValue(nowIso());
-
+  const row     = rows[idx];
+  const shRow   = idx + 2;
+  const thisId  = _val(row, cm, 'ID', 0);
   const dataRaw = _val(row, cm, 'Data', 1);
   const dateStr = dataRaw ? (typeof dataRaw === 'string'
                     ? dataRaw
                     : Utilities.formatDate(dataRaw, 'America/Sao_Paulo', 'yyyy-MM-dd')) : '';
+  const prevStatus = String(_val(row, cm, 'Status') || '').trim();
+  const thisStart  = timeToMin(_toHHMM(_val(row, cm, 'Início', 2)));
+  const thisEnd    = timeToMin(_toHHMM(_val(row, cm, 'Fim',    3)));
+
+  // ── Revalidação anti-conflito (boleto pago tardiamente) ──────
+  // Se este booking estava Expirado (passou de 7d) e a confirmação
+  // chegou agora, é possível que outra pessoa já tenha reservado
+  // o mesmo slot. Detecta e alerta admin antes de marcar Confirmado.
+  let conflictAlert = null;
+  const conflicting = rows.filter((r, i) => {
+    if (i === idx) return false;
+    const st = String(_val(r, cm, 'Status') || '').trim();
+    if (st !== 'Confirmado' && st !== 'Pendente') return false;
+    const rDateRaw = _val(r, cm, 'Data');
+    const rDate    = rDateRaw ? (typeof rDateRaw === 'string'
+                       ? rDateRaw
+                       : Utilities.formatDate(rDateRaw, 'America/Sao_Paulo', 'yyyy-MM-dd')) : '';
+    if (rDate !== dateStr) return false;
+    const rStart = timeToMin(_toHHMM(_val(r, cm, 'Início')));
+    const rEnd   = timeToMin(_toHHMM(_val(r, cm, 'Fim')));
+    // overlap test (intervalos abertos): a < b.end AND a.end > b
+    return thisStart < rEnd && thisEnd > rStart;
+  });
+
+  if (conflicting.length > 0) {
+    const conflictIds = conflicting.map(r => _val(r, cm, 'ID', 0) + ' (' + String(_val(r, cm, 'Status') || '').trim() + ', ' + _val(r, cm, 'Nome', 7) + ')').join(', ');
+    conflictAlert = {
+      thisBookingId: thisId,
+      thisName:      _val(row, cm, 'Nome', 7),
+      thisEmail:     _val(row, cm, 'E-mail', 8),
+      conflictIds,
+      conflictRows:  conflicting,
+      prevStatus,
+    };
+    addLog('CONFLITO_PAGAMENTO', thisId,
+      'Pago: ' + thisId + ' (estava ' + prevStatus + ') | Slot já ocupado por: ' + conflictIds, 'webhook');
+  }
+
+  sa.getRange(shRow, _col1(cm, 'Stripe Payment', 15)).setValue(stripePayment || '');
+  sa.getRange(shRow, _col1(cm, 'Status',         16)).setValue('Confirmado');
+  sa.getRange(shRow, _col1(cm, 'Atualizado em',  18)).setValue(nowIso());
 
   buildClientesSheet();
-  addLog('PAGAMENTO_CONFIRMADO', _val(row, cm, 'ID', 0),
-    'Stripe session: ' + stripeSession + ' | payment: ' + stripePayment, 'webhook');
+  addLog('PAGAMENTO_CONFIRMADO', thisId,
+    'Stripe session: ' + stripeSession + ' | payment: ' + stripePayment +
+    (conflictAlert ? ' | ⚠️ CONFLITO com ' + conflictAlert.conflictIds : ''),
+    'webhook');
+
+  // Dispara email de conflito DEPOIS de marcar Confirmado (o cliente já
+  // pagou, recebe email normal; vocês recebem alerta separado pra resolver)
+  if (conflictAlert) {
+    try {
+      const subj = '🚨 CONFLITO DE AGENDA — pagamento recebido em slot já ocupado';
+      const lines = conflictAlert.conflictRows.map(r =>
+        '• ' + _val(r, cm, 'ID', 0) + ' — ' + _val(r, cm, 'Nome', 7) +
+        ' (' + _val(r, cm, 'E-mail', 8) + ') · ' +
+        String(_val(r, cm, 'Status') || '').trim()
+      ).join('<br>');
+      const html = '<div style="font-family:Arial,sans-serif;font-size:14px;line-height:1.6;color:#1a1a1a;">' +
+        '<h2 style="color:#b91c1c;margin:0 0 12px;">🚨 Conflito de agendamento</h2>' +
+        '<p>Um pagamento chegou para um slot que <strong>já está ocupado por outra reserva</strong>. Isso normalmente acontece quando o cliente paga o boleto depois do prazo, e outro cliente reservou o mesmo horário no meio-tempo.</p>' +
+        '<p><strong>Pagamento recém-confirmado:</strong><br>' +
+        '• ' + conflictAlert.thisBookingId + ' — ' + conflictAlert.thisName + ' (' + conflictAlert.thisEmail + ')<br>' +
+        '<em>Status anterior: ' + conflictAlert.prevStatus + '</em></p>' +
+        '<p><strong>Slot já ocupado por:</strong><br>' + lines + '</p>' +
+        '<p><strong>Ação necessária:</strong> entrar em contato com o cliente e oferecer reembolso ou remarcação. O sistema marcou o booking como Confirmado, então a aba Agendamentos agora tem dois agendamentos no mesmo horário.</p>' +
+        '<p>Data: ' + formatDateBR(dateStr) + ' · ' + minToTime(thisStart) + '–' + minToTime(thisEnd) + '</p>' +
+        '</div>';
+      MailApp.sendEmail({
+        to:       CFG.ANDRE_EMAIL,
+        cc:       CFG.MARIANE_EMAIL,
+        subject:  subj,
+        htmlBody: html,
+      });
+    } catch (e) {
+      addLog('CONFLITO_EMAIL_ERRO', thisId, String(e), 'webhook');
+    }
+  }
 
   return {
     ok: true,
-    bookingId: _val(row, cm, 'ID', 0),
+    bookingId: thisId,
     date:      dateStr,
     start:     _toHHMM(_val(row, cm, 'Início', 2)),
     end:       _toHHMM(_val(row, cm, 'Fim',    3)),
@@ -751,6 +822,7 @@ function confirmBooking(data) {
     email:     _val(row, cm, 'E-mail',   8),
     whatsapp:  _val(row, cm, 'WhatsApp', 9),
     package:   _val(row, cm, 'Pacote',   4),
+    conflict:  !!conflictAlert,
   };
 }
 
