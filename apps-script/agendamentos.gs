@@ -1008,10 +1008,8 @@ function resendBookingConfirmationEmail(bookingId, extraCc) {
       </tr>
       <tr>
         <td style="padding:32px 40px 24px;text-align:center;border-top:1px solid #eee;">
-          <p style="margin:0;font-family:Georgia,serif;font-size:13px;line-height:1.6;color:#666;">
-            Em caso de dúvida ou necessidade de remarcação, fale conosco pelo
-            <a href="https://wa.me/5511519606272" style="color:#128C7E;text-decoration:none;font-weight:600;">WhatsApp (11) 5196-0627</a>.
-          </p>
+          <p style="margin:0;font-family:Georgia,serif;font-size:13px;line-height:1.6;color:#666;">Em caso de dúvida ou necessidade de remarcação, fale conosco pelo</p>
+          <p style="margin:6px 0 0;font-family:Georgia,serif;font-size:14px;line-height:1.6;"><a href="https://wa.me/5511519606272" style="color:#128C7E;text-decoration:none;font-weight:600;white-space:nowrap;">WhatsApp (11) 5196-0627</a></p>
         </td>
       </tr>
       <tr>
@@ -1039,6 +1037,82 @@ function resendBookingConfirmationEmail(bookingId, extraCc) {
   addLog('CONFIRMACAO_REENVIADA', bookingId,
     'Reenvio para ' + email + ' (CC: ' + cc + ')', 'painel');
   return { ok: true, to: email, cc: cc };
+}
+
+// ── Preview do email de confirmação (NÃO envia ao cliente) ────
+// Útil pra testar mudanças visuais sem incomodar o cliente.
+// Manda só pra você (TO) e Mari (CC). Por padrão usa a reserva
+// AG-MP4NLPGZ (Adrielly). Pra usar outra, passe o bookingId.
+function previewConfirmationEmail(bookingId) {
+  const targetId = bookingId || 'AG-MP4NLPGZ';
+
+  const sa = getSheet('Agendamentos');
+  if (!sa) throw new Error('Aba Agendamentos não encontrada');
+  const cm      = _colMap(sa);
+  const numCols = sa.getLastColumn();
+  const rows    = sa.getRange(2, 1, sa.getLastRow() - 1, numCols).getValues();
+  const iId     = cm['ID'] !== undefined ? cm['ID'] : 0;
+  const idx     = rows.findIndex(r => r[iId] === targetId);
+  if (idx < 0) throw new Error('Booking não encontrado: ' + targetId);
+  const row = rows[idx];
+
+  const pkgKey   = _val(row, cm, 'Pacote', 4);
+  const pkg      = CFG.PACKAGES[pkgKey] || { name: pkgKey, duration: 0, price: 0 };
+  const dataRaw  = _val(row, cm, 'Data', 1);
+  const dateStr  = dataRaw ? (typeof dataRaw === 'string'
+                    ? dataRaw
+                    : Utilities.formatDate(dataRaw, 'America/Sao_Paulo', 'yyyy-MM-dd')) : '';
+  const start    = _toHHMM(_val(row, cm, 'Início', 2));
+  const endTime  = _toHHMM(_val(row, cm, 'Fim',    3));
+  const name     = String(_val(row, cm, 'Nome',  7) || '');
+  const numB     = Number(_val(row, cm, 'Nº Bailarinas')) || 1;
+  const valorNum = parseFloat(_val(row, cm, 'Valor (R$)', 6)) || (pkg.price / 100);
+  const valorLabel = 'R$ ' + valorNum.toLocaleString('pt-BR', { minimumFractionDigits: 2 });
+  const firstName = String(name || '').trim().split(/\s+/)[0] || name;
+  const HERO_IMG_URL = 'https://www.ensaiofotograficoemjoinville.com/email-hero.jpg';
+
+  const html = `<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Reserva confirmada</title>
+</head>
+<body style="margin:0;padding:0;background:#f5f0fa;font-family:Georgia,'Cormorant Garamond','Times New Roman',serif;color:#1a1a1a;">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background:#f5f0fa;padding:32px 12px;">
+  <tr><td align="center">
+    <table role="presentation" width="600" cellpadding="0" cellspacing="0" border="0" style="max-width:600px;background:#ffffff;border-radius:6px;overflow:hidden;box-shadow:0 4px 24px rgba(0,0,0,0.06);">
+      <tr><td style="background:#fef3c7;color:#92400e;padding:10px;text-align:center;font-family:Georgia,serif;font-size:12px;font-weight:bold;border-bottom:1px solid #fbbf24;">⚠️ PREVIEW — esse email não foi enviado para o cliente</td></tr>
+      <tr><td style="line-height:0;"><img src="${HERO_IMG_URL}" alt="" width="600" style="display:block;width:100%;max-width:600px;height:auto;border:0;outline:none;text-decoration:none;"></td></tr>
+      <tr><td style="padding:36px 40px 0;text-align:center;"><span style="display:inline-block;font-family:Georgia,'Times New Roman',serif;font-size:11px;letter-spacing:3px;text-transform:uppercase;color:#7a3f8f;border:1px solid #e8d8f0;border-radius:30px;padding:6px 16px;">Reserva Confirmada</span></td></tr>
+      <tr><td style="padding:24px 40px 4px;text-align:center;"><p style="margin:0;font-family:Georgia,'Cormorant Garamond',serif;font-size:30px;line-height:1.2;color:#1a1a1a;font-weight:400;font-style:italic;">Olá, <strong style="font-weight:600;">${firstName}</strong>.</p></td></tr>
+      <tr><td style="padding:18px 56px 32px;text-align:center;"><p style="margin:0;font-family:Georgia,serif;font-size:14px;line-height:1.65;color:#555;">Recebemos sua reserva. Os detalhes do seu ensaio estão registrados abaixo — guarde este e-mail para referência.</p></td></tr>
+      <tr><td style="padding:0 40px 8px;">
+        <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="border-top:1px solid #eee;">
+          <tr><td style="padding:18px 0;border-bottom:1px solid #eee;"><p style="margin:0 0 4px;font-family:Georgia,serif;font-size:11px;letter-spacing:2px;text-transform:uppercase;color:#999;">Data</p><p style="margin:0;font-family:Georgia,serif;font-size:16px;color:#1a1a1a;">${_fmtDateLong(dateStr)}</p></td></tr>
+          <tr><td style="padding:18px 0;border-bottom:1px solid #eee;"><p style="margin:0 0 4px;font-family:Georgia,serif;font-size:11px;letter-spacing:2px;text-transform:uppercase;color:#999;">Horário</p><p style="margin:0;font-family:Georgia,serif;font-size:16px;color:#1a1a1a;">${start} — ${endTime}</p></td></tr>
+          <tr><td style="padding:18px 0;border-bottom:1px solid #eee;"><p style="margin:0 0 4px;font-family:Georgia,serif;font-size:11px;letter-spacing:2px;text-transform:uppercase;color:#999;">Pacote</p><p style="margin:0;font-family:Georgia,serif;font-size:16px;color:#1a1a1a;">${pkg.name} · ${pkg.duration} minutos</p></td></tr>
+          <tr><td style="padding:18px 0;border-bottom:1px solid #eee;"><p style="margin:0 0 4px;font-family:Georgia,serif;font-size:11px;letter-spacing:2px;text-transform:uppercase;color:#999;">Grupo</p><p style="margin:0;font-family:Georgia,serif;font-size:16px;color:#1a1a1a;">${numB} ${numB === 1 ? 'bailarina' : 'bailarinas'}</p></td></tr>
+          <tr><td style="padding:18px 0;border-bottom:1px solid #eee;"><p style="margin:0 0 4px;font-family:Georgia,serif;font-size:11px;letter-spacing:2px;text-transform:uppercase;color:#999;">Local</p><p style="margin:0;font-family:Georgia,serif;font-size:16px;color:#1a1a1a;"><a href="https://www.google.com/maps/search/Hotel+Le+Village+Joinville+SC" style="color:#1a1a1a;text-decoration:none;">Hotel Le Village</a></p><p style="margin:2px 0 0;font-family:Georgia,serif;font-size:13px;color:#777;">Sala Esmeralda · Joinville · SC</p></td></tr>
+          <tr><td style="padding:18px 0;"><p style="margin:0 0 4px;font-family:Georgia,serif;font-size:11px;letter-spacing:2px;text-transform:uppercase;color:#999;">Valor</p><p style="margin:0;font-family:Georgia,serif;font-size:18px;color:#7a3f8f;font-weight:600;">${valorLabel}</p></td></tr>
+        </table>
+      </td></tr>
+      <tr><td style="padding:32px 40px 24px;text-align:center;border-top:1px solid #eee;"><p style="margin:0;font-family:Georgia,serif;font-size:13px;line-height:1.6;color:#666;">Em caso de dúvida ou necessidade de remarcação, fale conosco pelo</p><p style="margin:6px 0 0;font-family:Georgia,serif;font-size:14px;line-height:1.6;"><a href="https://wa.me/5511519606272" style="color:#128C7E;text-decoration:none;font-weight:600;white-space:nowrap;">WhatsApp (11) 5196-0627</a></p></td></tr>
+      <tr><td style="padding:0 40px 24px;text-align:center;"><p style="margin:0;font-family:Georgia,serif;font-size:10px;letter-spacing:2px;text-transform:uppercase;color:#bbb;">Código da reserva · <span style="color:#777;font-family:monospace;letter-spacing:1px;">${targetId}</span></p></td></tr>
+      <tr><td style="padding:20px 40px 28px;text-align:center;background:#fafafa;border-top:1px solid #eee;"><p style="margin:0;font-family:Georgia,serif;font-size:12px;color:#999;">© 2026 André Ferreira Fotografia</p><p style="margin:4px 0 0;font-family:Georgia,serif;font-size:12px;"><a href="https://www.instagram.com/affotografia" style="color:#7a3f8f;text-decoration:none;">@affotografia</a></p></td></tr>
+    </table>
+  </td></tr>
+</table>
+</body></html>`;
+
+  MailApp.sendEmail({
+    to:       CFG.ANDRE_EMAIL,
+    subject:  `[PREVIEW] Reserva confirmada — ${pkg.name} · ${formatDateBR(dateStr)} às ${start}`,
+    htmlBody: html,
+  });
+  Logger.log('Preview enviado só para ' + CFG.ANDRE_EMAIL);
+  addLog('PREVIEW_EMAIL', targetId, 'Preview do template enviado para ' + CFG.ANDRE_EMAIL, 'sistema');
+  return { ok: true, sentTo: CFG.ANDRE_EMAIL };
 }
 
 // ── Diagnóstico: simula o cálculo de slots ────────────────────

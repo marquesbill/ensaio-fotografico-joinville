@@ -120,10 +120,8 @@ function emailHtml(data: {
       <!-- Help -->
       <tr>
         <td style="padding:32px 40px 24px;text-align:center;border-top:1px solid #eee;">
-          <p style="margin:0;font-family:Georgia,serif;font-size:13px;line-height:1.6;color:#666;">
-            Em caso de dúvida ou necessidade de remarcação, fale conosco pelo
-            <a href="https://wa.me/5511519606272" style="color:#128C7E;text-decoration:none;font-weight:600;">WhatsApp (11) 5196-0627</a>.
-          </p>
+          <p style="margin:0;font-family:Georgia,serif;font-size:13px;line-height:1.6;color:#666;">Em caso de dúvida ou necessidade de remarcação, fale conosco pelo</p>
+          <p style="margin:6px 0 0;font-family:Georgia,serif;font-size:14px;line-height:1.6;"><a href="https://wa.me/5511519606272" style="color:#128C7E;text-decoration:none;font-weight:600;white-space:nowrap;">WhatsApp (11) 5196-0627</a></p>
         </td>
       </tr>
       <!-- Booking ID -->
