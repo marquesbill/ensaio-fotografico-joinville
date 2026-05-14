@@ -1,6 +1,6 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { Resend } from 'resend';
-import { buildBookingEmailHtml, fmtDateBR as fmtDate } from './_emailTemplate';
+import { buildBookingEmailHtml, fmtDateBR as fmtDate } from '../lib/emailTemplate';
 
 const MP_TOKEN      = process.env.MERCADOPAGO_ACCESS_TOKEN!;
 const SCRIPT_URL    = process.env.SHEETS_SCRIPT_URL!;

@@ -1,7 +1,7 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { Resend } from 'resend';
 import { createHmac } from 'crypto';
-import { buildBookingEmailHtml } from './_emailTemplate';
+import { buildBookingEmailHtml } from '../lib/emailTemplate';
 
 const PACKAGES: Record<string, { name: string; duration: number; price: number }> = {
   lembranca: { name: 'Lembrança',  duration: 30,  price: 1400 },

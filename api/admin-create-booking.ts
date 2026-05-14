@@ -1,7 +1,7 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { Resend } from 'resend';
 import { createHmac } from 'crypto';
-import { buildBookingEmailHtml } from './_emailTemplate';
+import { buildBookingEmailHtml } from '../lib/emailTemplate';
 
 const SECRET      = process.env.ADMIN_SECRET || 'dev-secret-change-me';
 const TOKEN_TTL   = 8 * 60 * 60 * 1000;
