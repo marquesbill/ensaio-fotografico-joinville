@@ -1242,13 +1242,15 @@ function Dashboard({
       const r = await fetch(`${API}/api/admin-cancel`, {
         method: 'POST', headers,
         body: JSON.stringify({
-          bookingId:   booking.id,
+          bookingId:     booking.id,
           reason,
-          name:        booking.name,
-          email:       booking.email ?? '',
-          date:        booking.date,
-          time:        booking.start,
-          packageName: booking.package,
+          name:          booking.name,
+          email:         booking.email ?? '',
+          date:          booking.date,
+          time:          booking.start,
+          endTime:       booking.end,
+          packageKey:    PKG_KEY[booking.package] ?? 'lembranca',
+          numBailarinas: booking.numBailarinas ?? 1,
         }),
       });
       if (!r.ok) throw new Error((await r.json()).error || 'Erro');
@@ -1268,15 +1270,16 @@ function Dashboard({
       const r = await fetch(`${API}/api/admin-reschedule`, {
         method: 'POST', headers,
         body: JSON.stringify({
-          bookingId:  booking.id,
-          name:       booking.name,
-          email:      booking.email ?? '',
-          whatsapp:   booking.whatsapp ?? '',
-          oldDate:    booking.date,
-          oldTime:    booking.start,
+          bookingId:     booking.id,
+          name:          booking.name,
+          email:         booking.email ?? '',
+          whatsapp:      booking.whatsapp ?? '',
+          oldDate:       booking.date,
+          oldTime:       booking.start,
           newDate,
           newTime,
-          packageKey: pkgKey,
+          packageKey:    pkgKey,
+          numBailarinas: booking.numBailarinas ?? 1,
         }),
       });
       if (!r.ok) throw new Error((await r.json()).error || 'Erro');
@@ -1343,13 +1346,14 @@ function Dashboard({
       const r = await fetch(`${API}/api/admin-payment-link`, {
         method: 'POST', headers,
         body: JSON.stringify({
-          bookingId:  booking.id,
-          name:       booking.name,
-          email:      booking.email ?? '',
-          whatsapp:   booking.whatsapp ?? '',
-          date:       booking.date,
-          time:       booking.start,
-          packageKey: PKG_KEY[booking.package] ?? 'lembranca',
+          bookingId:     booking.id,
+          name:          booking.name,
+          email:         booking.email ?? '',
+          whatsapp:      booking.whatsapp ?? '',
+          date:          booking.date,
+          time:          booking.start,
+          packageKey:    PKG_KEY[booking.package] ?? 'lembranca',
+          numBailarinas: booking.numBailarinas ?? 1,
         }),
       });
       const json = await r.json();
@@ -1377,6 +1381,7 @@ function Dashboard({
           date:          booking.date,
           time:          booking.start,
           packageKey:    PKG_KEY[booking.package] ?? 'lembranca',
+          numBailarinas: booking.numBailarinas ?? 1,
         }),
       });
       const json = await r.json();
