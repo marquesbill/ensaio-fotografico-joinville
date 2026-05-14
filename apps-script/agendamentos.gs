@@ -268,9 +268,22 @@ function getBookingsForDate(dateStr) {
     }
     return false;
   }).map(row => ({
-    start: timeToMin((_val(row, cm, 'Início') || '00:00').toString()),
-    end:   timeToMin((_val(row, cm, 'Fim')    || '00:00').toString()),
+    start: timeToMin(_toHHMM(_val(row, cm, 'Início'))),
+    end:   timeToMin(_toHHMM(_val(row, cm, 'Fim'))),
   }));
+}
+
+// Helper: converte valor de célula de tempo (Date ou string) em "HH:mm"
+function _toHHMM(v) {
+  if (v === null || v === undefined || v === '') return '00:00';
+  if (v instanceof Date) return Utilities.formatDate(v, 'America/Sao_Paulo', 'HH:mm');
+  if (typeof v === 'string') {
+    // Já pode estar como "HH:mm" ou ser uma string de Date — tenta parsing
+    if (/^\d{1,2}:\d{2}/.test(v)) return v.slice(0, 5);
+    const parsed = new Date(v);
+    if (!isNaN(parsed.getTime())) return Utilities.formatDate(parsed, 'America/Sao_Paulo', 'HH:mm');
+  }
+  return '00:00';
 }
 
 function computeAvailableSlots(dateStr, pkgKey) {
@@ -563,13 +576,11 @@ function processReminders() {
     const dataStr  = dataRaw ? (typeof dataRaw === 'string'
                        ? dataRaw
                        : Utilities.formatDate(dataRaw, 'America/Sao_Paulo', 'yyyy-MM-dd')) : '';
-    const inicioR  = _val(row, cm, 'Início', 2);
-    const fimR     = _val(row, cm, 'Fim', 3);
     const booking = {
       id:       _val(row, cm, 'ID', 0),
       data:     dataStr,
-      inicio:   inicioR ? inicioR.toString() : '',
-      fim:      fimR    ? fimR.toString()    : '',
+      inicio:   _toHHMM(_val(row, cm, 'Início', 2)),
+      fim:      _toHHMM(_val(row, cm, 'Fim',    3)),
       pacote:   _val(row, cm, 'Pacote', 4),
       valor:    _val(row, cm, 'Valor (R$)', 6),
       nome:     _val(row, cm, 'Nome', 7),
@@ -702,8 +713,8 @@ function confirmBooking(data) {
     ok: true,
     bookingId: _val(row, cm, 'ID', 0),
     date:      dateStr,
-    start:     (_val(row, cm, 'Início', 2) || '').toString(),
-    end:       (_val(row, cm, 'Fim',    3) || '').toString(),
+    start:     _toHHMM(_val(row, cm, 'Início', 2)),
+    end:       _toHHMM(_val(row, cm, 'Fim',    3)),
     name:      _val(row, cm, 'Nome',     7),
     email:     _val(row, cm, 'E-mail',   8),
     whatsapp:  _val(row, cm, 'WhatsApp', 9),
@@ -861,6 +872,23 @@ function cleanupAgendamentos() {
   Logger.log(msg);
   addLog('CLEANUP_EXECUTADO', '', msg, 'sistema');
   return { kept: kept.length, archived: archive.length };
+}
+
+// ── Diagnóstico: simula o cálculo de slots ────────────────────
+// Roda direto do editor (não precisa deploy) e mostra:
+//  - O que getBookingsForDate enxerga
+//  - Quais slots ficam disponíveis pra cada pacote
+function debugSlotsFor(dateStr) {
+  if (!dateStr) dateStr = '2026-07-26'; // muda aqui se quiser testar outra data
+  const blocked = getBookingsForDate(dateStr);
+  Logger.log('Data testada: ' + dateStr);
+  Logger.log('Reservas que bloqueiam slots: ' + JSON.stringify(blocked.map(b => ({
+    inicio: minToTime(b.start), fim: minToTime(b.end)
+  }))));
+  Object.keys(CFG.PACKAGES).forEach(k => {
+    const slots = computeAvailableSlots(dateStr, k);
+    Logger.log(k + ' (' + slots.length + ' slots): ' + slots.join(', '));
+  });
 }
 
 // ── Diagnóstico: inspecionar headers atuais ───────────────────
