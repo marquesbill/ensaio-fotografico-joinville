@@ -297,7 +297,13 @@ function computeAvailableSlots(dateStr, pkgKey) {
   intervals.forEach(({ start: ivStart, end: ivEnd }) => {
     for (let t = ivStart; t + needed <= ivEnd; t += CFG.SLOT_STEP_MIN) {
       const slotEnd = t + pkg.duration;
-      const blocked = bookings.some(b => t < b.end && slotEnd + CFG.BUFFER_MIN > b.start);
+      // Buffer aplicado dos dois lados: o slot novo precisa terminar
+      // ao menos BUFFER_MIN antes do início de uma reserva existente
+      // E começar ao menos BUFFER_MIN depois do fim dela.
+      const blocked = bookings.some(b =>
+        t < b.end + CFG.BUFFER_MIN &&
+        slotEnd + CFG.BUFFER_MIN > b.start
+      );
       if (!blocked) slots.push(minToTime(t));
     }
   });
