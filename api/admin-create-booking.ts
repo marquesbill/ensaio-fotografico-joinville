@@ -85,6 +85,19 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   const endTime  = calcEnd(time, pkg.duration);
   const logUser  = auth.user;
 
+  // Pre-flight: confirma que o slot ainda está livre antes de
+  // qualquer escrita (evita race / duplicação).
+  try {
+    const slotsRes  = await fetch(`${SCRIPT_URL}?action=slots&date=${encodeURIComponent(date)}&package=${encodeURIComponent(packageKey)}&t=${Date.now()}`, { cache: 'no-store' });
+    const slotsJson = await slotsRes.json() as { slots?: string[] };
+    const livres    = Array.isArray(slotsJson.slots) ? slotsJson.slots : [];
+    if (!livres.includes(time)) {
+      return res.status(409).json({ error: 'Esse horário não está mais disponível. Atualize a lista e escolha outro.' });
+    }
+  } catch (e) {
+    console.error('[admin-create-booking] pre-flight slot check failed', e);
+  }
+
   // ── Path A: generate payment link (3-day MP preference) ──────
   if (!confirm) {
     try {

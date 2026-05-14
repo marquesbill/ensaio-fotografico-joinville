@@ -42,6 +42,22 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (!pkg) return res.status(400).json({ error: 'Pacote inválido' });
 
   try {
+    // 0. Pre-flight: confirma que o slot ainda está livre antes
+    //    de criar a preference (evita ordem de pagamento órfã se
+    //    alguém reservou nos últimos segundos).
+    try {
+      const slotsRes  = await fetch(`${SCRIPT_URL}?action=slots&date=${encodeURIComponent(date)}&package=${encodeURIComponent(packageKey)}&t=${Date.now()}`, { cache: 'no-store' });
+      const slotsJson = await slotsRes.json() as { slots?: string[] };
+      const livres    = Array.isArray(slotsJson.slots) ? slotsJson.slots : [];
+      if (!livres.includes(time)) {
+        return res.status(409).json({ error: 'Esse horário acabou de ser reservado por outra pessoa. Por favor, escolha outro.' });
+      }
+    } catch (e) {
+      console.error('[create-checkout] pre-flight slot check failed', e);
+      // Em caso de falha do pre-flight, deixa o fluxo seguir — createPending
+      // ainda revalida lá no Apps Script e barra a duplicação.
+    }
+
     // 1. Create Mercado Pago preference
     const prefRes = await fetch('https://api.mercadopago.com/checkout/preferences', {
       method: 'POST',

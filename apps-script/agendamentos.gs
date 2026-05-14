@@ -636,6 +636,18 @@ function createPending(data) {
     throw new Error('Nº Bailarinas deve estar entre 1 e ' + pkg.maxBailarinas + ' para o pacote ' + pkg.name);
   }
 
+  // ── Revalidação anti-race-condition ──────────────────────────
+  // Recalcula slots livres AGORA (não confia no estado do frontend
+  // que pode estar com segundos de defasagem) e rejeita se o horário
+  // pedido já não estiver disponível.
+  const livres = computeAvailableSlots(date, packageKey);
+  if (livres.indexOf(start) === -1) {
+    addLog('SLOT_CONFLITO', '',
+      'Tentativa de reservar slot já ocupado: ' + date + ' ' + start + ' (' + pkg.name + ') por ' + name,
+      source === 'admin' ? 'painel' : 'site');
+    throw new Error('Esse horário acabou de ser reservado por outra pessoa. Por favor, escolha outro.');
+  }
+
   const endTime   = minToTime(timeToMin(start) + pkg.duration);
   const bookingId = genBookingId();
   const now       = nowIso();

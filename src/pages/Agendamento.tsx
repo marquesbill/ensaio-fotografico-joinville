@@ -246,6 +246,17 @@ export default function Agendamento() {
         body: JSON.stringify({ date: selectedDate, time: selectedTime, packageKey: pkg, name: form.nome, email: form.email, whatsapp: form.whatsapp, instagram: form.instagram, numBailarinas: form.numBailarinas }),
       });
       const data = await res.json();
+      // Slot acabou de ser reservado por outra pessoa — recarrega slots e volta o usuário pra escolher
+      if (res.status === 409) {
+        setSelectedTime(null);
+        setSlots(null);
+        fetch(`/api/slots?date=${selectedDate}&t=${Date.now()}`)
+          .then(r => r.json())
+          .then(d => setSlots(d as Record<PkgKey, string[]>))
+          .catch(() => {});
+        setStep(3); // volta pra tela de escolha de horário
+        throw new Error(data.error || 'Esse horário não está mais disponível.');
+      }
       if (data.error) throw new Error(data.error);
       setPreferenceId(data.preferenceId);
       setStep(5);
