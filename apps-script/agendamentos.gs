@@ -10,8 +10,8 @@
 const CFG = {
   WORK_START_H: 9,
   WORK_END_H: 19,
-  BUFFER_MIN: 15,
-  SLOT_STEP_MIN: 15,
+  BUFFER_MIN: 10,
+  SLOT_STEP_MIN: 10,
   PENDING_BLOCK_H: 72,          // horas que o slot fica bloqueado para pagamento pendente (3 dias)
   ANDRE_NOTIFY_MIN: 30,         // minutos até Mariane receber aviso de pagamento não concluído
   PACKAGES: {
