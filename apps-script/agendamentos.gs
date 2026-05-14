@@ -15,9 +15,9 @@ const CFG = {
   PENDING_BLOCK_H: 72,          // horas que o slot fica bloqueado para pagamento pendente (3 dias)
   ANDRE_NOTIFY_MIN: 30,         // minutos até Mariane receber aviso de pagamento não concluído
   PACKAGES: {
-    lembranca: { name: 'Lembrança', duration: 30,  price: 140000, color: '#6A0DAD', textColor: '#FFFFFF', bold: false },
-    economico: { name: 'Econômico', duration: 90,  price: 190000, color: '#0277BD', textColor: '#FFFFFF', bold: true  },
-    completo:  { name: 'Completo',  duration: 120, price: 220000, color: '#BF360C', textColor: '#FFFFFF', bold: false },
+    lembranca: { name: 'Lembrança', duration: 30,  price: 140000, color: '#6A0DAD', textColor: '#FFFFFF', bold: false, maxBailarinas: 2 },
+    economico: { name: 'Econômico', duration: 90,  price: 190000, color: '#0277BD', textColor: '#FFFFFF', bold: true,  maxBailarinas: 3 },
+    completo:  { name: 'Completo',  duration: 120, price: 220000, color: '#BF360C', textColor: '#FFFFFF', bold: false, maxBailarinas: 4 },
   },
   DATES_START:  '2026-07-20',
   DATES_END:    '2026-08-02',
@@ -248,24 +248,28 @@ function getWorkIntervals(dateStr) {
 function getBookingsForDate(dateStr) {
   const sa = getSheet('Agendamentos');
   if (!sa || sa.getLastRow() < 2) return [];
-  const numCols = Math.max(sa.getLastColumn(), 18);
-  const data = sa.getRange(2, 1, sa.getLastRow() - 1, numCols).getValues();
-  const now  = Date.now();
+  const cm      = _colMap(sa);
+  const numCols = sa.getLastColumn();
+  const data    = sa.getRange(2, 1, sa.getLastRow() - 1, numCols).getValues();
+  const now     = Date.now();
 
   return data.filter(row => {
-    const status = row[15];
-    const d = row[1] ? (typeof row[1] === 'string' ? row[1] : Utilities.formatDate(row[1], 'America/Sao_Paulo', 'yyyy-MM-dd')) : '';
+    const status = String(_val(row, cm, 'Status') || '').trim();
+    const dRaw   = _val(row, cm, 'Data');
+    const d      = dRaw ? (typeof dRaw === 'string'
+                    ? dRaw
+                    : Utilities.formatDate(dRaw, 'America/Sao_Paulo', 'yyyy-MM-dd')) : '';
     if (d !== dateStr) return false;
     if (status === 'Confirmado') return true;
     if (status === 'Pendente') {
-      const criadoEm = row[16];
-      const ageH = criadoEm ? (now - new Date(criadoEm).getTime()) / 3600000 : 0;
-      return ageH < CFG.PENDING_BLOCK_H; // bloqueia por até 24h
+      const criadoEm = _val(row, cm, 'Criado em');
+      const ageH     = criadoEm ? (now - new Date(criadoEm).getTime()) / 3600000 : 0;
+      return ageH < CFG.PENDING_BLOCK_H; // bloqueia por até 72h
     }
     return false;
   }).map(row => ({
-    start: timeToMin(row[2] ? row[2].toString() : '00:00'),
-    end:   timeToMin(row[3] ? row[3].toString() : '00:00'),
+    start: timeToMin((_val(row, cm, 'Início') || '00:00').toString()),
+    end:   timeToMin((_val(row, cm, 'Fim')    || '00:00').toString()),
   }));
 }
 
@@ -615,6 +619,11 @@ function createPending(data) {
           stripeSession, source } = data;
   const pkg = CFG.PACKAGES[packageKey];
   if (!pkg) throw new Error('Pacote inválido: ' + packageKey);
+
+  const nb = Number(numBailarinas);
+  if (!Number.isInteger(nb) || nb < 1 || nb > pkg.maxBailarinas) {
+    throw new Error('Nº Bailarinas deve estar entre 1 e ' + pkg.maxBailarinas + ' para o pacote ' + pkg.name);
+  }
 
   const endTime   = minToTime(timeToMin(start) + pkg.duration);
   const bookingId = genBookingId();
@@ -969,6 +978,153 @@ function repairHeaders() {
               ' | linhas Pendente com reminders inibidos: ' + inhibited;
   Logger.log(msg);
   addLog('HEADERS_REPARADOS', '', msg, 'sistema');
+  return msg;
+}
+
+// ── Diagnóstico: envia email de confirmação SAMPLE via Resend ───
+// Manda pro CFG.ANDRE_EMAIL um email igual ao que o cliente recebe
+// quando o pagamento é confirmado. Usa o mesmo path (Resend) do
+// resto dos emails do Apps Script — bom pra verificar se a
+// configuração de envio está OK.
+function sendTestConfirmationEmail() {
+  const fakeBooking = {
+    id:        'AG-TESTE-XYZ',
+    nome:      'TESTE — André',
+    email:     CFG.ANDRE_EMAIL,
+    whatsapp:  '(47) 99999-9999',
+    data:      '2026-07-28',
+    inicio:    '14:00',
+    fim:       '16:00',
+    pacote:    'completo',
+    valor:     '2200.00',
+    nomeBailarina:      'Bailarina Teste',
+    instagramBailarina: '@bailarina_teste',
+    numBailarinas:      2,
+    criadoEm:  new Date().toISOString(),
+  };
+  const pkgInfo = CFG.PACKAGES[fakeBooking.pacote];
+  const html = `<!DOCTYPE html><html lang="pt-BR"><head><meta charset="UTF-8"></head>
+<body style="margin:0;padding:0;background:#f4f4f5;font-family:Arial,sans-serif;">
+<div style="background:#fef3c7;border:1px solid #fbbf24;color:#92400e;padding:12px;text-align:center;font-size:12px;font-weight:bold;">
+  ⚠️ EMAIL DE TESTE — não é uma reserva real
+</div>
+<table width="100%" cellpadding="0" cellspacing="0" style="background:#f4f4f5;padding:32px 0;">
+<tr><td align="center">
+<table width="560" cellpadding="0" cellspacing="0" style="background:#ffffff;border-radius:12px;overflow:hidden;box-shadow:0 2px 8px rgba(0,0,0,0.08);">
+  ${_emailHeader('✅ Reserva Confirmada')}
+  <tr><td style="padding:28px 40px;">
+    <p style="color:#374151;font-size:15px;margin:0 0 12px;">Olá, <strong>${fakeBooking.nome}</strong>!</p>
+    <p style="color:#6b7280;font-size:14px;margin:0 0 20px;">Seu pagamento foi confirmado e sua reserva está garantida. Anote os detalhes abaixo.</p>
+    <div style="background:#f9fafb;border:1px solid #e5e7eb;border-radius:8px;padding:16px 20px;margin-bottom:24px;">
+      ${_bookingSummaryRows(fakeBooking)}
+    </div>
+    <p style="color:#9ca3af;font-size:12px;margin:0;">ID: ${fakeBooking.id}</p>
+  </td></tr>
+  ${_emailFooter()}
+</table>
+</td></tr>
+</table>
+</body></html>`;
+  const ok = sendEmailViaResend(CFG.ANDRE_EMAIL,
+    `[TESTE] Reserva confirmada — ${pkgInfo.name} · 28/07/2026 às 14:00`,
+    html);
+  const msg = ok
+    ? 'Email enviado pra ' + CFG.ANDRE_EMAIL + ' via Resend — confira caixa de entrada + spam'
+    : 'Falha ao enviar — veja Execution log';
+  Logger.log(msg);
+  addLog('TEST_EMAIL_ENVIADO', '', msg, 'sistema');
+  return msg;
+}
+
+// ── Diagnóstico: envia os emails INTERNOS (André + Mariane) ────
+// Mesmas mensagens disparadas pelo webhook quando o cliente paga
+// via site, mas via Resend (em vez de Gmail SMTP do webhook).
+function sendTestInternalNotifications() {
+  const fake = {
+    name:          'Cliente Teste',
+    email:         'cliente.teste@example.com',
+    whatsapp:      '(47) 99999-9999',
+    date:          '2026-07-28',
+    time:          '14:00',
+    endTime:       '16:00',
+    packageName:   'Completo',
+    duration:      120,
+    price:         2200,
+    installments:  3,
+    bookingId:     'AG-TESTE-XYZ',
+    paymentId:     'TEST-MP-1234567',
+    numBailarinas: 2,
+    nomeBailarina: 'Bailarina Teste',
+  };
+
+  // Email pro André (texto simples)
+  const andreHtml = `
+<div style="background:#fef3c7;border:1px solid #fbbf24;color:#92400e;padding:12px;text-align:center;font-size:12px;font-weight:bold;margin-bottom:12px;">
+  ⚠️ EMAIL DE TESTE — não é uma reserva real
+</div>
+<p><strong>Nova reserva confirmada</strong><br>
+Cliente: ${fake.name}<br>
+E-mail: ${fake.email}<br>
+WhatsApp: ${fake.whatsapp}<br>
+Data: ${formatDateBR(fake.date)}<br>
+Horário: ${fake.time}–${fake.endTime}<br>
+Pacote: ${fake.packageName}<br>
+Nº Bailarinas: ${fake.numBailarinas}<br>
+Valor: R$ ${fake.price}<br>
+Parcelas: ${fake.installments}x<br>
+Booking ID: ${fake.bookingId}<br>MP Payment: ${fake.paymentId}</p>`;
+
+  const okAndre = sendEmailViaResend(CFG.ANDRE_EMAIL,
+    `[TESTE] Nova reserva: ${fake.name} — ${fake.packageName} 28/07/2026 ${fake.time}`,
+    andreHtml);
+
+  // Email pra Mariane (template HTML cuidado)
+  const marianeHtml = `<!DOCTYPE html><html lang="pt-BR"><head><meta charset="UTF-8"></head>
+<body style="margin:0;padding:0;background:#f4f4f5;font-family:Arial,sans-serif;">
+<div style="background:#fef3c7;border:1px solid #fbbf24;color:#92400e;padding:12px;text-align:center;font-size:12px;font-weight:bold;">
+  ⚠️ EMAIL DE TESTE — não é uma reserva real
+</div>
+<table width="100%" cellpadding="0" cellspacing="0" style="background:#f4f4f5;padding:32px 0;">
+<tr><td align="center">
+<table width="520" cellpadding="0" cellspacing="0" style="background:#ffffff;border-radius:12px;overflow:hidden;box-shadow:0 2px 8px rgba(0,0,0,0.08);">
+  <tr><td style="background:linear-gradient(135deg,#7a3f8f,#e87060);padding:20px 28px;">
+    <h2 style="color:#ffffff;margin:0;font-size:17px;">✅ Pagamento confirmado!</h2>
+    <p style="color:rgba(255,255,255,0.85);margin:6px 0 0;font-size:13px;">O cliente concluiu o pagamento do link que você gerou.</p>
+  </td></tr>
+  <tr><td style="padding:24px 28px;">
+    <table width="100%" style="border-collapse:collapse;">
+      <tr><td style="color:#6b7280;padding:6px 0;font-size:13px;width:120px;">Cliente</td>
+          <td style="font-weight:600;font-size:13px;">${fake.name}</td></tr>
+      <tr><td style="color:#6b7280;padding:6px 0;font-size:13px;">E-mail</td>
+          <td style="font-size:13px;">${fake.email}</td></tr>
+      <tr><td style="color:#6b7280;padding:6px 0;font-size:13px;">WhatsApp</td>
+          <td style="font-weight:600;font-size:14px;color:#7a3f8f;">${fake.whatsapp}</td></tr>
+      <tr><td style="color:#6b7280;padding:6px 0;font-size:13px;">Pacote</td>
+          <td style="font-size:13px;">${fake.packageName}</td></tr>
+      <tr><td style="color:#6b7280;padding:6px 0;font-size:13px;">Nº Bailarinas</td>
+          <td style="font-weight:600;font-size:13px;">${fake.numBailarinas}</td></tr>
+      <tr><td style="color:#6b7280;padding:6px 0;font-size:13px;">Data</td>
+          <td style="font-size:13px;">${formatDateBR(fake.date)} às ${fake.time} – ${fake.endTime}</td></tr>
+      <tr><td style="color:#6b7280;padding:6px 0;font-size:13px;border-top:1px solid #e5e7eb;">Valor pago</td>
+          <td style="font-weight:700;font-size:14px;color:#7a3f8f;border-top:1px solid #e5e7eb;">R$ ${fake.price.toFixed(2).replace('.', ',')} em ${fake.installments}x</td></tr>
+    </table>
+    <p style="font-size:12px;color:#9ca3af;margin-top:16px;border-top:1px solid #f0f0f0;padding-top:12px;">
+      Booking ID: ${fake.bookingId}
+    </p>
+  </td></tr>
+</table>
+</td></tr>
+</table>
+</body></html>`;
+
+  const okMari = sendEmailViaResend(CFG.MARIANE_EMAIL,
+    `[TESTE] ✅ ${fake.name} concluiu o pagamento — ${fake.packageName} · ${formatDateBR(fake.date)} às ${fake.time}`,
+    marianeHtml);
+
+  const msg = 'André: ' + (okAndre ? 'ok' : 'FALHOU') +
+              ' | Mariane: ' + (okMari ? 'ok' : 'FALHOU');
+  Logger.log(msg);
+  addLog('TEST_INTERNAL_NOTIF', '', msg, 'sistema');
   return msg;
 }
 

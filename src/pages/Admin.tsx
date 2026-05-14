@@ -29,10 +29,14 @@ interface Slot { time: string; available: boolean }
 const API = import.meta.env.DEV ? '' : '';
 
 const PACKAGES = [
-  { key: 'lembranca', name: 'Lembrança',  duration: 30,  price: 1400 },
-  { key: 'economico', name: 'Econômico',  duration: 90,  price: 1900 },
-  { key: 'completo',  name: 'Completo',   duration: 120, price: 2200 },
+  { key: 'lembranca', name: 'Lembrança',  duration: 30,  price: 1400, maxBailarinas: 2 },
+  { key: 'economico', name: 'Econômico',  duration: 90,  price: 1900, maxBailarinas: 3 },
+  { key: 'completo',  name: 'Completo',   duration: 120, price: 2200, maxBailarinas: 4 },
 ];
+const MAX_BAILARINAS: Record<string, number> = {
+  lembranca: 2, economico: 3, completo: 4,
+  'Lembrança': 2, 'Econômico': 3, 'Completo': 4,
+};
 
 const PKG_KEY: Record<string, string> = {
   'Lembrança': 'lembranca', 'lembranca': 'lembranca',
@@ -438,17 +442,16 @@ function NewBookingModal({
             />
           </div>
           <div>
-            <label className="block text-xs font-semibold text-gray-600 mb-1 uppercase tracking-wide">Nº Bailarinas *</label>
-            <input
-              type="number" min={1} max={9} step={1} inputMode="numeric"
-              className="w-full border border-gray-200 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-purple-200"
+            <label className="block text-xs font-semibold text-gray-600 mb-1 uppercase tracking-wide">Nº Bailarinas * (máx {MAX_BAILARINAS[pkgKey] ?? 4})</label>
+            <select
+              className="w-full border border-gray-200 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-purple-200 bg-white"
               value={numBailarinas}
-              onChange={e => {
-                const v = parseInt(e.target.value, 10);
-                if (Number.isNaN(v)) return setNumBailarinas(1);
-                setNumBailarinas(Math.max(1, Math.min(9, v)));
-              }}
-            />
+              onChange={e => setNumBailarinas(parseInt(e.target.value, 10) || 1)}
+            >
+              {Array.from({ length: MAX_BAILARINAS[pkgKey] ?? 4 }, (_, i) => i + 1).map(n => (
+                <option key={n} value={n}>{n}</option>
+              ))}
+            </select>
           </div>
           <div className="col-span-3">
             <label className="block text-xs font-semibold text-gray-600 mb-1 uppercase tracking-wide">Instagram da bailarina</label>
@@ -464,7 +467,13 @@ function NewBookingModal({
           <label className="block text-xs font-semibold text-gray-600 mb-1 uppercase tracking-wide">Pacote *</label>
           <select
             className="w-full border border-gray-200 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-purple-200"
-            value={pkgKey} onChange={e => { setPkgKey(e.target.value); setTime(''); }}
+            value={pkgKey} onChange={e => {
+              const k = e.target.value;
+              setPkgKey(k);
+              setTime('');
+              const max = MAX_BAILARINAS[k] ?? 4;
+              setNumBailarinas(n => n > max ? max : n);
+            }}
           >
             {PACKAGES.map(p => (
               <option key={p.key} value={p.key}>{p.name} — {p.duration}min — R$ {p.price}</option>
@@ -551,9 +560,11 @@ function EditBookingModal({
   const [instagram,          setInstagram]          = useState(s(booking.instagram));
   const [instagramBailarina, setInstagramBailarina] = useState(s(booking.instagramBailarina));
   const [nomeBailarina,      setNomeBailarina]      = useState(s(booking.nomeBailarina));
+  const maxNb = MAX_BAILARINAS[booking.package] ?? 4;
   const initialNb = (() => {
     const n = Math.floor(Number(booking.numBailarinas));
-    return Number.isFinite(n) && n >= 1 && n <= 9 ? n : 1;
+    if (!Number.isFinite(n) || n < 1) return 1;
+    return Math.min(n, maxNb);
   })();
   const [numBailarinas, setNumBailarinas] = useState<number>(initialNb);
 
@@ -617,17 +628,16 @@ function EditBookingModal({
             />
           </div>
           <div>
-            <label className="block text-xs font-semibold text-gray-600 mb-1 uppercase tracking-wide">Nº Bailarinas *</label>
-            <input
-              type="number" min={1} max={9} step={1} inputMode="numeric"
-              className="w-full border border-gray-200 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-purple-200"
+            <label className="block text-xs font-semibold text-gray-600 mb-1 uppercase tracking-wide">Nº Bailarinas * (máx {MAX_BAILARINAS[booking.package] ?? 4})</label>
+            <select
+              className="w-full border border-gray-200 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-purple-200 bg-white"
               value={numBailarinas}
-              onChange={e => {
-                const v = parseInt(e.target.value, 10);
-                if (Number.isNaN(v)) return setNumBailarinas(1);
-                setNumBailarinas(Math.max(1, Math.min(9, v)));
-              }}
-            />
+              onChange={e => setNumBailarinas(parseInt(e.target.value, 10) || 1)}
+            >
+              {Array.from({ length: MAX_BAILARINAS[booking.package] ?? 4 }, (_, i) => i + 1).map(n => (
+                <option key={n} value={n}>{n}</option>
+              ))}
+            </select>
           </div>
           <div className="col-span-3">
             <label className="block text-xs font-semibold text-gray-600 mb-1 uppercase tracking-wide">Instagram da bailarina</label>

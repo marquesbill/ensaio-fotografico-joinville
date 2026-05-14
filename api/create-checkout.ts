@@ -5,9 +5,9 @@ const SITE_URL   = process.env.SITE_URL || 'https://www.ensaiofotograficoemjoinv
 const MP_TOKEN   = process.env.MERCADOPAGO_ACCESS_TOKEN!;
 
 const PACKAGES = {
-  lembranca: { name: 'Lembrança',  duration: 30,  price: 1400 },
-  economico: { name: 'Econômico',  duration: 90,  price: 1900 },
-  completo:  { name: 'Completo',   duration: 120, price: 2200 },
+  lembranca: { name: 'Lembrança',  duration: 30,  price: 1400, maxBailarinas: 2 },
+  economico: { name: 'Econômico',  duration: 90,  price: 1900, maxBailarinas: 3 },
+  completo:  { name: 'Completo',   duration: 120, price: 2200, maxBailarinas: 4 },
 } as const;
 type PkgKey = keyof typeof PACKAGES;
 
@@ -31,9 +31,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (!date || !time || !packageKey || !name || !email || !whatsapp) {
     return res.status(400).json({ error: 'Campos obrigatórios faltando' });
   }
+  const pkgInfo = PACKAGES[packageKey];
+  if (!pkgInfo) return res.status(400).json({ error: 'Pacote inválido' });
   const nb = Number(numBailarinas);
-  if (!Number.isInteger(nb) || nb < 1 || nb > 9) {
-    return res.status(400).json({ error: 'Nº Bailarinas deve ser um inteiro entre 1 e 9' });
+  if (!Number.isInteger(nb) || nb < 1 || nb > pkgInfo.maxBailarinas) {
+    return res.status(400).json({ error: `Nº Bailarinas deve estar entre 1 e ${pkgInfo.maxBailarinas} para o pacote ${pkgInfo.name}` });
   }
 
   const pkg = PACKAGES[packageKey];

@@ -11,9 +11,9 @@ const resend      = new Resend(process.env.RESEND_API_KEY!);
 const ANDRE_EMAIL = 'andreffotografia@gmail.com';
 
 const PACKAGES = {
-  lembranca: { name: 'Lembrança',  duration: 30,  price: 1400 },
-  economico: { name: 'Econômico',  duration: 90,  price: 1900 },
-  completo:  { name: 'Completo',   duration: 120, price: 2200 },
+  lembranca: { name: 'Lembrança',  duration: 30,  price: 1400, maxBailarinas: 2 },
+  economico: { name: 'Econômico',  duration: 90,  price: 1900, maxBailarinas: 3 },
+  completo:  { name: 'Completo',   duration: 120, price: 2200, maxBailarinas: 4 },
 } as const;
 type PkgKey = keyof typeof PACKAGES;
 
@@ -73,13 +73,14 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (!name || !email || !date || !time || !packageKey) {
     return res.status(400).json({ error: 'Campos obrigatórios faltando' });
   }
-  const nb = Number(numBailarinas);
-  if (!Number.isInteger(nb) || nb < 1 || nb > 9) {
-    return res.status(400).json({ error: 'Nº Bailarinas deve ser um inteiro entre 1 e 9' });
-  }
 
   const pkg = PACKAGES[packageKey];
   if (!pkg) return res.status(400).json({ error: 'Pacote inválido' });
+
+  const nb = Number(numBailarinas);
+  if (!Number.isInteger(nb) || nb < 1 || nb > pkg.maxBailarinas) {
+    return res.status(400).json({ error: `Nº Bailarinas deve estar entre 1 e ${pkg.maxBailarinas} para o pacote ${pkg.name}` });
+  }
 
   const endTime  = calcEnd(time, pkg.duration);
   const logUser  = auth.user;

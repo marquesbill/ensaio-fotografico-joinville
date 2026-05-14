@@ -10,6 +10,7 @@ const PACKAGES = [
     name: 'Lembrança',
     duration: 30,
     price: 1400,
+    maxBailarinas: 2,
     desc: 'Ideal para uma lembrança especial do festival.',
     features: ['30 min de sessão', 'Até 2 pessoas', 'Fotos editadas em alta resolução'],
     calBg: '#F0F0F0', calText: '#000000', calBold: false,
@@ -19,6 +20,7 @@ const PACKAGES = [
     name: 'Econômico',
     duration: 90,
     price: 1900,
+    maxBailarinas: 3,
     desc: 'Experiência completa com tempo para explorar diferentes looks.',
     features: ['90 min de sessão', 'Até 3 pessoas', 'Fotos editadas em alta resolução'],
     calBg: '#888888', calText: '#FFFFFF', calBold: true,
@@ -29,6 +31,7 @@ const PACKAGES = [
     name: 'Completo',
     duration: 120,
     price: 2200,
+    maxBailarinas: 4,
     desc: 'A experiência mais rica, com máxima liberdade criativa.',
     features: ['120 min de sessão', 'Até 4 pessoas', 'Fotos editadas em alta resolução'],
     calBg: '#404040', calText: '#FFFFFF', calBold: false,
@@ -150,6 +153,14 @@ export default function Agendamento() {
   const dates = allDates();
   const selectedPkg = PACKAGES.find(p => p.key === pkg);
 
+  // Quando o pacote muda, reclampa Nº Bailarinas ao máximo permitido
+  useEffect(() => {
+    if (!selectedPkg) return;
+    setForm(f => f.numBailarinas > selectedPkg.maxBailarinas
+      ? { ...f, numBailarinas: selectedPkg.maxBailarinas }
+      : f);
+  }, [selectedPkg]);
+
   // Load slots when date changes
   useEffect(() => {
     if (!selectedDate) return;
@@ -185,9 +196,10 @@ export default function Agendamento() {
     if (digits.length < 10 || digits.length > 11) {
       errors.whatsapp = 'Número inválido. Ex: (47) 99999-9999';
     }
-    const nb = Number(form.numBailarinas);
-    if (!Number.isInteger(nb) || nb < 1 || nb > 9) {
-      errors.numBailarinas = 'Informe entre 1 e 9 bailarinas';
+    const nb  = Number(form.numBailarinas);
+    const max = selectedPkg?.maxBailarinas ?? 1;
+    if (!Number.isInteger(nb) || nb < 1 || nb > max) {
+      errors.numBailarinas = `Informe entre 1 e ${max} bailarinas`;
     }
 
     setFormErrors(errors);
@@ -277,7 +289,9 @@ export default function Agendamento() {
   const canGoStep3 = !!selectedDate;
   const canGoStep4 = !!selectedTime;
   const canSubmit  = form.nome.trim() && form.email.trim() && form.whatsapp.trim()
-                     && Number.isInteger(form.numBailarinas) && form.numBailarinas >= 1 && form.numBailarinas <= 9;
+                     && Number.isInteger(form.numBailarinas)
+                     && form.numBailarinas >= 1
+                     && form.numBailarinas <= (selectedPkg?.maxBailarinas ?? 1);
 
   return (
     <div className="min-h-screen bg-surface" style={{ fontFamily: 'inherit' }}>
@@ -582,18 +596,23 @@ export default function Agendamento() {
 
                 {/* Nº Bailarinas */}
                 <div>
-                  <label className="block text-sm font-semibold text-on-surface mb-1.5">Nº Bailarinas <span className="font-normal text-on-surface-variant text-xs">(quantas vão posar?)</span></label>
-                  <input
-                    className={`w-full bg-white/90 border focus:ring-2 focus:ring-primary focus:bg-white rounded-xl px-4 py-3 text-on-surface font-medium shadow-sm transition-colors ${formErrors.numBailarinas ? 'border-red-400 bg-red-50/50' : 'border-outline-variant'}`}
-                    type="number" min={1} max={9} step={1} inputMode="numeric"
+                  <label className="block text-sm font-semibold text-on-surface mb-1.5">
+                    Nº Bailarinas
+                    <span className="font-normal text-on-surface-variant text-xs"> (quantas vão posar? máx. {selectedPkg?.maxBailarinas ?? 1} no {selectedPkg?.name})</span>
+                  </label>
+                  <select
+                    className={`w-full bg-white/90 border focus:ring-2 focus:ring-primary focus:bg-white rounded-xl px-4 py-3 text-on-surface font-medium shadow-sm transition-colors appearance-none ${formErrors.numBailarinas ? 'border-red-400 bg-red-50/50' : 'border-outline-variant'}`}
                     value={form.numBailarinas}
                     onChange={e => {
-                      const v = parseInt(e.target.value, 10);
-                      const nb = Number.isNaN(v) ? 1 : Math.max(1, Math.min(9, v));
+                      const nb = parseInt(e.target.value, 10) || 1;
                       setForm(f => ({ ...f, numBailarinas: nb }));
                       setFormErrors(fe => ({ ...fe, numBailarinas: '' }));
                     }}
-                  />
+                  >
+                    {Array.from({ length: selectedPkg?.maxBailarinas ?? 1 }, (_, i) => i + 1).map(n => (
+                      <option key={n} value={n}>{n} {n === 1 ? 'bailarina' : 'bailarinas'}</option>
+                    ))}
+                  </select>
                   {formErrors.numBailarinas && (
                     <p className="mt-1.5 text-xs text-red-600 flex items-center gap-1">
                       <AlertCircle className="w-3.5 h-3.5 shrink-0" />{formErrors.numBailarinas}
