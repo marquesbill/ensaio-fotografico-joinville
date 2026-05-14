@@ -662,6 +662,8 @@ function createPending(data) {
 
   sa.appendRow(newRow);
 
+  try { buildClientesSheet(); } catch (e) { addLog('CLIENTES_REBUILD_ERRO', bookingId, String(e), 'sistema'); }
+
   addLog('PENDENTE_CRIADO', bookingId,
     name + ' | ' + (pkg.name) + ' | ' + date + ' ' + start + '–' + endTime + ' | Stripe: ' + stripeSession,
     source === 'admin' ? 'painel' : 'site');
@@ -725,6 +727,7 @@ function cancelBooking(data) {
   sa.getRange(shRow, _col1(cm, 'Status',        16)).setValue('Cancelado');
   sa.getRange(shRow, _col1(cm, 'Atualizado em', 18)).setValue(nowIso());
 
+  try { buildClientesSheet(); } catch (e) { addLog('CLIENTES_REBUILD_ERRO', bookingId, String(e), 'sistema'); }
   addLog('CANCELADO', bookingId, reason || 'sem motivo', origin || 'painel');
   return { ok: true };
 }
@@ -1284,6 +1287,10 @@ function onEditAgendamentos(e) {
            user + ' alterou "' + colName + '" de ' + (nome || '?') +
            ': "' + oldV + '" → "' + newV + '"',
            'planilha');
+
+    // Rebuilda aba Clientes pra refletir a edição manual
+    try { buildClientesSheet(); }
+    catch (e2) { addLog('CLIENTES_REBUILD_ERRO', id || '', String(e2), 'planilha'); }
   } catch (err) {
     try { addLog('ERRO_ONEDIT', '', String(err && err.message || err), 'planilha'); } catch (_) {}
   }
