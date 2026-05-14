@@ -273,6 +273,20 @@ function getBookingsForDate(dateStr) {
   }));
 }
 
+// Helper: formata "2026-08-01" em "01 de agosto de 2026 · Sábado"
+function _fmtDateLong(dateStr) {
+  if (!dateStr) return '';
+  const parts = String(dateStr).split('-');
+  if (parts.length !== 3) return dateStr;
+  const y = parseInt(parts[0], 10);
+  const m = parseInt(parts[1], 10);
+  const d = parseInt(parts[2], 10);
+  const months = ['janeiro','fevereiro','março','abril','maio','junho','julho','agosto','setembro','outubro','novembro','dezembro'];
+  const days   = ['Domingo','Segunda-feira','Terça-feira','Quarta-feira','Quinta-feira','Sexta-feira','Sábado'];
+  const dt  = new Date(Date.UTC(y, m - 1, d, 12));
+  return String(d).padStart(2, '0') + ' de ' + months[m - 1] + ' de ' + y + ' · ' + days[dt.getUTCDay()];
+}
+
 // Helper: converte valor de célula de tempo (Date ou string) em "HH:mm"
 function _toHHMM(v) {
   if (v === null || v === undefined || v === '') return '00:00';
@@ -928,51 +942,92 @@ function resendBookingConfirmationEmail(bookingId, extraCc) {
   if (extraCc) String(extraCc).split(',').forEach(e => { const t = e.trim(); if (t) ccList.push(t); });
   const cc = ccList.join(',');
 
+  const HERO_IMG_URL = 'https://www.ensaiofotograficoemjoinville.com/email-hero.jpg';
+  const firstName    = String(name || '').trim().split(/\s+/)[0] || name;
   const html = `<!DOCTYPE html>
 <html lang="pt-BR">
-<head><meta charset="UTF-8"><style>
-  body{font-family:Georgia,serif;background:#f5f0fa;margin:0;padding:0}
-  .header{background:linear-gradient(135deg,#7a3f8f,#e87060);padding:32px 32px 24px;text-align:center}
-  .header h1{color:#fff;font-size:22px;margin:0 0 4px;letter-spacing:.5px}
-  .header p{color:rgba(255,255,255,.85);font-size:13px;margin:0}
-  .body{padding:32px}
-  .tag{display:inline-block;background:#7a3f8f;color:#fff;font-size:11px;font-weight:bold;letter-spacing:1px;text-transform:uppercase;border-radius:20px;padding:4px 12px;margin-bottom:16px}
-  h2{font-size:20px;color:#352D39;margin:0 0 20px}
-  .card{background:rgba(249,246,252,0.88);border:1px solid #e8d8f0;border-radius:12px;padding:20px;margin-bottom:20px}
-  .row{display:flex;justify-content:space-between;padding:10px 0;border-bottom:1px solid #eee;font-size:14px}
-  .row:last-child{border:none}
-  .label{color:#888}
-  .value{font-weight:bold;color:#352D39}
-  .id{font-size:11px;color:#aaa;text-align:center;margin-top:8px;font-family:monospace}
-  .footer{background:rgba(249,246,252,0.88);padding:20px 32px;text-align:center;font-size:12px;color:#aaa;border-top:1px solid #eee}
-  .footer a{color:#7a3f8f}
-</style></head>
-<body>
-<div style="max-width:560px;margin:32px auto;background-color:#fff;border-radius:16px;overflow:hidden;box-shadow:0 4px 24px rgba(0,0,0,.10)">
-  <div class="header">
-    <h1>Ensaio Fotográfico em Joinville</h1>
-    <p>André Ferreira · @affotografia</p>
-  </div>
-  <div class="body">
-    <span class="tag">Reserva Confirmada</span>
-    <h2>Olá, ${name}!</h2>
-    <p style="color:#555;font-size:14px;line-height:1.6">Sua reserva está confirmada. Anote os detalhes abaixo.</p>
-    <div class="card">
-      <div class="row"><span class="label">Data:</span><span class="value">${formatDateBR(dateStr)}</span></div>
-      <div class="row"><span class="label">Horário:</span><span class="value">${start} – ${endTime}</span></div>
-      <div class="row"><span class="label">Pacote:</span><span class="value">${pkg.name} (${pkg.duration}min)</span></div>
-      <div class="row"><span class="label">Nº Bailarinas:</span><span class="value">${numB}</span></div>
-      <div class="row"><span class="label">Local:</span><span class="value"><a href="https://www.google.com/maps/search/Hotel+Le+Village+Joinville+SC" style="color:#7a3f8f;text-decoration:none;font-weight:bold;">Hotel Le Village · Sala Esmeralda · Joinville/SC</a></span></div>
-      <div class="row"><span class="label">Valor:</span><span class="value">${valorLabel}</span></div>
-    </div>
-    <p style="font-size:13px;color:#666;line-height:1.6">Em caso de dúvidas ou necessidade de remarcação, entre em contato pelo <a href="https://wa.me/5511519606272" style="color:#128C7E;font-weight:bold;text-decoration:none;">WhatsApp (11) 5196-0627</a>.</p>
-    <p class="id">Código da reserva: ${bookingId}</p>
-  </div>
-  <div class="footer">
-    © 2026 André Ferreira Fotografia · Joinville, SC<br>
-    <a href="https://www.instagram.com/affotografia">@affotografia</a>
-  </div>
-</div>
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Reserva confirmada</title>
+</head>
+<body style="margin:0;padding:0;background:#f5f0fa;font-family:Georgia,'Cormorant Garamond','Times New Roman',serif;color:#1a1a1a;">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background:#f5f0fa;padding:32px 12px;">
+  <tr><td align="center">
+    <table role="presentation" width="600" cellpadding="0" cellspacing="0" border="0" style="max-width:600px;background:#ffffff;border-radius:6px;overflow:hidden;box-shadow:0 4px 24px rgba(0,0,0,0.06);">
+      <tr>
+        <td style="line-height:0;">
+          <img src="${HERO_IMG_URL}" alt="" width="600" style="display:block;width:100%;max-width:600px;height:auto;border:0;outline:none;text-decoration:none;">
+        </td>
+      </tr>
+      <tr>
+        <td style="padding:36px 40px 0;text-align:center;">
+          <span style="display:inline-block;font-family:Georgia,'Times New Roman',serif;font-size:11px;letter-spacing:3px;text-transform:uppercase;color:#7a3f8f;border:1px solid #e8d8f0;border-radius:30px;padding:6px 16px;">Reserva Confirmada</span>
+        </td>
+      </tr>
+      <tr>
+        <td style="padding:24px 40px 4px;text-align:center;">
+          <p style="margin:0;font-family:Georgia,'Cormorant Garamond',serif;font-size:30px;line-height:1.2;color:#1a1a1a;font-weight:400;font-style:italic;">Olá, <strong style="font-weight:600;">${firstName}</strong>.</p>
+        </td>
+      </tr>
+      <tr>
+        <td style="padding:18px 56px 32px;text-align:center;">
+          <p style="margin:0;font-family:Georgia,serif;font-size:14px;line-height:1.65;color:#555;">Recebemos sua reserva. Os detalhes do seu ensaio estão registrados abaixo — guarde este e-mail para referência.</p>
+        </td>
+      </tr>
+      <tr>
+        <td style="padding:0 40px 8px;">
+          <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="border-top:1px solid #eee;">
+            <tr><td style="padding:18px 0;border-bottom:1px solid #eee;">
+              <p style="margin:0 0 4px;font-family:Georgia,serif;font-size:11px;letter-spacing:2px;text-transform:uppercase;color:#999;">Data</p>
+              <p style="margin:0;font-family:Georgia,serif;font-size:16px;color:#1a1a1a;">${_fmtDateLong(dateStr)}</p>
+            </td></tr>
+            <tr><td style="padding:18px 0;border-bottom:1px solid #eee;">
+              <p style="margin:0 0 4px;font-family:Georgia,serif;font-size:11px;letter-spacing:2px;text-transform:uppercase;color:#999;">Horário</p>
+              <p style="margin:0;font-family:Georgia,serif;font-size:16px;color:#1a1a1a;">${start} — ${endTime}</p>
+            </td></tr>
+            <tr><td style="padding:18px 0;border-bottom:1px solid #eee;">
+              <p style="margin:0 0 4px;font-family:Georgia,serif;font-size:11px;letter-spacing:2px;text-transform:uppercase;color:#999;">Pacote</p>
+              <p style="margin:0;font-family:Georgia,serif;font-size:16px;color:#1a1a1a;">${pkg.name} · ${pkg.duration} minutos</p>
+            </td></tr>
+            <tr><td style="padding:18px 0;border-bottom:1px solid #eee;">
+              <p style="margin:0 0 4px;font-family:Georgia,serif;font-size:11px;letter-spacing:2px;text-transform:uppercase;color:#999;">Grupo</p>
+              <p style="margin:0;font-family:Georgia,serif;font-size:16px;color:#1a1a1a;">${numB} ${numB === 1 ? 'bailarina' : 'bailarinas'}</p>
+            </td></tr>
+            <tr><td style="padding:18px 0;border-bottom:1px solid #eee;">
+              <p style="margin:0 0 4px;font-family:Georgia,serif;font-size:11px;letter-spacing:2px;text-transform:uppercase;color:#999;">Local</p>
+              <p style="margin:0;font-family:Georgia,serif;font-size:16px;color:#1a1a1a;"><a href="https://www.google.com/maps/search/Hotel+Le+Village+Joinville+SC" style="color:#1a1a1a;text-decoration:none;">Hotel Le Village</a></p>
+              <p style="margin:2px 0 0;font-family:Georgia,serif;font-size:13px;color:#777;">Sala Esmeralda · Joinville · SC</p>
+            </td></tr>
+            <tr><td style="padding:18px 0;">
+              <p style="margin:0 0 4px;font-family:Georgia,serif;font-size:11px;letter-spacing:2px;text-transform:uppercase;color:#999;">Valor</p>
+              <p style="margin:0;font-family:Georgia,serif;font-size:18px;color:#7a3f8f;font-weight:600;">${valorLabel}</p>
+            </td></tr>
+          </table>
+        </td>
+      </tr>
+      <tr>
+        <td style="padding:32px 40px 24px;text-align:center;border-top:1px solid #eee;">
+          <p style="margin:0;font-family:Georgia,serif;font-size:13px;line-height:1.6;color:#666;">
+            Em caso de dúvida ou necessidade de remarcação, fale conosco pelo
+            <a href="https://wa.me/5511519606272" style="color:#128C7E;text-decoration:none;font-weight:600;">WhatsApp (11) 5196-0627</a>.
+          </p>
+        </td>
+      </tr>
+      <tr>
+        <td style="padding:0 40px 24px;text-align:center;">
+          <p style="margin:0;font-family:Georgia,serif;font-size:10px;letter-spacing:2px;text-transform:uppercase;color:#bbb;">Código da reserva · <span style="color:#777;font-family:monospace;letter-spacing:1px;">${bookingId}</span></p>
+        </td>
+      </tr>
+      <tr>
+        <td style="padding:20px 40px 28px;text-align:center;background:#fafafa;border-top:1px solid #eee;">
+          <p style="margin:0;font-family:Georgia,serif;font-size:12px;color:#999;">© 2026 André Ferreira Fotografia</p>
+          <p style="margin:4px 0 0;font-family:Georgia,serif;font-size:12px;"><a href="https://www.instagram.com/affotografia" style="color:#7a3f8f;text-decoration:none;">@affotografia</a></p>
+        </td>
+      </tr>
+    </table>
+  </td></tr>
+</table>
 </body></html>`;
 
   MailApp.sendEmail({
