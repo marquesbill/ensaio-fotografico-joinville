@@ -1391,7 +1391,7 @@ function Dashboard({
   }
 
   async function handleResendEmail(booking: Booking) {
-    if (!confirm(`Reenviar email de confirmação para ${booking.name} (${booking.email})? Você e a Mari receberão em cópia.`)) return;
+    if (!confirm(`Reenviar email de confirmação para ${booking.name} (${booking.email})? André e Mari receberão em cópia.`)) return;
     setActionLoading(true);
     try {
       const r = await fetch(`${API}/api/admin-bookings`, {
