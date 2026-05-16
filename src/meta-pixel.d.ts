@@ -1,10 +1,10 @@
 declare global {
   interface Window {
-    fbq: (
-      command: string,
-      event: string,
-      params?: Record<string, string | number>
-    ) => void;
+    fbq: {
+      (command: 'track' | 'trackCustom', event: string, params?: Record<string, string | number>): void;
+      (command: 'init', pixelId: string): void;
+      (command: 'consent', consent: 'grant' | 'revoke'): void;
+    };
     clarity: {
       (command: 'event', name: string): void;
       (command: 'set', key: string, value: string | string[]): void;

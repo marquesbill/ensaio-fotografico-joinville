@@ -355,7 +355,7 @@ export default function Agendamento() {
         track.event('payment_approved');
         track.tag('payment_status', 'approved');
         track.upgrade('payment_approved');
-        if (window.fbq) window.fbq('track', 'Purchase', { value: String(selectedPkg?.price || 0), currency: 'BRL' });
+        if (window.fbq) window.fbq('track', 'Purchase', { value: selectedPkg?.price || 0, currency: 'BRL' });
         window.location.href = '/agendamento/sucesso';
       } else if (data.status === 'pending') {
         track.event('payment_pending');

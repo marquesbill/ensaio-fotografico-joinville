@@ -36,13 +36,13 @@ export const track = {
 
     safeCall(() => {
       if (window.fbq) {
-        const stringParams = params
-          ? Object.fromEntries(Object.entries(params).map(([k, v]) => [k, String(v)]))
-          : undefined;
+        // Preserva tipos originais (number/string) — Meta Pixel espera number em campos como `value`
+        const pixelParams = params as Record<string, string | number> | undefined;
         if (PIXEL_STANDARD_EVENTS.has(name)) {
-          window.fbq('track', name, stringParams as Record<string, string>);
+          window.fbq('track', name, pixelParams);
         } else {
-          window.fbq('trackCustom', name, stringParams as Record<string, string>);
+          // CustomEvent — usa trackCustom para não confundir com Standard Events nos relatórios
+          window.fbq('trackCustom', name, pixelParams);
         }
       }
     });
