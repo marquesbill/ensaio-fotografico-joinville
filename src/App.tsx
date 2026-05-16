@@ -354,7 +354,7 @@ export default function App() {
           >
             <div className="-mx-10 -mt-10 mb-6 pt-7 pb-4 px-6 rounded-t-3xl border-b border-white/20" style={{ background: 'linear-gradient(135deg, #7a3f8f, #e87060)' }}>
               <h3 className="font-headline text-3xl md:text-4xl text-center text-white font-black drop-shadow-lg uppercase leading-tight tracking-tight">
-                Tenha acesso à<br/><span className="text-white/90">Pré-venda Exclusiva</span>
+                Aproveite os<br/><span className="text-white/90">Preços do Lote 1</span>
               </h3>
               <p className="text-white/80 text-center text-sm mt-2 font-medium tracking-wide">Vagas limitadas · Preço especial por tempo limitado</p>
             </div>
@@ -529,7 +529,7 @@ export default function App() {
                   )}
                   <p className="font-black text-4xl leading-tight" style={{ color: '#352D39' }}>{brl(prices.lembranca.sale)}</p>
                   {prices.lembranca.full > prices.lembranca.sale && (
-                    <p className="font-bold text-xs uppercase tracking-wide mt-1" style={{ color: '#8B6A56' }}>🔥 Pré-venda — economize R${prices.lembranca.full - prices.lembranca.sale}</p>
+                    <p className="font-bold text-xs uppercase tracking-wide mt-1" style={{ color: '#8B6A56' }}>🔥 Aproveite preços do Lote 1</p>
                   )}
                 </div>
                 <CountdownTimer />
@@ -567,7 +567,7 @@ export default function App() {
                   )}
                   <p className="font-black text-4xl leading-tight" style={{ color: '#352D39' }}>{brl(prices.economico.sale)}</p>
                   {prices.economico.full > prices.economico.sale && (
-                    <p className="font-bold text-xs uppercase tracking-wide mt-1" style={{ color: '#8B6A56' }}>🔥 Pré-venda — economize R${prices.economico.full - prices.economico.sale}</p>
+                    <p className="font-bold text-xs uppercase tracking-wide mt-1" style={{ color: '#8B6A56' }}>🔥 Aproveite preços do Lote 1</p>
                   )}
                 </div>
                 <CountdownTimer />
@@ -604,7 +604,7 @@ export default function App() {
                   )}
                   <p className="font-black text-4xl leading-tight" style={{ color: '#352D39' }}>{brl(prices.completo.sale)}</p>
                   {prices.completo.full > prices.completo.sale && (
-                    <p className="font-bold text-xs uppercase tracking-wide mt-1" style={{ color: '#8B6A56' }}>🔥 Pré-venda — economize R${prices.completo.full - prices.completo.sale}</p>
+                    <p className="font-bold text-xs uppercase tracking-wide mt-1" style={{ color: '#8B6A56' }}>🔥 Aproveite preços do Lote 1</p>
                   )}
                 </div>
                 <CountdownTimer />
