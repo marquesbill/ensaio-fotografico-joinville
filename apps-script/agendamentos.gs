@@ -7,6 +7,9 @@
 //   RESEND_API_KEY  →  re_xxxxxxxxxxxxxxxxxxxxxxxx
 // ============================================================
 
+// Preço em centavos. Troca automática à meia-noite de 2026-05-16 BRT.
+const PRICE_SWITCH_MS = new Date('2026-05-16T00:00:00-03:00').getTime();
+
 const CFG = {
   WORK_START_H: 9,
   WORK_END_H: 19,
@@ -14,10 +17,13 @@ const CFG = {
   SLOT_STEP_MIN: 10,
   PENDING_BLOCK_H: 168,         // horas que o slot fica bloqueado p/ pgmto pendente (7d — cobre validade do boleto MP)
   ANDRE_NOTIFY_MIN: 30,         // minutos até Mariane receber aviso de pagamento não concluído
-  PACKAGES: {
-    lembranca: { name: 'Lembrança', duration: 30,  price: 140000, color: '#6A0DAD', textColor: '#FFFFFF', bold: false, maxBailarinas: 2 },
-    economico: { name: 'Econômico', duration: 60,  price: 190000, color: '#0277BD', textColor: '#FFFFFF', bold: true,  maxBailarinas: 3 },
-    completo:  { name: 'Completo',  duration: 120, price: 220000, color: '#BF360C', textColor: '#FFFFFF', bold: false, maxBailarinas: 4 },
+  get PACKAGES() {
+    const v2 = Date.now() >= PRICE_SWITCH_MS;
+    return {
+      lembranca: { name: 'Lembrança', duration: 30,  price: v2 ? 160000 : 140000, color: '#6A0DAD', textColor: '#FFFFFF', bold: false, maxBailarinas: 2 },
+      economico: { name: 'Econômico', duration: 60,  price: v2 ? 210000 : 190000, color: '#0277BD', textColor: '#FFFFFF', bold: true,  maxBailarinas: 3 },
+      completo:  { name: 'Completo',  duration: 120, price: v2 ? 260000 : 220000, color: '#BF360C', textColor: '#FFFFFF', bold: false, maxBailarinas: 4 },
+    };
   },
   DATES_START:  '2026-07-20',
   DATES_END:    '2026-08-02',

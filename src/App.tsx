@@ -86,6 +86,32 @@ function useCountdown(targetDate: Date) {
 // ⚠️ ATENÇÃO: Atualize esta data conforme necessário
 const PROMO_DEADLINE = new Date('2026-05-15T23:59:59');
 
+// Preços com troca automática à meia-noite de 2026-05-16 BRT.
+// Tier "de R$" (preço cheio) é constante; só o preço promocional e a
+// economia mudam quando o relógio cruza 00:00.
+const PRICE_SWITCH_MS = new Date('2026-05-16T00:00:00-03:00').getTime();
+function getPrices() {
+  const v2 = Date.now() >= PRICE_SWITCH_MS;
+  return {
+    lembranca: { sale: v2 ? 1600 : 1400, full: 1800 },
+    economico: { sale: v2 ? 2100 : 1900, full: 2400 },
+    completo:  { sale: v2 ? 2600 : 2200, full: 2800 },
+  };
+}
+function brl(n: number) { return 'R$ ' + n.toLocaleString('pt-BR'); }
+// Hook que força re-render quando relógio cruza PRICE_SWITCH_MS
+function usePriceTier() {
+  const [, setTick] = useState(0);
+  useEffect(() => {
+    const ms = PRICE_SWITCH_MS - Date.now();
+    if (ms > 0 && ms < 7 * 24 * 60 * 60 * 1000) {
+      const t = setTimeout(() => setTick(t => t + 1), ms + 500);
+      return () => clearTimeout(t);
+    }
+  }, []);
+  return getPrices();
+}
+
 function CountdownTimer() {
   const { days, hours, minutes, seconds } = useCountdown(PROMO_DEADLINE);
   const pad = (n: number) => String(n).padStart(2, '0');
@@ -135,6 +161,7 @@ async function submitToSheets(data: FormState, source: string) {
 export default function App() {
   const [openFaq, setOpenFaq] = useState<number | null>(0);
   const carouselRef = useRef<HTMLDivElement>(null);
+  const prices = usePriceTier();
   const { scrollY } = useScroll();
   const heroLogoY   = useTransform(scrollY, [0, 600], [0, -38]);
   const heroBadgeY  = useTransform(scrollY, [0, 600], [0, -24]);
@@ -470,9 +497,9 @@ export default function App() {
               <div className="mb-6">
                 <h3 className="font-headline text-2xl text-on-surface mb-3">Lembrança</h3>
                 <div className="rounded-2xl px-4 py-3 mb-2" style={{ background: '#FFFDF4', border: '1px solid #EAD58B' }}>
-                  <p className="text-sm line-through" style={{ color: '#A09CA3' }}>de R$ 1.800</p>
-                  <p className="font-black text-4xl leading-tight" style={{ color: '#352D39' }}>R$ 1.400</p>
-                  <p className="font-bold text-xs uppercase tracking-wide mt-1" style={{ color: '#8B6A56' }}>🔥 Pré-venda — economize R$400</p>
+                  <p className="text-sm line-through" style={{ color: '#A09CA3' }}>de {brl(prices.lembranca.full)}</p>
+                  <p className="font-black text-4xl leading-tight" style={{ color: '#352D39' }}>{brl(prices.lembranca.sale)}</p>
+                  <p className="font-bold text-xs uppercase tracking-wide mt-1" style={{ color: '#8B6A56' }}>🔥 Pré-venda — economize R${prices.lembranca.full - prices.lembranca.sale}</p>
                 </div>
                 <CountdownTimer />
               </div>
@@ -488,7 +515,7 @@ export default function App() {
               </ul>
               <a
                 href="/agendamento"
-                onClick={() => trackEvent('InitiateCheckout', { content_name: 'Pacote Lembrança', value: 1400, currency: 'BRL' })}
+                onClick={() => trackEvent('InitiateCheckout', { content_name: 'Pacote Lembrança', value: prices.lembranca.sale, currency: 'BRL' })}
                 className="block text-center w-full py-4 rounded-full border-2 border-primary text-primary font-bold hover:bg-primary hover:text-white transition-colors"
               >Selecionar</a>
             </motion.div>
@@ -504,9 +531,9 @@ export default function App() {
               <div className="mb-6">
                 <h3 className="font-headline text-2xl text-on-surface mb-3">Econômico</h3>
                 <div className="rounded-2xl px-4 py-3 mb-2" style={{ background: '#FFFDF4', border: '2px solid #EAD58B' }}>
-                  <p className="text-sm line-through" style={{ color: '#A09CA3' }}>de R$ 2.400</p>
-                  <p className="font-black text-4xl leading-tight" style={{ color: '#352D39' }}>R$ 1.900</p>
-                  <p className="font-bold text-xs uppercase tracking-wide mt-1" style={{ color: '#8B6A56' }}>🔥 Pré-venda — economize R$500</p>
+                  <p className="text-sm line-through" style={{ color: '#A09CA3' }}>de {brl(prices.economico.full)}</p>
+                  <p className="font-black text-4xl leading-tight" style={{ color: '#352D39' }}>{brl(prices.economico.sale)}</p>
+                  <p className="font-bold text-xs uppercase tracking-wide mt-1" style={{ color: '#8B6A56' }}>🔥 Pré-venda — economize R${prices.economico.full - prices.economico.sale}</p>
                 </div>
                 <CountdownTimer />
               </div>
@@ -522,7 +549,7 @@ export default function App() {
               </ul>
               <a
                 href="/agendamento"
-                onClick={() => trackEvent('InitiateCheckout', { content_name: 'Pacote Econômico', value: 1900, currency: 'BRL' })}
+                onClick={() => trackEvent('InitiateCheckout', { content_name: 'Pacote Econômico', value: prices.economico.sale, currency: 'BRL' })}
                 className="block text-center w-full py-5 rounded-full signature-gradient text-white font-bold shadow-lg hover:brightness-110 transition-all text-lg"
               >Selecionar</a>
             </motion.div>
@@ -537,9 +564,9 @@ export default function App() {
               <div className="mb-6">
                 <h3 className="font-headline text-2xl text-on-surface mb-3">Completo</h3>
                 <div className="rounded-2xl px-4 py-3 mb-2" style={{ background: '#FFFDF4', border: '1px solid #EAD58B' }}>
-                  <p className="text-sm line-through" style={{ color: '#A09CA3' }}>de R$ 2.800</p>
-                  <p className="font-black text-4xl leading-tight" style={{ color: '#352D39' }}>R$ 2.200</p>
-                  <p className="font-bold text-xs uppercase tracking-wide mt-1" style={{ color: '#8B6A56' }}>🔥 Pré-venda — economize R$600</p>
+                  <p className="text-sm line-through" style={{ color: '#A09CA3' }}>de {brl(prices.completo.full)}</p>
+                  <p className="font-black text-4xl leading-tight" style={{ color: '#352D39' }}>{brl(prices.completo.sale)}</p>
+                  <p className="font-bold text-xs uppercase tracking-wide mt-1" style={{ color: '#8B6A56' }}>🔥 Pré-venda — economize R${prices.completo.full - prices.completo.sale}</p>
                 </div>
                 <CountdownTimer />
               </div>
@@ -555,7 +582,7 @@ export default function App() {
               </ul>
               <a
                 href="/agendamento"
-                onClick={() => trackEvent('InitiateCheckout', { content_name: 'Pacote Completo', value: 2200, currency: 'BRL' })}
+                onClick={() => trackEvent('InitiateCheckout', { content_name: 'Pacote Completo', value: prices.completo.sale, currency: 'BRL' })}
                 className="block text-center w-full py-4 rounded-full border-2 border-primary text-primary font-bold hover:bg-primary hover:text-white transition-colors"
               >Selecionar</a>
             </motion.div>

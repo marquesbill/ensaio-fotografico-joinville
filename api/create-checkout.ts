@@ -1,17 +1,24 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 
+
+const PRICE_SWITCH_MS = new Date('2026-05-16T00:00:00-03:00').getTime();
+function getPackages() {
+  const v2 = Date.now() >= PRICE_SWITCH_MS;
+  return {
+    lembranca: { name: 'Lembrança', duration: 30,  price: v2 ? 1600 : 1400, maxBailarinas: 2 },
+    economico: { name: 'Econômico', duration: 60,  price: v2 ? 2100 : 1900, maxBailarinas: 3 },
+    completo:  { name: 'Completo',  duration: 120, price: v2 ? 2600 : 2200, maxBailarinas: 4 },
+  };
+}
+type PkgKey = 'lembranca' | 'economico' | 'completo';
+
 const SCRIPT_URL = process.env.SHEETS_SCRIPT_URL!;
 const SITE_URL   = process.env.SITE_URL || 'https://www.ensaiofotograficoemjoinville.com';
 const MP_TOKEN   = process.env.MERCADOPAGO_ACCESS_TOKEN!;
 
-const PACKAGES = {
-  lembranca: { name: 'Lembrança',  duration: 30,  price: 1400, maxBailarinas: 2 },
-  economico: { name: 'Econômico',  duration: 60,  price: 1900, maxBailarinas: 3 },
-  completo:  { name: 'Completo',   duration: 120, price: 2200, maxBailarinas: 4 },
-} as const;
-type PkgKey = keyof typeof PACKAGES;
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
+  const PACKAGES = getPackages();
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
   if (req.method === 'OPTIONS') return res.status(200).end();

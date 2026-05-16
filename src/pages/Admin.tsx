@@ -28,11 +28,16 @@ interface Slot { time: string; available: boolean }
 
 const API = import.meta.env.DEV ? '' : '';
 
-const PACKAGES = [
-  { key: 'lembranca', name: 'Lembrança',  duration: 30,  price: 1400, maxBailarinas: 2 },
-  { key: 'economico', name: 'Econômico',  duration: 60,  price: 1900, maxBailarinas: 3 },
-  { key: 'completo',  name: 'Completo',   duration: 120, price: 2200, maxBailarinas: 4 },
-];
+const PRICE_SWITCH_MS = new Date('2026-05-16T00:00:00-03:00').getTime();
+function getPackages() {
+  const v2 = Date.now() >= PRICE_SWITCH_MS;
+  return [
+    { key: 'lembranca', name: 'Lembrança',  duration: 30,  price: v2 ? 1600 : 1400, maxBailarinas: 2 },
+    { key: 'economico', name: 'Econômico',  duration: 60,  price: v2 ? 2100 : 1900, maxBailarinas: 3 },
+    { key: 'completo',  name: 'Completo',   duration: 120, price: v2 ? 2600 : 2200, maxBailarinas: 4 },
+  ];
+}
+const PACKAGES = getPackages();
 const MAX_BAILARINAS: Record<string, number> = {
   lembranca: 2, economico: 3, completo: 4,
   'Lembrança': 2, 'Econômico': 3, 'Completo': 4,

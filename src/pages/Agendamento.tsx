@@ -4,40 +4,61 @@ import { CheckCircle, ChevronLeft, ChevronRight, Clock, Calendar, User, Loader2,
 import { initMercadoPago, Payment } from '@mercadopago/sdk-react';
 
 // ── Constants ─────────────────────────────────────────────────
-const PACKAGES = [
-  {
-    key: 'lembranca',
-    name: 'Lembrança',
-    duration: 30,
-    price: 1400,
-    maxBailarinas: 2,
-    desc: 'Ideal para uma lembrança especial do festival.',
-    features: ['30 min de sessão', 'Até 2 pessoas', 'Fotos editadas em alta resolução'],
-    calBg: '#F0F0F0', calText: '#000000', calBold: false,
-  },
-  {
-    key: 'economico',
-    name: 'Econômico',
-    duration: 60,
-    price: 1900,
-    maxBailarinas: 3,
-    desc: 'Experiência completa com tempo para explorar diferentes looks.',
-    features: ['60 min de sessão', 'Até 3 pessoas', 'Fotos editadas em alta resolução'],
-    calBg: '#888888', calText: '#FFFFFF', calBold: true,
-    popular: true,
-  },
-  {
-    key: 'completo',
-    name: 'Completo',
-    duration: 120,
-    price: 2200,
-    maxBailarinas: 4,
-    desc: 'A experiência mais rica, com máxima liberdade criativa.',
-    features: ['120 min de sessão', 'Até 4 pessoas', 'Fotos editadas em alta resolução'],
-    calBg: '#404040', calText: '#FFFFFF', calBold: false,
-  },
-] as const;
-type PkgKey = typeof PACKAGES[number]['key'];
+// Troca automática de preço à meia-noite de 2026-05-16 BRT.
+const PRICE_SWITCH_MS = new Date('2026-05-16T00:00:00-03:00').getTime();
+function getPackages() {
+  const v2 = Date.now() >= PRICE_SWITCH_MS;
+  return [
+    {
+      key: 'lembranca' as const,
+      name: 'Lembrança',
+      duration: 30,
+      price: v2 ? 1600 : 1400,
+      maxBailarinas: 2,
+      desc: 'Ideal para uma lembrança especial do festival.',
+      features: ['30 min de sessão', 'Até 2 pessoas', 'Fotos editadas em alta resolução'],
+      calBg: '#F0F0F0', calText: '#000000', calBold: false,
+      popular: false,
+    },
+    {
+      key: 'economico' as const,
+      name: 'Econômico',
+      duration: 60,
+      price: v2 ? 2100 : 1900,
+      maxBailarinas: 3,
+      desc: 'Experiência completa com tempo para explorar diferentes looks.',
+      features: ['60 min de sessão', 'Até 3 pessoas', 'Fotos editadas em alta resolução'],
+      calBg: '#888888', calText: '#FFFFFF', calBold: true,
+      popular: true,
+    },
+    {
+      key: 'completo' as const,
+      name: 'Completo',
+      duration: 120,
+      price: v2 ? 2600 : 2200,
+      maxBailarinas: 4,
+      desc: 'A experiência mais rica, com máxima liberdade criativa.',
+      features: ['120 min de sessão', 'Até 4 pessoas', 'Fotos editadas em alta resolução'],
+      calBg: '#404040', calText: '#FFFFFF', calBold: false,
+      popular: false,
+    },
+  ];
+}
+type PkgKey = 'lembranca' | 'economico' | 'completo';
+
+// Hook que recalcula PACKAGES e força re-render quando o relógio
+// cruza PRICE_SWITCH_MS (caso o cliente esteja na página à meia-noite).
+function usePackages() {
+  const [, setTick] = useState(0);
+  useEffect(() => {
+    const ms = PRICE_SWITCH_MS - Date.now();
+    if (ms > 0 && ms < 7 * 24 * 60 * 60 * 1000) {
+      const t = setTimeout(() => setTick(n => n + 1), ms + 500);
+      return () => clearTimeout(t);
+    }
+  }, []);
+  return getPackages();
+}
 
 const DATES_START = new Date('2026-07-20T12:00:00');
 const DATES_END   = new Date('2026-08-02T12:00:00');
@@ -151,6 +172,7 @@ export default function Agendamento() {
   const [preferenceId, setPreferenceId] = useState<string | null>(null);
 
   const dates = allDates();
+  const PACKAGES = usePackages();
   const selectedPkg = PACKAGES.find(p => p.key === pkg);
 
   // Quando o pacote muda, reclampa Nº Bailarinas ao máximo permitido
