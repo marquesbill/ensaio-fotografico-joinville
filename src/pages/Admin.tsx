@@ -37,7 +37,19 @@ function getPackages() {
     { key: 'completo',  name: 'Completo',   duration: 120, price: v2 ? 2600 : 2200, maxBailarinas: 4 },
   ];
 }
-const PACKAGES = getPackages();
+// Hook: força re-render quando relógio cruza PRICE_SWITCH_MS (ou outra
+// hora futura). Mari/Elisa podem deixar painel aberto o dia todo.
+function usePackages() {
+  const [, setTick] = useState(0);
+  useEffect(() => {
+    const ms = PRICE_SWITCH_MS - Date.now();
+    if (ms > 0 && ms < 7 * 24 * 60 * 60 * 1000) {
+      const t = setTimeout(() => setTick(n => n + 1), ms + 500);
+      return () => clearTimeout(t);
+    }
+  }, []);
+  return getPackages();
+}
 const MAX_BAILARINAS: Record<string, number> = {
   lembranca: 2, economico: 3, completo: 4,
   'Lembrança': 2, 'Econômico': 3, 'Completo': 4,
@@ -228,6 +240,7 @@ function RescheduleModal({
   onConfirm: (newDate: string, newTime: string, packageKey: string) => void;
   loading: boolean;
 }) {
+  const PACKAGES = usePackages();
   const [newDate, setNewDate]         = useState('');
   const [newTime, setNewTime]         = useState('');
   const [pkgKey,  setPkgKey]          = useState(PKG_KEY[booking.package] || 'lembranca');
@@ -348,6 +361,7 @@ function NewBookingModal({
   onSubmit: (data: { name: string; email: string; whatsapp: string; instagram: string; instagramBailarina: string; nomeBailarina: string; numBailarinas: number; date: string; time: string; packageKey: string }, confirm: boolean) => void;
   loading: boolean;
 }) {
+  const PACKAGES = usePackages();
   const [name,                setName]                = useState('');
   const [email,               setEmail]               = useState('');
   const [whatsapp,            setWhatsapp]            = useState('');
