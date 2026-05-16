@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { CheckCircle, ChevronLeft, ChevronRight, Clock, Calendar, User, Loader2, AlertCircle, Sun, Sunset, Moon } from 'lucide-react';
 import { initMercadoPago, Payment } from '@mercadopago/sdk-react';
+import { track, initSessionContext, trackScrollDepth, trackTimeOnPage } from '../lib/analytics';
 
 // ── Constants ─────────────────────────────────────────────────
 // Troca automática de preço entre lotes
@@ -145,6 +146,11 @@ function WhatsAppButton() {
       href={`https://wa.me/551151960627?text=${encodeURIComponent('Olá, tenho uma dúvida sobre o ensaio em Joinville!')}`}
       target="_blank"
       rel="noopener noreferrer"
+      onClick={() => {
+        track.event('whatsapp_agendamento_click');
+        track.tag('whatsapp_clicked', 'true');
+        track.upgrade('whatsapp_contacted');
+      }}
       initial={{ scale: 0 }}
       animate={{
         scale: 1,
@@ -187,6 +193,17 @@ export default function Agendamento() {
   const dates = allDates();
   const PACKAGES = usePackages();
   const selectedPkg = PACKAGES.find(p => p.key === pkg);
+
+  // Bootstrap analytics na entrada da página
+  useEffect(() => {
+    initSessionContext();
+    const offScroll = trackScrollDepth();
+    trackTimeOnPage();
+    track.event('agendamento_page_view');
+    track.tag('reached_agendamento', 'true');
+    track.upgrade('reached_agendamento');
+    return () => { if (offScroll) offScroll(); };
+  }, []);
 
   // Quando o pacote muda, reclampa Nº Bailarinas ao máximo permitido
   useEffect(() => {
@@ -271,8 +288,14 @@ export default function Agendamento() {
   }, []);
 
   async function handleCheckout() {
-    if (!validateForm()) return;
+    if (!validateForm()) {
+      track.event('agendamento_checkout_validation_blocked');
+      return;
+    }
     if (!pkg || !selectedDate || !selectedTime || !form.nome || !form.email || !form.whatsapp) return;
+    track.event('agendamento_checkout_attempt');
+    track.tag('bailarinas_count', form.numBailarinas);
+    track.tag('has_instagram', form.instagram ? 'true' : 'false');
     setSubmitting(true); setSubmitError('');
     try {
       const res = await fetch('/api/create-checkout', {
@@ -283,6 +306,8 @@ export default function Agendamento() {
       const data = await res.json();
       // Slot acabou de ser reservado por outra pessoa — recarrega slots e volta o usuário pra escolher
       if (res.status === 409) {
+        track.event('agendamento_slot_conflict_409');
+        track.tag('slot_conflict_occurred', 'true');
         setSelectedTime(null);
         setSlots(null);
         fetch(`/api/slots?date=${selectedDate}&t=${Date.now()}`)
@@ -293,9 +318,14 @@ export default function Agendamento() {
         throw new Error(data.error || 'Esse horário não está mais disponível.');
       }
       if (data.error) throw new Error(data.error);
+      track.event('agendamento_checkout_preference_created');
+      track.upgrade('checkout_reached');
+      track.tag('reached_checkout', 'true');
       setPreferenceId(data.preferenceId);
       setStep(5);
     } catch (e: unknown) {
+      track.event('agendamento_checkout_error');
+      track.tag('checkout_error_message', String((e instanceof Error ? e.message : e) || 'unknown').slice(0, 100));
       setSubmitError(e instanceof Error ? e.message : 'Erro ao criar sessão de pagamento.');
     } finally {
       setSubmitting(false);
@@ -304,6 +334,9 @@ export default function Agendamento() {
 
   async function handlePaymentSubmit(formData: Record<string, unknown>) {
     if (!pkg || !selectedDate || !selectedTime || !preferenceId) return;
+    const paymentType = String((formData as { payment_type_id?: string; paymentMethodId?: string }).payment_type_id || (formData as { paymentMethodId?: string }).paymentMethodId || 'unknown');
+    track.event('payment_submit_attempt');
+    track.tag('payment_method', paymentType);
     try {
       const res = await fetch('/api/process-payment', {
         method: 'POST',
@@ -319,14 +352,25 @@ export default function Agendamento() {
       const data = await res.json();
       if (data.error) throw new Error(data.error);
       if (data.status === 'approved') {
+        track.event('payment_approved');
+        track.tag('payment_status', 'approved');
+        track.upgrade('payment_approved');
+        if (window.fbq) window.fbq('track', 'Purchase', { value: String(selectedPkg?.price || 0), currency: 'BRL' });
         window.location.href = '/agendamento/sucesso';
       } else if (data.status === 'pending') {
+        track.event('payment_pending');
+        track.tag('payment_status', 'pending');
+        track.upgrade('payment_pending');
         // PIX or boleto — success page handles pending too
         window.location.href = '/agendamento/sucesso';
       } else {
         throw new Error('Pagamento recusado. Verifique os dados e tente novamente.');
       }
     } catch (e: unknown) {
+      track.event('payment_error');
+      track.tag('payment_status', 'rejected');
+      track.tag('payment_error_message', String((e instanceof Error ? e.message : e) || 'unknown').slice(0, 100));
+      track.upgrade('payment_failed');
       throw e; // re-throw so the Brick shows its own error state
     }
   }
@@ -367,7 +411,12 @@ export default function Agendamento() {
               <div className="space-y-4">
                 {PACKAGES.map(p => (
                   <button key={p.key} type="button"
-                    onClick={() => setPkg(p.key)}
+                    onClick={() => {
+                      track.event(`agendamento_pacote_${p.key}`);
+                      track.tag('chosen_package', p.key);
+                      track.tag('package_value_brl', p.price);
+                      setPkg(p.key);
+                    }}
                     className={`w-full text-left rounded-2xl border-2 p-5 transition-all relative
                       ${pkg === p.key ? 'border-primary bg-primary/5 shadow-md' : 'border-outline-variant bg-white/80 hover:border-primary/50'}`}
                   >
@@ -404,7 +453,10 @@ export default function Agendamento() {
               </div>
               <motion.button
                 disabled={!canGoStep2}
-                onClick={() => setStep(2)}
+                onClick={() => {
+                  track.event('agendamento_step_1_to_2');
+                  setStep(2);
+                }}
                 className="w-full mt-6 py-4 rounded-full font-bold text-white text-lg disabled:opacity-40 transition-all"
                 style={{ background: 'linear-gradient(135deg,#7a3f8f,#e87060)' }}
                 whileTap={{ scale: 0.98 }}
@@ -431,7 +483,11 @@ export default function Agendamento() {
                   const dow = DOW[d.getDay()];
                   return (
                     <button key={ds} type="button"
-                      onClick={() => { setSelectedDate(ds); setSelectedTime(null); setSelectedPeriod(null); }}
+                      onClick={() => {
+                        track.event('agendamento_date_select');
+                        track.tag('chosen_date', ds);
+                        setSelectedDate(ds); setSelectedTime(null); setSelectedPeriod(null);
+                      }}
                       className={`shrink-0 snap-start flex flex-col items-center justify-center rounded-xl p-3 min-w-[64px] border-2 transition-all
                         ${isSelected ? 'border-primary bg-primary text-white' : 'border-outline-variant bg-white/90 hover:border-primary/50 text-on-surface'}`}
                     >
@@ -448,11 +504,11 @@ export default function Agendamento() {
               )}
 
               <div className="flex gap-3 mt-6">
-                <button type="button" onClick={() => setStep(1)}
+                <button type="button" onClick={() => { track.event('agendamento_back_step_2_to_1'); setStep(1); }}
                   className="flex-1 py-3 rounded-full border-2 border-outline-variant text-on-surface font-bold hover:bg-surface-container transition-colors">
                   <ChevronLeft className="inline w-4 h-4" /> Voltar
                 </button>
-                <motion.button disabled={!canGoStep3} onClick={() => setStep(3)}
+                <motion.button disabled={!canGoStep3} onClick={() => { track.event('agendamento_step_2_to_3'); setStep(3); }}
                   className="flex-1 py-3 rounded-full font-bold text-white disabled:opacity-40 transition-all"
                   style={{ background: 'linear-gradient(135deg,#7a3f8f,#e87060)' }}
                   whileTap={{ scale: 0.98 }}>
@@ -502,7 +558,11 @@ export default function Agendamento() {
                         <div className="grid grid-cols-3 gap-3 mb-2">
                           {availablePeriods.map(({ key, label, sub, Icon }) => (
                             <button key={key} type="button"
-                              onClick={() => setSelectedPeriod(key)}
+                              onClick={() => {
+                                track.event(`agendamento_period_${key}`);
+                                track.tag('chosen_period', key);
+                                setSelectedPeriod(key);
+                              }}
                               className="flex flex-col items-center gap-2 rounded-2xl border-2 border-outline-variant bg-white/90 hover:border-primary/60 hover:bg-primary/5 py-5 px-2 transition-all"
                             >
                               <Icon className="w-7 h-7 text-primary" />
@@ -531,7 +591,11 @@ export default function Agendamento() {
                           <div className="grid grid-cols-4 gap-2">
                             {periodSlots.map(t => (
                               <button key={t} type="button"
-                                onClick={() => setSelectedTime(t)}
+                                onClick={() => {
+                                  track.event('agendamento_time_select');
+                                  track.tag('chosen_time', t);
+                                  setSelectedTime(t);
+                                }}
                                 className={`py-3 rounded-xl border-2 font-bold text-base transition-all
                                   ${selectedTime === t ? 'border-primary bg-primary text-white' : 'border-outline-variant bg-white/90 text-on-surface hover:border-primary/50'}`}
                               >{t}</button>
@@ -545,11 +609,11 @@ export default function Agendamento() {
               )}
 
               <div className="flex gap-3 mt-6">
-                <button type="button" onClick={() => { setStep(2); setSelectedPeriod(null); setSelectedTime(null); }}
+                <button type="button" onClick={() => { track.event('agendamento_back_step_3_to_2'); setStep(2); setSelectedPeriod(null); setSelectedTime(null); }}
                   className="flex-1 py-3 rounded-full border-2 border-outline-variant text-on-surface font-bold hover:bg-surface-container transition-colors">
                   <ChevronLeft className="inline w-4 h-4" /> Voltar
                 </button>
-                <motion.button disabled={!canGoStep4} onClick={() => setStep(4)}
+                <motion.button disabled={!canGoStep4} onClick={() => { track.event('agendamento_step_3_to_4'); track.upgrade('reached_personal_data'); setStep(4); }}
                   className="flex-1 py-3 rounded-full font-bold text-white disabled:opacity-40 transition-all"
                   style={{ background: 'linear-gradient(135deg,#7a3f8f,#e87060)' }}
                   whileTap={{ scale: 0.98 }}>
@@ -685,7 +749,7 @@ export default function Agendamento() {
                 )}
 
                 <div className="flex gap-3 pt-2">
-                  <button type="button" onClick={() => setStep(3)}
+                  <button type="button" onClick={() => { track.event('agendamento_back_step_4_to_3'); setStep(3); }}
                     className="flex-1 py-3 rounded-full border-2 border-outline-variant text-on-surface font-bold hover:bg-surface-container transition-colors">
                     <ChevronLeft className="inline w-4 h-4" /> Voltar
                   </button>
@@ -763,6 +827,12 @@ export default function Agendamento() {
 
 // ── Success page ──────────────────────────────────────────────
 export function AgendamentoSucesso() {
+  useEffect(() => {
+    initSessionContext();
+    track.event('agendamento_sucesso_page_view');
+    track.tag('booking_confirmed', 'true');
+    track.upgrade('booking_confirmed');
+  }, []);
   return (
     <div className="min-h-screen bg-surface flex flex-col items-center justify-center px-4">
       <motion.div

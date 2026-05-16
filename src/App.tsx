@@ -20,6 +20,7 @@ import {
   Star
 } from "lucide-react";
 import { useState, useRef, useEffect } from "react";
+import { track, initSessionContext, trackScrollDepth, trackTimeOnPage, trackInView } from "./lib/analytics";
 
 const fadeIn = {
   initial: { opacity: 0, y: 20 },
@@ -167,9 +168,9 @@ function CountdownTimer() {
 const SHEETS_URL = 'https://script.google.com/macros/s/AKfycbwU_Wcn_Ca4boLils6acN_au3W5W1SMss3vlKuELSZCoWRvFHP0iLNZRx_WKALIsfAP/exec';
 
 function trackEvent(event: string, params?: Record<string, string | number>) {
-  if (typeof window !== 'undefined' && window.fbq) {
-    window.fbq('track', event, params);
-  }
+  // Mantém compatibilidade com chamadas existentes (Meta Pixel standard events)
+  // mas roteia tudo via track.event() que fan-out pra Clarity + Pixel + GA
+  track.event(event, params);
 }
 
 type FormState = { nome: string; whatsapp: string; email: string; vaiJoinville: string };
@@ -195,9 +196,34 @@ export default function App() {
   const heroDateY   = useTransform(scrollY, [0, 600], [0, -20]);
   const heroTextY   = useTransform(scrollY, [0, 600], [0, -14]);
 
+  // Bootstrap: contexto de sessão + scroll depth + tempo na página
+  useEffect(() => {
+    initSessionContext();
+    const offScroll = trackScrollDepth();
+    trackTimeOnPage();
+    track.event('home_page_view');
+
+    // Track quando seções importantes entram no viewport
+    const cleanups: Array<() => void> = [];
+    const sections: Array<[string, string]> = [
+      ['#pacotes-section', 'view_pacotes_section'],
+    ];
+    sections.forEach(([selector, eventName]) => {
+      const el = document.querySelector(selector);
+      if (el) cleanups.push(trackInView(el, eventName, 0.3));
+    });
+
+    return () => {
+      if (offScroll) offScroll();
+      cleanups.forEach(c => c());
+    };
+  }, []);
+
   // Hero form
   const [heroForm, setHeroForm] = useState<FormState>({ nome: '', whatsapp: '', email: '', vaiJoinville: '' });
   const [heroStatus, setHeroStatus] = useState<FormStatus>('idle');
+  const heroFormStartedRef = useRef(false);
+  const footerFormStartedRef = useRef(false);
 
   // Footer form
   const [footerForm, setFooterForm] = useState<FormState>({ nome: '', whatsapp: '', email: '', vaiJoinville: '' });
@@ -205,34 +231,55 @@ export default function App() {
 
   const handleHeroSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!heroForm.nome || !heroForm.whatsapp || !heroForm.email) return;
+    if (!heroForm.nome || !heroForm.whatsapp || !heroForm.email) {
+      track.event('hero_form_submit_blocked_validation');
+      return;
+    }
+    track.event('hero_form_submit_attempt');
+    track.tag('vai_joinville_answer', heroForm.vaiJoinville || 'none');
     setHeroStatus('sending');
     try {
       await submitToSheets(heroForm, 'hero');
       trackEvent('Lead', { content_name: 'Formulário Hero' });
+      track.event('hero_form_submit_success');
+      track.tag('lead_captured', 'true');
+      track.tag('lead_source', 'hero');
+      track.upgrade('hero_lead_captured');
       setHeroStatus('success');
       setHeroForm({ nome: '', whatsapp: '', email: '', vaiJoinville: '' });
     } catch {
+      track.event('hero_form_submit_error');
       setHeroStatus('error');
     }
   };
 
   const handleFooterSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!footerForm.nome || !footerForm.whatsapp || !footerForm.email) return;
+    if (!footerForm.nome || !footerForm.whatsapp || !footerForm.email) {
+      track.event('footer_form_submit_blocked_validation');
+      return;
+    }
+    track.event('footer_form_submit_attempt');
+    track.tag('vai_joinville_answer', footerForm.vaiJoinville || 'none');
     setFooterStatus('sending');
     try {
       await submitToSheets(footerForm, 'footer');
       trackEvent('Lead', { content_name: 'Formulário Footer' });
+      track.event('footer_form_submit_success');
+      track.tag('lead_captured', 'true');
+      track.tag('lead_source', 'footer');
+      track.upgrade('footer_lead_captured');
       setFooterStatus('success');
       setFooterForm({ nome: '', whatsapp: '', email: '', vaiJoinville: '' });
     } catch {
+      track.event('footer_form_submit_error');
       setFooterStatus('error');
     }
   };
 
   const scrollCarousel = (direction: 'left' | 'right') => {
     if (carouselRef.current) {
+      track.event(`carousel_scroll_${direction}`);
       const scrollAmount = direction === 'left' ? -400 : 400;
       carouselRef.current.scrollBy({ left: scrollAmount, behavior: 'smooth' });
     }
@@ -379,7 +426,10 @@ export default function App() {
                       <button
                         key={opt}
                         type="button"
-                        onClick={() => setHeroForm(f => ({ ...f, vaiJoinville: opt }))}
+                        onClick={() => {
+                          track.event(`hero_vai_joinville_${opt === 'Sim' ? 'sim' : 'nao'}`);
+                          setHeroForm(f => ({ ...f, vaiJoinville: opt }));
+                        }}
                         className="flex-1 py-3 rounded-xl font-black text-base transition-all border-2"
                         style={heroForm.vaiJoinville === opt
                           ? { background: '#7a3f8f', color: 'white', borderColor: '#7a3f8f' }
@@ -395,6 +445,12 @@ export default function App() {
                     type="text"
                     required
                     value={heroForm.nome}
+                    onFocus={() => {
+                      if (!heroFormStartedRef.current) {
+                        heroFormStartedRef.current = true;
+                        track.event('hero_form_started');
+                      }
+                    }}
                     onChange={(e) => setHeroForm(f => ({ ...f, nome: e.target.value }))}
                   />
                 </div>
@@ -493,7 +549,7 @@ export default function App() {
       </section>
 
       {/* Packages Section */}
-      <section className="py-24 bg-surface-container-low relative overflow-hidden">
+      <section id="pacotes-section" className="py-24 bg-surface-container-low relative overflow-hidden">
         <div className="container mx-auto px-6">
           <motion.h2 
             className="font-headline text-4xl text-on-surface text-center mb-4"
@@ -546,7 +602,13 @@ export default function App() {
               </ul>
               <a
                 href="/agendamento"
-                onClick={() => trackEvent('InitiateCheckout', { content_name: 'Pacote Lembrança', value: prices.lembranca.sale, currency: 'BRL' })}
+                onClick={() => {
+                  trackEvent('InitiateCheckout', { content_name: 'Pacote Lembrança', value: prices.lembranca.sale, currency: 'BRL' });
+                  track.event('package_select_lembranca');
+                  track.tag('package_interest', 'lembranca');
+                  track.tag('package_value_brl', prices.lembranca.sale);
+                  track.upgrade('package_selected');
+                }}
                 className="block text-center w-full py-4 rounded-full border-2 border-primary text-primary font-bold hover:bg-primary hover:text-white transition-colors"
               >Selecionar</a>
             </motion.div>
@@ -584,7 +646,13 @@ export default function App() {
               </ul>
               <a
                 href="/agendamento"
-                onClick={() => trackEvent('InitiateCheckout', { content_name: 'Pacote Econômico', value: prices.economico.sale, currency: 'BRL' })}
+                onClick={() => {
+                  trackEvent('InitiateCheckout', { content_name: 'Pacote Econômico', value: prices.economico.sale, currency: 'BRL' });
+                  track.event('package_select_economico');
+                  track.tag('package_interest', 'economico');
+                  track.tag('package_value_brl', prices.economico.sale);
+                  track.upgrade('package_selected');
+                }}
                 className="block text-center w-full py-5 rounded-full signature-gradient text-white font-bold shadow-lg hover:brightness-110 transition-all text-lg"
               >Selecionar</a>
             </motion.div>
@@ -621,7 +689,13 @@ export default function App() {
               </ul>
               <a
                 href="/agendamento"
-                onClick={() => trackEvent('InitiateCheckout', { content_name: 'Pacote Completo', value: prices.completo.sale, currency: 'BRL' })}
+                onClick={() => {
+                  trackEvent('InitiateCheckout', { content_name: 'Pacote Completo', value: prices.completo.sale, currency: 'BRL' });
+                  track.event('package_select_completo');
+                  track.tag('package_interest', 'completo');
+                  track.tag('package_value_brl', prices.completo.sale);
+                  track.upgrade('package_selected');
+                }}
                 className="block text-center w-full py-4 rounded-full border-2 border-primary text-primary font-bold hover:bg-primary hover:text-white transition-colors"
               >Selecionar</a>
             </motion.div>
@@ -818,7 +892,10 @@ export default function App() {
                           <button
                             key={opt}
                             type="button"
-                            onClick={() => setFooterForm(f => ({ ...f, vaiJoinville: opt }))}
+                            onClick={() => {
+                              track.event(`footer_vai_joinville_${opt === 'Sim' ? 'sim' : 'nao'}`);
+                              setFooterForm(f => ({ ...f, vaiJoinville: opt }));
+                            }}
                             className="flex-1 py-3 rounded-xl font-black text-base transition-all border-2"
                             style={footerForm.vaiJoinville === opt
                               ? { background: '#7a3f8f', color: 'white', borderColor: '#7a3f8f' }
@@ -833,6 +910,12 @@ export default function App() {
                       type="text"
                       required
                       value={footerForm.nome}
+                      onFocus={() => {
+                        if (!footerFormStartedRef.current) {
+                          footerFormStartedRef.current = true;
+                          track.event('footer_form_started');
+                        }
+                      }}
                       onChange={(e) => setFooterForm(f => ({ ...f, nome: e.target.value }))}
                     />
                     <input
@@ -999,7 +1082,10 @@ export default function App() {
               >
                 <button 
                   className="flex justify-between items-center w-full p-6 text-left cursor-pointer select-none"
-                  onClick={() => setOpenFaq(openFaq === i ? null : i)}
+                  onClick={() => {
+                    if (openFaq !== i) track.event(`faq_open_${i}`);
+                    setOpenFaq(openFaq === i ? null : i);
+                  }}
                 >
                   <span className="font-bold text-on-surface">{faq.q}</span>
                   <ChevronDown className={`w-5 h-5 transition-transform duration-300 ${openFaq === i ? 'rotate-180' : ''}`} />
@@ -1025,7 +1111,12 @@ export default function App() {
         href={`https://wa.me/551151960627?text=${encodeURIComponent('Olá, gostaria de um ensaio!')}`}
         target="_blank"
         rel="noopener noreferrer"
-        onClick={() => trackEvent('Contact', { content_name: 'Botão WhatsApp Flutuante' })}
+        onClick={() => {
+          trackEvent('Contact', { content_name: 'Botão WhatsApp Flutuante' });
+          track.event('whatsapp_floating_click');
+          track.tag('whatsapp_clicked', 'true');
+          track.upgrade('whatsapp_contacted');
+        }}
         initial={{ scale: 0 }}
         animate={{
           scale: 1,
