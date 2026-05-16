@@ -7,8 +7,12 @@
 //   RESEND_API_KEY  →  re_xxxxxxxxxxxxxxxxxxxxxxxx
 // ============================================================
 
-// Preço em centavos. Troca automática à meia-noite de 2026-05-16 BRT.
-const PRICE_SWITCH_MS = new Date('2026-05-16T00:00:00-03:00').getTime();
+// Preço em centavos. Tiers de venda:
+//   lote 0 (pré-venda curta): até 15/05 23:59  → 140000 / 190000 / 220000
+//   lote 1: 16/05 → 30/06                     → 160000 / 210000 / 260000
+//   lote 2: 01/07 em diante (preço cheio)     → 180000 / 240000 / 280000
+const LOTE1_START_MS = new Date('2026-05-16T00:00:00-03:00').getTime();
+const LOTE2_START_MS = new Date('2026-07-01T00:00:00-03:00').getTime();
 
 const CFG = {
   WORK_START_H: 9,
@@ -18,11 +22,15 @@ const CFG = {
   PENDING_BLOCK_H: 168,         // horas que o slot fica bloqueado p/ pgmto pendente (7d — cobre validade do boleto MP)
   ANDRE_NOTIFY_MIN: 30,         // minutos até Mariane receber aviso de pagamento não concluído
   get PACKAGES() {
-    const v2 = Date.now() >= PRICE_SWITCH_MS;
+    const now = Date.now();
+    let priceLem, priceEco, priceCom;
+    if (now >= LOTE2_START_MS)      { priceLem = 180000; priceEco = 240000; priceCom = 280000; }
+    else if (now >= LOTE1_START_MS) { priceLem = 160000; priceEco = 210000; priceCom = 260000; }
+    else                            { priceLem = 140000; priceEco = 190000; priceCom = 220000; }
     return {
-      lembranca: { name: 'Lembrança', duration: 30,  price: v2 ? 160000 : 140000, color: '#6A0DAD', textColor: '#FFFFFF', bold: false, maxBailarinas: 2 },
-      economico: { name: 'Econômico', duration: 60,  price: v2 ? 210000 : 190000, color: '#0277BD', textColor: '#FFFFFF', bold: true,  maxBailarinas: 3 },
-      completo:  { name: 'Completo',  duration: 120, price: v2 ? 260000 : 220000, color: '#BF360C', textColor: '#FFFFFF', bold: false, maxBailarinas: 4 },
+      lembranca: { name: 'Lembrança', duration: 30,  price: priceLem, color: '#6A0DAD', textColor: '#FFFFFF', bold: false, maxBailarinas: 2 },
+      economico: { name: 'Econômico', duration: 60,  price: priceEco, color: '#0277BD', textColor: '#FFFFFF', bold: true,  maxBailarinas: 3 },
+      completo:  { name: 'Completo',  duration: 120, price: priceCom, color: '#BF360C', textColor: '#FFFFFF', bold: false, maxBailarinas: 4 },
     };
   },
   DATES_START:  '2026-07-20',

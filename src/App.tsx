@@ -83,29 +83,51 @@ function useCountdown(targetDate: Date) {
   return timeLeft;
 }
 
-// ⚠️ ATENÇÃO: Atualize esta data conforme necessário
-const PROMO_DEADLINE = new Date('2026-05-15T23:59:59');
-
-// Preços com troca automática à meia-noite de 2026-05-16 BRT.
-// Tier "de R$" (preço cheio) é constante; só o preço promocional e a
-// economia mudam quando o relógio cruza 00:00.
-const PRICE_SWITCH_MS = new Date('2026-05-16T00:00:00-03:00').getTime();
+// Tiers de preço com troca automática:
+//   lote 0 (pré-venda curta): até 15/05 23:59 → 1400 / 1900 / 2200
+//   lote 1: 16/05 → 30/06        → 1600 / 2100 / 2600
+//   lote 2: 01/07 em diante      → 1800 / 2400 / 2800 (preço cheio)
+const LOTE1_START_MS = new Date('2026-05-16T00:00:00-03:00').getTime();
+const LOTE2_START_MS = new Date('2026-07-01T00:00:00-03:00').getTime();
 function getPrices() {
-  const v2 = Date.now() >= PRICE_SWITCH_MS;
+  const now = Date.now();
+  if (now >= LOTE2_START_MS) {
+    return {
+      lembranca: { sale: 1800, full: 1800 },
+      economico: { sale: 2400, full: 2400 },
+      completo:  { sale: 2800, full: 2800 },
+    };
+  }
+  if (now >= LOTE1_START_MS) {
+    return {
+      lembranca: { sale: 1600, full: 1800 },
+      economico: { sale: 2100, full: 2400 },
+      completo:  { sale: 2600, full: 2800 },
+    };
+  }
   return {
-    lembranca: { sale: v2 ? 1600 : 1400, full: 1800 },
-    economico: { sale: v2 ? 2100 : 1900, full: 2400 },
-    completo:  { sale: v2 ? 2600 : 2200, full: 2800 },
+    lembranca: { sale: 1400, full: 1800 },
+    economico: { sale: 1900, full: 2400 },
+    completo:  { sale: 2200, full: 2800 },
   };
 }
+// Próxima troca de preço (ou null se já estamos no último lote)
+function getNextPriceSwitch(): Date | null {
+  const now = Date.now();
+  if (now < LOTE1_START_MS) return new Date(LOTE1_START_MS);
+  if (now < LOTE2_START_MS) return new Date(LOTE2_START_MS);
+  return null;
+}
 function brl(n: number) { return 'R$ ' + n.toLocaleString('pt-BR'); }
-// Hook que força re-render quando relógio cruza PRICE_SWITCH_MS
+// Hook que força re-render quando relógio cruza qualquer switch futuro
 function usePriceTier() {
   const [, setTick] = useState(0);
   useEffect(() => {
-    const ms = PRICE_SWITCH_MS - Date.now();
-    if (ms > 0 && ms < 7 * 24 * 60 * 60 * 1000) {
-      const t = setTimeout(() => setTick(t => t + 1), ms + 500);
+    const next = getNextPriceSwitch();
+    if (!next) return;
+    const ms = next.getTime() - Date.now();
+    if (ms > 0 && ms < 90 * 24 * 60 * 60 * 1000) {
+      const t = setTimeout(() => setTick(n => n + 1), ms + 500);
       return () => clearTimeout(t);
     }
   }, []);
@@ -113,13 +135,18 @@ function usePriceTier() {
 }
 
 function CountdownTimer() {
-  const { days, hours, minutes, seconds } = useCountdown(PROMO_DEADLINE);
+  // Conta até a próxima troca de preço. Se já estamos no último lote
+  // (preço cheio), o componente não renderiza nada.
+  const target = getNextPriceSwitch();
+  // Hooks devem rodar incondicionalmente, então useCountdown sempre é chamado.
+  // Quando target é null, passa uma data passada (timer mostra zeros e ignoramos).
+  const { days, hours, minutes, seconds } = useCountdown(target ?? new Date(0));
+  if (!target) return null;
   const pad = (n: number) => String(n).padStart(2, '0');
-  const expired = days === 0 && hours === 0 && minutes === 0 && seconds === 0;
   return (
     <div className="mt-3 mb-2 rounded-2xl px-3 py-3" style={{ background: 'linear-gradient(135deg, #a46db5 0%, #e8a2e8 100%)', boxShadow: '0 2px 10px rgba(164,109,181,0.25)' }}>
       <p className="font-bold text-xs uppercase tracking-widest text-center mb-2 text-white drop-shadow-sm">
-        {expired ? '🔒 Oferta encerrada' : '⏰ Oferta expira em'}
+        ⏰ Oferta expira em
       </p>
       <div className="flex justify-center gap-2 text-center">
         {[{ v: pad(days), l: 'dias' }, { v: pad(hours), l: 'hrs' }, { v: pad(minutes), l: 'min' }, { v: pad(seconds), l: 'seg' }].map(({ v, l }) => (
@@ -497,9 +524,13 @@ export default function App() {
               <div className="mb-6">
                 <h3 className="font-headline text-2xl text-on-surface mb-3">Lembrança</h3>
                 <div className="rounded-2xl px-4 py-3 mb-2" style={{ background: '#FFFDF4', border: '1px solid #EAD58B' }}>
-                  <p className="text-sm line-through" style={{ color: '#A09CA3' }}>de {brl(prices.lembranca.full)}</p>
+                  {prices.lembranca.full > prices.lembranca.sale && (
+                    <p className="text-sm line-through" style={{ color: '#A09CA3' }}>de {brl(prices.lembranca.full)}</p>
+                  )}
                   <p className="font-black text-4xl leading-tight" style={{ color: '#352D39' }}>{brl(prices.lembranca.sale)}</p>
-                  <p className="font-bold text-xs uppercase tracking-wide mt-1" style={{ color: '#8B6A56' }}>🔥 Pré-venda — economize R${prices.lembranca.full - prices.lembranca.sale}</p>
+                  {prices.lembranca.full > prices.lembranca.sale && (
+                    <p className="font-bold text-xs uppercase tracking-wide mt-1" style={{ color: '#8B6A56' }}>🔥 Pré-venda — economize R${prices.lembranca.full - prices.lembranca.sale}</p>
+                  )}
                 </div>
                 <CountdownTimer />
               </div>
@@ -531,9 +562,13 @@ export default function App() {
               <div className="mb-6">
                 <h3 className="font-headline text-2xl text-on-surface mb-3">Econômico</h3>
                 <div className="rounded-2xl px-4 py-3 mb-2" style={{ background: '#FFFDF4', border: '2px solid #EAD58B' }}>
-                  <p className="text-sm line-through" style={{ color: '#A09CA3' }}>de {brl(prices.economico.full)}</p>
+                  {prices.economico.full > prices.economico.sale && (
+                    <p className="text-sm line-through" style={{ color: '#A09CA3' }}>de {brl(prices.economico.full)}</p>
+                  )}
                   <p className="font-black text-4xl leading-tight" style={{ color: '#352D39' }}>{brl(prices.economico.sale)}</p>
-                  <p className="font-bold text-xs uppercase tracking-wide mt-1" style={{ color: '#8B6A56' }}>🔥 Pré-venda — economize R${prices.economico.full - prices.economico.sale}</p>
+                  {prices.economico.full > prices.economico.sale && (
+                    <p className="font-bold text-xs uppercase tracking-wide mt-1" style={{ color: '#8B6A56' }}>🔥 Pré-venda — economize R${prices.economico.full - prices.economico.sale}</p>
+                  )}
                 </div>
                 <CountdownTimer />
               </div>
@@ -564,9 +599,13 @@ export default function App() {
               <div className="mb-6">
                 <h3 className="font-headline text-2xl text-on-surface mb-3">Completo</h3>
                 <div className="rounded-2xl px-4 py-3 mb-2" style={{ background: '#FFFDF4', border: '1px solid #EAD58B' }}>
-                  <p className="text-sm line-through" style={{ color: '#A09CA3' }}>de {brl(prices.completo.full)}</p>
+                  {prices.completo.full > prices.completo.sale && (
+                    <p className="text-sm line-through" style={{ color: '#A09CA3' }}>de {brl(prices.completo.full)}</p>
+                  )}
                   <p className="font-black text-4xl leading-tight" style={{ color: '#352D39' }}>{brl(prices.completo.sale)}</p>
-                  <p className="font-bold text-xs uppercase tracking-wide mt-1" style={{ color: '#8B6A56' }}>🔥 Pré-venda — economize R${prices.completo.full - prices.completo.sale}</p>
+                  {prices.completo.full > prices.completo.sale && (
+                    <p className="font-bold text-xs uppercase tracking-wide mt-1" style={{ color: '#8B6A56' }}>🔥 Pré-venda — economize R${prices.completo.full - prices.completo.sale}</p>
+                  )}
                 </div>
                 <CountdownTimer />
               </div>

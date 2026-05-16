@@ -2,13 +2,28 @@ import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { Resend } from 'resend';
 
 
-const PRICE_SWITCH_MS = new Date('2026-05-16T00:00:00-03:00').getTime();
+const LOTE1_START_MS = new Date('2026-05-16T00:00:00-03:00').getTime();
+const LOTE2_START_MS = new Date('2026-07-01T00:00:00-03:00').getTime();
 function getPackages() {
-  const v2 = Date.now() >= PRICE_SWITCH_MS;
+  const now = Date.now();
+  if (now >= LOTE2_START_MS) {
+    return {
+      lembranca: { name: 'Lembrança', duration: 30,  price: 1800, maxBailarinas: 2 },
+      economico: { name: 'Econômico', duration: 60,  price: 2400, maxBailarinas: 3 },
+      completo:  { name: 'Completo',  duration: 120, price: 2800, maxBailarinas: 4 },
+    };
+  }
+  if (now >= LOTE1_START_MS) {
+    return {
+      lembranca: { name: 'Lembrança', duration: 30,  price: 1600, maxBailarinas: 2 },
+      economico: { name: 'Econômico', duration: 60,  price: 2100, maxBailarinas: 3 },
+      completo:  { name: 'Completo',  duration: 120, price: 2600, maxBailarinas: 4 },
+    };
+  }
   return {
-    lembranca: { name: 'Lembrança', duration: 30,  price: v2 ? 1600 : 1400, maxBailarinas: 2 },
-    economico: { name: 'Econômico', duration: 60,  price: v2 ? 2100 : 1900, maxBailarinas: 3 },
-    completo:  { name: 'Completo',  duration: 120, price: v2 ? 2600 : 2200, maxBailarinas: 4 },
+    lembranca: { name: 'Lembrança', duration: 30,  price: 1400, maxBailarinas: 2 },
+    economico: { name: 'Econômico', duration: 60,  price: 1900, maxBailarinas: 3 },
+    completo:  { name: 'Completo',  duration: 120, price: 2200, maxBailarinas: 4 },
   };
 }
 type PkgKey = 'lembranca' | 'economico' | 'completo';

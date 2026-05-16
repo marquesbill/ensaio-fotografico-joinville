@@ -4,16 +4,21 @@ import { CheckCircle, ChevronLeft, ChevronRight, Clock, Calendar, User, Loader2,
 import { initMercadoPago, Payment } from '@mercadopago/sdk-react';
 
 // ── Constants ─────────────────────────────────────────────────
-// Troca automática de preço à meia-noite de 2026-05-16 BRT.
-const PRICE_SWITCH_MS = new Date('2026-05-16T00:00:00-03:00').getTime();
+// Troca automática de preço entre lotes
+const LOTE1_START_MS = new Date('2026-05-16T00:00:00-03:00').getTime();
+const LOTE2_START_MS = new Date('2026-07-01T00:00:00-03:00').getTime();
 function getPackages() {
-  const v2 = Date.now() >= PRICE_SWITCH_MS;
+  const now = Date.now();
+  let prices: { lembranca: number; economico: number; completo: number };
+  if (now >= LOTE2_START_MS)      prices = { lembranca: 1800, economico: 2400, completo: 2800 };
+  else if (now >= LOTE1_START_MS) prices = { lembranca: 1600, economico: 2100, completo: 2600 };
+  else                            prices = { lembranca: 1400, economico: 1900, completo: 2200 };
   return [
     {
       key: 'lembranca' as const,
       name: 'Lembrança',
       duration: 30,
-      price: v2 ? 1600 : 1400,
+      price: prices.lembranca,
       maxBailarinas: 2,
       desc: 'Ideal para uma lembrança especial do festival.',
       features: ['30 min de sessão', 'Até 2 pessoas', 'Fotos editadas em alta resolução'],
@@ -24,7 +29,7 @@ function getPackages() {
       key: 'economico' as const,
       name: 'Econômico',
       duration: 60,
-      price: v2 ? 2100 : 1900,
+      price: prices.economico,
       maxBailarinas: 3,
       desc: 'Experiência completa com tempo para explorar diferentes looks.',
       features: ['60 min de sessão', 'Até 3 pessoas', 'Fotos editadas em alta resolução'],
@@ -35,7 +40,7 @@ function getPackages() {
       key: 'completo' as const,
       name: 'Completo',
       duration: 120,
-      price: v2 ? 2600 : 2200,
+      price: prices.completo,
       maxBailarinas: 4,
       desc: 'A experiência mais rica, com máxima liberdade criativa.',
       features: ['120 min de sessão', 'Até 4 pessoas', 'Fotos editadas em alta resolução'],
@@ -44,15 +49,23 @@ function getPackages() {
     },
   ];
 }
+function nextPriceSwitch(): number | null {
+  const now = Date.now();
+  if (now < LOTE1_START_MS) return LOTE1_START_MS;
+  if (now < LOTE2_START_MS) return LOTE2_START_MS;
+  return null;
+}
 type PkgKey = 'lembranca' | 'economico' | 'completo';
 
 // Hook que recalcula PACKAGES e força re-render quando o relógio
-// cruza PRICE_SWITCH_MS (caso o cliente esteja na página à meia-noite).
+// cruza a próxima troca de lote (caso o cliente esteja na página).
 function usePackages() {
   const [, setTick] = useState(0);
   useEffect(() => {
-    const ms = PRICE_SWITCH_MS - Date.now();
-    if (ms > 0 && ms < 7 * 24 * 60 * 60 * 1000) {
+    const next = nextPriceSwitch();
+    if (!next) return;
+    const ms = next - Date.now();
+    if (ms > 0 && ms < 90 * 24 * 60 * 60 * 1000) {
       const t = setTimeout(() => setTick(n => n + 1), ms + 500);
       return () => clearTimeout(t);
     }

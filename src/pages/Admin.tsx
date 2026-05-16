@@ -28,22 +28,43 @@ interface Slot { time: string; available: boolean }
 
 const API = import.meta.env.DEV ? '' : '';
 
-const PRICE_SWITCH_MS = new Date('2026-05-16T00:00:00-03:00').getTime();
+const LOTE1_START_MS = new Date('2026-05-16T00:00:00-03:00').getTime();
+const LOTE2_START_MS = new Date('2026-07-01T00:00:00-03:00').getTime();
 function getPackages() {
-  const v2 = Date.now() >= PRICE_SWITCH_MS;
+  const now = Date.now();
+  if (now >= LOTE2_START_MS) {
+    return [
+      { key: 'lembranca', name: 'Lembrança',  duration: 30,  price: 1800, maxBailarinas: 2 },
+      { key: 'economico', name: 'Econômico',  duration: 60,  price: 2400, maxBailarinas: 3 },
+      { key: 'completo',  name: 'Completo',   duration: 120, price: 2800, maxBailarinas: 4 },
+    ];
+  }
+  if (now >= LOTE1_START_MS) {
+    return [
+      { key: 'lembranca', name: 'Lembrança',  duration: 30,  price: 1600, maxBailarinas: 2 },
+      { key: 'economico', name: 'Econômico',  duration: 60,  price: 2100, maxBailarinas: 3 },
+      { key: 'completo',  name: 'Completo',   duration: 120, price: 2600, maxBailarinas: 4 },
+    ];
+  }
   return [
-    { key: 'lembranca', name: 'Lembrança',  duration: 30,  price: v2 ? 1600 : 1400, maxBailarinas: 2 },
-    { key: 'economico', name: 'Econômico',  duration: 60,  price: v2 ? 2100 : 1900, maxBailarinas: 3 },
-    { key: 'completo',  name: 'Completo',   duration: 120, price: v2 ? 2600 : 2200, maxBailarinas: 4 },
+    { key: 'lembranca', name: 'Lembrança',  duration: 30,  price: 1400, maxBailarinas: 2 },
+    { key: 'economico', name: 'Econômico',  duration: 60,  price: 1900, maxBailarinas: 3 },
+    { key: 'completo',  name: 'Completo',   duration: 120, price: 2200, maxBailarinas: 4 },
   ];
 }
-// Hook: força re-render quando relógio cruza PRICE_SWITCH_MS (ou outra
-// hora futura). Mari/Elisa podem deixar painel aberto o dia todo.
+function nextPriceSwitch(): number | null {
+  const now = Date.now();
+  if (now < LOTE1_START_MS) return LOTE1_START_MS;
+  if (now < LOTE2_START_MS) return LOTE2_START_MS;
+  return null;
+}
 function usePackages() {
   const [, setTick] = useState(0);
   useEffect(() => {
-    const ms = PRICE_SWITCH_MS - Date.now();
-    if (ms > 0 && ms < 7 * 24 * 60 * 60 * 1000) {
+    const next = nextPriceSwitch();
+    if (!next) return;
+    const ms = next - Date.now();
+    if (ms > 0 && ms < 90 * 24 * 60 * 60 * 1000) {
       const t = setTimeout(() => setTick(n => n + 1), ms + 500);
       return () => clearTimeout(t);
     }
