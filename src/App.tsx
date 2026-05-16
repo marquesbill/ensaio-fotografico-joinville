@@ -213,11 +213,35 @@ export default function App() {
       if (el) cleanups.push(trackInView(el, eventName, 0.3));
     });
 
+    // GA4 Ecommerce: view_item_list quando a seção de pacotes entra no viewport
+    const pacotesEl = document.querySelector('#pacotes-section');
+    if (pacotesEl) {
+      let fired = false;
+      const obs = new IntersectionObserver((entries) => {
+        if (entries.some(e => e.isIntersecting) && !fired) {
+          fired = true;
+          if (window.gtag) {
+            window.gtag('event', 'view_item_list', {
+              item_list_id: 'home_packages',
+              item_list_name: 'Home — Escolha seu Pacote',
+              items: [
+                { item_id: 'lembranca', item_name: 'Pacote Lembrança', price: prices.lembranca.sale, currency: 'BRL', quantity: 1, index: 0 },
+                { item_id: 'economico', item_name: 'Pacote Econômico', price: prices.economico.sale, currency: 'BRL', quantity: 1, index: 1 },
+                { item_id: 'completo',  item_name: 'Pacote Completo',  price: prices.completo.sale,  currency: 'BRL', quantity: 1, index: 2 },
+              ],
+            });
+          }
+        }
+      }, { threshold: 0.3 });
+      obs.observe(pacotesEl);
+      cleanups.push(() => obs.disconnect());
+    }
+
     return () => {
       if (offScroll) offScroll();
       cleanups.forEach(c => c());
     };
-  }, []);
+  }, [prices.lembranca.sale, prices.economico.sale, prices.completo.sale]);
 
   // Hero form
   const [heroForm, setHeroForm] = useState<FormState>({ nome: '', whatsapp: '', email: '', vaiJoinville: '' });
@@ -242,6 +266,7 @@ export default function App() {
       await submitToSheets(heroForm, 'hero');
       trackEvent('Lead', { content_name: 'Formulário Hero' });
       track.event('hero_form_submit_success');
+      track.lead('hero');
       track.tag('lead_captured', 'true');
       track.tag('lead_source', 'hero');
       track.upgrade('hero_lead_captured');
@@ -266,6 +291,7 @@ export default function App() {
       await submitToSheets(footerForm, 'footer');
       trackEvent('Lead', { content_name: 'Formulário Footer' });
       track.event('footer_form_submit_success');
+      track.lead('footer');
       track.tag('lead_captured', 'true');
       track.tag('lead_source', 'footer');
       track.upgrade('footer_lead_captured');
@@ -608,6 +634,10 @@ export default function App() {
                   track.tag('package_interest', 'lembranca');
                   track.tag('package_value_brl', prices.lembranca.sale);
                   track.upgrade('package_selected');
+                  track.ecommerce('select_item', {
+                    item_id: 'lembranca', item_name: 'Pacote Lembrança', price: prices.lembranca.sale,
+                    item_list_id: 'home_packages', item_list_name: 'Home — Escolha seu Pacote',
+                  });
                 }}
                 className="block text-center w-full py-4 rounded-full border-2 border-primary text-primary font-bold hover:bg-primary hover:text-white transition-colors"
               >Selecionar</a>
@@ -652,6 +682,10 @@ export default function App() {
                   track.tag('package_interest', 'economico');
                   track.tag('package_value_brl', prices.economico.sale);
                   track.upgrade('package_selected');
+                  track.ecommerce('select_item', {
+                    item_id: 'economico', item_name: 'Pacote Econômico', price: prices.economico.sale,
+                    item_list_id: 'home_packages', item_list_name: 'Home — Escolha seu Pacote',
+                  });
                 }}
                 className="block text-center w-full py-5 rounded-full signature-gradient text-white font-bold shadow-lg hover:brightness-110 transition-all text-lg"
               >Selecionar</a>
@@ -695,6 +729,10 @@ export default function App() {
                   track.tag('package_interest', 'completo');
                   track.tag('package_value_brl', prices.completo.sale);
                   track.upgrade('package_selected');
+                  track.ecommerce('select_item', {
+                    item_id: 'completo', item_name: 'Pacote Completo', price: prices.completo.sale,
+                    item_list_id: 'home_packages', item_list_name: 'Home — Escolha seu Pacote',
+                  });
                 }}
                 className="block text-center w-full py-4 rounded-full border-2 border-primary text-primary font-bold hover:bg-primary hover:text-white transition-colors"
               >Selecionar</a>

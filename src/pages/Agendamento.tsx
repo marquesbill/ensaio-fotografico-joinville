@@ -337,6 +337,13 @@ export default function Agendamento() {
     const paymentType = String((formData as { payment_type_id?: string; paymentMethodId?: string }).payment_type_id || (formData as { paymentMethodId?: string }).paymentMethodId || 'unknown');
     track.event('payment_submit_attempt');
     track.tag('payment_method', paymentType);
+    // GA4 add_payment_info (recommended event)
+    if (selectedPkg) {
+      track.ecommerce('add_payment_info', {
+        item_id: selectedPkg.key, item_name: `Pacote ${selectedPkg.name}`, price: selectedPkg.price,
+        payment_type: paymentType,
+      });
+    }
     try {
       const res = await fetch('/api/process-payment', {
         method: 'POST',
@@ -356,6 +363,14 @@ export default function Agendamento() {
         track.tag('payment_status', 'approved');
         track.upgrade('payment_approved');
         if (window.fbq) window.fbq('track', 'Purchase', { value: selectedPkg?.price || 0, currency: 'BRL' });
+        // GA4 purchase com transaction_id (necessário para deduplicação)
+        if (selectedPkg) {
+          const txId = String((data as { id?: string; bookingId?: string }).id || (data as { bookingId?: string }).bookingId || `${Date.now()}-${selectedPkg.key}`);
+          track.ecommerce('purchase', {
+            item_id: selectedPkg.key, item_name: `Pacote ${selectedPkg.name}`, price: selectedPkg.price,
+            transaction_id: txId, payment_type: paymentType,
+          });
+        }
         window.location.href = '/agendamento/sucesso';
       } else if (data.status === 'pending') {
         track.event('payment_pending');
@@ -415,6 +430,10 @@ export default function Agendamento() {
                       track.event(`agendamento_pacote_${p.key}`);
                       track.tag('chosen_package', p.key);
                       track.tag('package_value_brl', p.price);
+                      track.ecommerce('select_item', {
+                        item_id: p.key, item_name: `Pacote ${p.name}`, price: p.price,
+                        item_list_id: 'agendamento_packages', item_list_name: 'Agendamento — Escolha seu pacote',
+                      });
                       setPkg(p.key);
                     }}
                     className={`w-full text-left rounded-2xl border-2 p-5 transition-all relative
@@ -455,6 +474,12 @@ export default function Agendamento() {
                 disabled={!canGoStep2}
                 onClick={() => {
                   track.event('agendamento_step_1_to_2');
+                  // GA4 view_item: usuário "entrou" no pacote (avançou após escolher)
+                  if (selectedPkg) {
+                    track.ecommerce('view_item', {
+                      item_id: selectedPkg.key, item_name: `Pacote ${selectedPkg.name}`, price: selectedPkg.price,
+                    });
+                  }
                   setStep(2);
                 }}
                 className="w-full mt-6 py-4 rounded-full font-bold text-white text-lg disabled:opacity-40 transition-all"
@@ -613,7 +638,17 @@ export default function Agendamento() {
                   className="flex-1 py-3 rounded-full border-2 border-outline-variant text-on-surface font-bold hover:bg-surface-container transition-colors">
                   <ChevronLeft className="inline w-4 h-4" /> Voltar
                 </button>
-                <motion.button disabled={!canGoStep4} onClick={() => { track.event('agendamento_step_3_to_4'); track.upgrade('reached_personal_data'); setStep(4); }}
+                <motion.button disabled={!canGoStep4} onClick={() => {
+                  track.event('agendamento_step_3_to_4');
+                  track.upgrade('reached_personal_data');
+                  // GA4 begin_checkout (recommended event para funil de compras)
+                  if (selectedPkg) {
+                    track.ecommerce('begin_checkout', {
+                      item_id: selectedPkg.key, item_name: `Pacote ${selectedPkg.name}`, price: selectedPkg.price,
+                    });
+                  }
+                  setStep(4);
+                }}
                   className="flex-1 py-3 rounded-full font-bold text-white disabled:opacity-40 transition-all"
                   style={{ background: 'linear-gradient(135deg,#7a3f8f,#e87060)' }}
                   whileTap={{ scale: 0.98 }}>
