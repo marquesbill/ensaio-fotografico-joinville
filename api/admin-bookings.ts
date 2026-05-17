@@ -625,7 +625,21 @@ async function handleSheetsLeads(req: VercelRequest, res: VercelResponse) {
   });
 }
 
-async function handleSheetsPing(_req: VercelRequest, res: VercelResponse) {
+async function handleSheetsPing(req: VercelRequest, res: VercelResponse) {
+  // Modo debug: ?range=Tabname!A1:Z5 retorna o conteúdo bruto de qualquer range
+  // pra diagnosticar estrutura de aba. Aceita também ?sheet=leads|bookings.
+  const debugRange = req.query.range ? String(req.query.range) : null;
+  if (debugRange) {
+    const sheet = String(req.query.sheet || 'bookings');
+    const id = sheet === 'leads' ? LEADS_SHEET_ID : BOOKINGS_SHEET_ID;
+    try {
+      const rows = await fetchSheetRange(id, debugRange);
+      return res.status(200).json({ ok: true, sheet_id: id, range: debugRange, rows });
+    } catch (err) {
+      return res.status(500).json({ ok: false, error: err instanceof Error ? err.message : String(err) });
+    }
+  }
+
   // Verifica env var primeiro
   let saEmail = 'unknown';
   try {
