@@ -29,8 +29,8 @@ interface EngagementData {
     hero:   { started: number; attempt: number; success: number; error: number; blocked: number };
     footer: { started: number; attempt: number; success: number; error: number; blocked: number };
   };
-  faq: Array<{ idx: number; opens: number; sessions: number }>;
-  topEvents: Array<{ event_name: string; count: number; sessions: number }>;
+  faq: Array<{ idx: number; opens: number }>;
+  topEvents: Array<{ event_name: string; count: number }>;
 }
 
 const RANGE_OPTIONS = [

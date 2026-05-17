@@ -22,8 +22,6 @@ import { DataSourceBadge } from '../components/DataSourceBadge';
 interface FunnelStep {
   step: string;       // 'view_item_list' | 'select_item' | 'begin_checkout' | 'purchase'
   sessions: number;
-  eventCount: number;
-  users: number;
   deltaPct: number | null;
 }
 

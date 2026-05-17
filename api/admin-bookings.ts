@@ -453,13 +453,16 @@ async function handleGa4Funnel(req: VercelRequest, res: VercelResponse) {
   // GA4 Enhanced Ecommerce funnel: view_item_list → select_item → begin_checkout → purchase
   const STEP_EVENTS = ['view_item_list', 'select_item', 'begin_checkout', 'purchase'];
 
-  // 1. Funnel atual + anterior (sessions per step + eventCount)
+  // 1. Funnel atual + anterior — só `sessions` por step.
+  // GA4 não aceita misturar event-scoped (eventCount) + session-scoped (sessions)
+  // + user-scoped (totalUsers) no mesmo report. Como o funil é "% de sessões que
+  // chegaram em cada etapa", sessions é o que importa.
   const [stepCur, stepPrev] = await Promise.all([
     client.runReport({
       property,
       dateRanges: [periodCurrent],
       dimensions: [{ name: 'eventName' }],
-      metrics:    [{ name: 'sessions' }, { name: 'eventCount' }, { name: 'totalUsers' }],
+      metrics:    [{ name: 'sessions' }],
       dimensionFilter: {
         filter: {
           fieldName:    'eventName',
@@ -481,31 +484,24 @@ async function handleGa4Funnel(req: VercelRequest, res: VercelResponse) {
     }),
   ]);
 
-  type StepData = { sessions: number; eventCount: number; users: number };
-  const parseSteps = (rows: NonNullable<typeof stepCur[0]['rows']>, hasEvent = true, hasUsers = true) => {
-    const m: Record<string, StepData> = {};
+  const parseSteps = (rows: NonNullable<typeof stepCur[0]['rows']>) => {
+    const m: Record<string, number> = {};
     rows.forEach(r => {
       const name = r.dimensionValues?.[0]?.value || '';
-      m[name] = {
-        sessions:   Number(r.metricValues?.[0]?.value || 0),
-        eventCount: hasEvent ? Number(r.metricValues?.[1]?.value || 0) : 0,
-        users:      hasUsers ? Number(r.metricValues?.[2]?.value || 0) : 0,
-      };
+      m[name] = Number(r.metricValues?.[0]?.value || 0);
     });
     return m;
   };
-  const curMap  = parseSteps(stepCur[0].rows || [], true,  true);
-  const prevMap = parseSteps(stepPrev[0].rows || [], false, false);
+  const curMap  = parseSteps(stepCur[0].rows  || []);
+  const prevMap = parseSteps(stepPrev[0].rows || []);
 
   const funnel = STEP_EVENTS.map(name => {
-    const cur  = curMap[name]  || { sessions: 0, eventCount: 0, users: 0 };
-    const prev = prevMap[name] || { sessions: 0, eventCount: 0, users: 0 };
+    const cur  = curMap[name]  || 0;
+    const prev = prevMap[name] || 0;
     return {
-      step:       name,
-      sessions:   cur.sessions,
-      eventCount: cur.eventCount,
-      users:      cur.users,
-      deltaPct:   pctDelta(cur.sessions, prev.sessions),
+      step:     name,
+      sessions: cur,
+      deltaPct: pctDelta(cur, prev),
     };
   });
 
@@ -609,32 +605,34 @@ async function handleGa4Engagement(req: VercelRequest, res: VercelResponse) {
         { name: 'bounceRate' },
       ],
     }),
-    // Scroll depth (4 thresholds)
+    // Scroll depth (4 thresholds) — só sessions (1 sessão = 1 pessoa que
+    // alcançou aquela profundidade, métrica que importa pra essa viz)
     client.runReport({
       property,
       dateRanges: [periodCurrent],
       dimensions: [{ name: 'eventName' }],
-      metrics:    [{ name: 'sessions' }, { name: 'eventCount' }],
+      metrics:    [{ name: 'sessions' }],
       dimensionFilter: {
         filter: { fieldName: 'eventName', inListFilter: { values: SCROLL_EVENTS } },
       },
     }),
-    // Formulários (hero + footer, todas as etapas)
+    // Formulários (hero + footer) — só sessions
     client.runReport({
       property,
       dateRanges: [periodCurrent],
       dimensions: [{ name: 'eventName' }],
-      metrics:    [{ name: 'sessions' }, { name: 'eventCount' }],
+      metrics:    [{ name: 'sessions' }],
       dimensionFilter: {
         filter: { fieldName: 'eventName', inListFilter: { values: FORM_EVENTS } },
       },
     }),
-    // FAQ opens (faq_open_*)
+    // FAQ opens — só eventCount (display "Aberturas" = quantas vezes
+    // a pergunta foi clicada total). 1 sessão pode abrir várias FAQs.
     client.runReport({
       property,
       dateRanges: [periodCurrent],
       dimensions: [{ name: 'eventName' }],
-      metrics:    [{ name: 'eventCount' }, { name: 'sessions' }],
+      metrics:    [{ name: 'eventCount' }],
       dimensionFilter: {
         filter: {
           fieldName:    'eventName',
@@ -644,12 +642,12 @@ async function handleGa4Engagement(req: VercelRequest, res: VercelResponse) {
       orderBys: [{ metric: { metricName: 'eventCount' }, desc: true }],
       limit: 20,
     }),
-    // Top custom events (excluindo padrão GA4)
+    // Top custom events — só eventCount
     client.runReport({
       property,
       dateRanges: [periodCurrent],
       dimensions: [{ name: 'eventName' }],
-      metrics:    [{ name: 'eventCount' }, { name: 'sessions' }],
+      metrics:    [{ name: 'eventCount' }],
       orderBys:   [{ metric: { metricName: 'eventCount' }, desc: true }],
       limit:      25,
     }),
@@ -667,24 +665,21 @@ async function handleGa4Engagement(req: VercelRequest, res: VercelResponse) {
   };
 
   // Scroll depth — map por depth value
-  const scrollMap: Record<string, { sessions: number; eventCount: number }> = {};
+  const scrollMap: Record<string, number> = {};
   (scrollReport.rows || []).forEach(r => {
     const name = r.dimensionValues?.[0]?.value || '';
-    scrollMap[name] = {
-      sessions:   Number(r.metricValues?.[0]?.value || 0),
-      eventCount: Number(r.metricValues?.[1]?.value || 0),
-    };
+    scrollMap[name] = Number(r.metricValues?.[0]?.value || 0);
   });
   const scrollDepth = SCROLL_EVENTS.map(name => ({
     depth:    parseInt(name.replace('scroll_depth_', ''), 10),
-    sessions: scrollMap[name]?.sessions || 0,
+    sessions: scrollMap[name] || 0,
   }));
 
-  // Formulários — map por evento
+  // Formulários — map por evento (sessions count)
   const formMap: Record<string, number> = {};
   (formsReport.rows || []).forEach(r => {
     const name = r.dimensionValues?.[0]?.value || '';
-    formMap[name] = Number(r.metricValues?.[0]?.value || 0); // sessions
+    formMap[name] = Number(r.metricValues?.[0]?.value || 0);
   });
   const forms = {
     hero: {
@@ -709,8 +704,7 @@ async function handleGa4Engagement(req: VercelRequest, res: VercelResponse) {
     const idx  = parseInt(name.replace('faq_open_', ''), 10);
     return {
       idx,
-      opens:    Number(r.metricValues?.[0]?.value || 0),
-      sessions: Number(r.metricValues?.[1]?.value || 0),
+      opens: Number(r.metricValues?.[0]?.value || 0),
     };
   }).filter(f => !Number.isNaN(f.idx)).sort((a, b) => a.idx - b.idx);
 
@@ -718,7 +712,6 @@ async function handleGa4Engagement(req: VercelRequest, res: VercelResponse) {
   const topEvents = (eventsReport.rows || []).map(r => ({
     event_name: r.dimensionValues?.[0]?.value || 'unknown',
     count:      Number(r.metricValues?.[0]?.value || 0),
-    sessions:   Number(r.metricValues?.[1]?.value || 0),
   }));
 
   return res.status(200).json({
