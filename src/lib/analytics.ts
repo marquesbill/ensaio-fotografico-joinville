@@ -18,7 +18,14 @@ const PIXEL_STANDARD_EVENTS = new Set([
   'CustomizeProduct', 'Donate', 'FindLocation',
 ]);
 
+// Gate global: roteamento interno (/admin, /dashboard) não polui métricas.
+// Espelha a flag setada pelo script inline no topo do index.html.
+const ANALYTICS_DISABLED =
+  typeof window !== 'undefined' &&
+  (window as unknown as { __skipAnalytics?: boolean }).__skipAnalytics === true;
+
 function safeCall(fn: () => void) {
+  if (ANALYTICS_DISABLED) return;
   try { fn(); } catch (e) {
     // tracker bloqueado / não carregado → silencia
     if (import.meta.env.DEV) console.warn('[analytics] tracker call failed', e);
@@ -213,7 +220,7 @@ function currentPriceTier(): string {
 let sessionInitialized = false;
 
 export function initSessionContext() {
-  if (sessionInitialized || typeof window === 'undefined') return;
+  if (sessionInitialized || typeof window === 'undefined' || ANALYTICS_DISABLED) return;
   sessionInitialized = true;
 
   // Aguarda Clarity carregar (script async); polling curto
@@ -275,7 +282,7 @@ export function initSessionContext() {
 
 /** Helper para rastrear quando um elemento entra no viewport (intersection observer) */
 export function trackInView(el: Element, eventName: string, threshold = 0.5) {
-  if (typeof window === 'undefined' || !('IntersectionObserver' in window)) return () => {};
+  if (typeof window === 'undefined' || !('IntersectionObserver' in window) || ANALYTICS_DISABLED) return () => {};
   const fired = new Set<string>();
   const obs = new IntersectionObserver((entries) => {
     entries.forEach(e => {
@@ -291,7 +298,7 @@ export function trackInView(el: Element, eventName: string, threshold = 0.5) {
 
 /** Rastreia profundidade de scroll (25%, 50%, 75%, 100%) — uma vez por sessão */
 export function trackScrollDepth() {
-  if (typeof window === 'undefined') return;
+  if (typeof window === 'undefined' || ANALYTICS_DISABLED) return;
   const fired = new Set<number>();
   const handler = () => {
     const scrolled = window.scrollY + window.innerHeight;
@@ -316,7 +323,7 @@ export function trackScrollDepth() {
  * useLocation, mas pra não criar dependência forte usamos popstate + pushState patch.
  */
 export function trackRouteChanges() {
-  if (typeof window === 'undefined') return;
+  if (typeof window === 'undefined' || ANALYTICS_DISABLED) return;
   let currentPath = window.location.pathname + window.location.search;
 
   const sendPageView = (newPath: string) => {
@@ -360,7 +367,7 @@ export function trackRouteChanges() {
 
 /** Rastreia tempo gasto na página antes de sair (envia em beacon ao unload) */
 export function trackTimeOnPage() {
-  if (typeof window === 'undefined') return;
+  if (typeof window === 'undefined' || ANALYTICS_DISABLED) return;
   const start = Date.now();
   const handler = () => {
     const seconds = Math.round((Date.now() - start) / 1000);

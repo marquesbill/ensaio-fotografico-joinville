@@ -5,40 +5,62 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <link rel="icon" type="image/png" sizes="512x512" href="/favicon.png" />
     <title>Ensaio Fotográfico em Joinville</title>
-    <!-- Google tag (gtag.js) -->
-    <script async src="https://www.googletagmanager.com/gtag/js?id=G-MZ7W1XRY73"></script>
+
+    <!--
+      Skip analytics em rotas internas (/admin, /dashboard).
+      Sem esse gate, andre/mari/elisa contaminam GA4 / Pixel / Clarity
+      toda vez que abrem o painel pra trabalhar.
+    -->
     <script>
-      window.dataLayer = window.dataLayer || [];
-      function gtag(){dataLayer.push(arguments);}
-      gtag('js', new Date());
-      gtag('config', 'G-MZ7W1XRY73');
+      (function () {
+        var p = (window.location.pathname || '').toLowerCase();
+        window.__skipAnalytics = (p.indexOf('/admin') === 0 || p.indexOf('/dashboard') === 0);
+      })();
+    </script>
+
+    <!-- Google tag (gtag.js) -->
+    <script>
+      if (!window.__skipAnalytics) {
+        var gtagScript = document.createElement('script');
+        gtagScript.async = true;
+        gtagScript.src = 'https://www.googletagmanager.com/gtag/js?id=G-MZ7W1XRY73';
+        document.head.appendChild(gtagScript);
+        window.dataLayer = window.dataLayer || [];
+        window.gtag = function () { window.dataLayer.push(arguments); };
+        window.gtag('js', new Date());
+        window.gtag('config', 'G-MZ7W1XRY73');
+      }
     </script>
     <!-- End Google tag -->
 
     <!-- Meta Pixel Code -->
     <script>
-      !function(f,b,e,v,n,t,s){if(f.fbq)return;n=f.fbq=function(){n.callMethod?
-      n.callMethod.apply(n,arguments):n.queue.push(arguments)};if(!f._fbq)f._fbq=n;
-      n.push=n;n.loaded=!0;n.version='2.0';n.queue=[];t=b.createElement(e);t.async=!0;
-      t.src=v;s=b.getElementsByTagName(e)[0];s.parentNode.insertBefore(t,s)}(window,
-      document,'script','https://connect.facebook.net/en_US/fbevents.js');
-      fbq('init', '1117650036922205');
-      fbq('track', 'PageView');
+      if (!window.__skipAnalytics) {
+        !function(f,b,e,v,n,t,s){if(f.fbq)return;n=f.fbq=function(){n.callMethod?
+        n.callMethod.apply(n,arguments):n.queue.push(arguments)};if(!f._fbq)f._fbq=n;
+        n.push=n;n.loaded=!0;n.version='2.0';n.queue=[];t=b.createElement(e);t.async=!0;
+        t.src=v;s=b.getElementsByTagName(e)[0];s.parentNode.insertBefore(t,s)}(window,
+        document,'script','https://connect.facebook.net/en_US/fbevents.js');
+        fbq('init', '1117650036922205');
+        fbq('track', 'PageView');
+      }
     </script>
     <!-- End Meta Pixel Code -->
 
     <!-- Microsoft Clarity -->
     <script type="text/javascript">
-      (function(c,l,a,r,i,t,y){
-          c[a]=c[a]||function(){(c[a].q=c[a].q||[]).push(arguments)};
-          t=l.createElement(r);t.async=1;t.src="https://www.clarity.ms/tag/"+i;
-          y=l.getElementsByTagName(r)[0];y.parentNode.insertBefore(t,y);
-      })(window, document, "clarity", "script", "ws5wo65fne");
+      if (!window.__skipAnalytics) {
+        (function(c,l,a,r,i,t,y){
+            c[a]=c[a]||function(){(c[a].q=c[a].q||[]).push(arguments)};
+            t=l.createElement(r);t.async=1;t.src="https://www.clarity.ms/tag/"+i;
+            y=l.getElementsByTagName(r)[0];y.parentNode.insertBefore(t,y);
+        })(window, document, "clarity", "script", "ws5wo65fne");
+      }
     </script>
     <!-- End Microsoft Clarity -->
   </head>
   <body>
-    <!-- Meta Pixel noscript fallback -->
+    <!-- Meta Pixel noscript fallback (só dispara se usuário tiver JS off, raro e provavelmente não é admin) -->
     <noscript>
       <img height="1" width="1" style="display:none"
         src="https://www.facebook.com/tr?id=1117650036922205&ev=PageView&noscript=1" />
@@ -47,4 +69,3 @@
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>
-
