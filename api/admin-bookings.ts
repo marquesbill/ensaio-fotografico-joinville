@@ -433,6 +433,136 @@ async function handleGa4Acquisition(req: VercelRequest, res: VercelResponse) {
   });
 }
 
+/* ───────── GA4 Funnel (página 3 do dashboard) ───────── */
+
+async function handleGa4Funnel(req: VercelRequest, res: VercelResponse) {
+  if (!process.env.GA4_OAUTH_REFRESH_TOKEN) {
+    return res.status(503).json({
+      error:   'OAuth GA4 não configurado',
+      details: 'Veja docs/ga4-oauth-setup.md',
+    });
+  }
+
+  const days = Math.min(Math.max(parseInt(String(req.query.range || '28'), 10) || 28, 1), 365);
+  const property = `properties/${GA4_PROPERTY_ID}`;
+  const client = buildGa4Client();
+
+  const periodCurrent  = { startDate: daysAgo(days),     endDate: 'today' };
+  const periodPrevious = { startDate: daysAgo(days * 2), endDate: daysAgo(days + 1) };
+
+  // GA4 Enhanced Ecommerce funnel: view_item_list → select_item → begin_checkout → purchase
+  const STEP_EVENTS = ['view_item_list', 'select_item', 'begin_checkout', 'purchase'];
+
+  // 1. Funnel atual + anterior (sessions per step + eventCount)
+  const [stepCur, stepPrev] = await Promise.all([
+    client.runReport({
+      property,
+      dateRanges: [periodCurrent],
+      dimensions: [{ name: 'eventName' }],
+      metrics:    [{ name: 'sessions' }, { name: 'eventCount' }, { name: 'totalUsers' }],
+      dimensionFilter: {
+        filter: {
+          fieldName:    'eventName',
+          inListFilter: { values: STEP_EVENTS },
+        },
+      },
+    }),
+    client.runReport({
+      property,
+      dateRanges: [periodPrevious],
+      dimensions: [{ name: 'eventName' }],
+      metrics:    [{ name: 'sessions' }],
+      dimensionFilter: {
+        filter: {
+          fieldName:    'eventName',
+          inListFilter: { values: STEP_EVENTS },
+        },
+      },
+    }),
+  ]);
+
+  type StepData = { sessions: number; eventCount: number; users: number };
+  const parseSteps = (rows: NonNullable<typeof stepCur[0]['rows']>, hasEvent = true, hasUsers = true) => {
+    const m: Record<string, StepData> = {};
+    rows.forEach(r => {
+      const name = r.dimensionValues?.[0]?.value || '';
+      m[name] = {
+        sessions:   Number(r.metricValues?.[0]?.value || 0),
+        eventCount: hasEvent ? Number(r.metricValues?.[1]?.value || 0) : 0,
+        users:      hasUsers ? Number(r.metricValues?.[2]?.value || 0) : 0,
+      };
+    });
+    return m;
+  };
+  const curMap  = parseSteps(stepCur[0].rows || [], true,  true);
+  const prevMap = parseSteps(stepPrev[0].rows || [], false, false);
+
+  const funnel = STEP_EVENTS.map(name => {
+    const cur  = curMap[name]  || { sessions: 0, eventCount: 0, users: 0 };
+    const prev = prevMap[name] || { sessions: 0, eventCount: 0, users: 0 };
+    return {
+      step:       name,
+      sessions:   cur.sessions,
+      eventCount: cur.eventCount,
+      users:      cur.users,
+      deltaPct:   pctDelta(cur.sessions, prev.sessions),
+    };
+  });
+
+  // 2. Per-package: select_item events por itemId
+  const [selectByPkg, purchaseByPkg] = await Promise.all([
+    client.runReport({
+      property,
+      dateRanges: [periodCurrent],
+      dimensions: [{ name: 'itemId' }],
+      metrics:    [{ name: 'eventCount' }],
+      dimensionFilter: {
+        filter: {
+          fieldName:    'eventName',
+          stringFilter: { value: 'select_item' },
+        },
+      },
+    }),
+    client.runReport({
+      property,
+      dateRanges: [periodCurrent],
+      dimensions: [{ name: 'itemId' }],
+      metrics:    [{ name: 'itemPurchaseQuantity' }, { name: 'itemRevenue' }],
+    }),
+  ]);
+
+  type PkgStats = { id: string; selects: number; purchases: number; revenue: number };
+  const pkgMap: Record<string, PkgStats> = {};
+  (selectByPkg.rows || []).forEach(r => {
+    const id = r.dimensionValues?.[0]?.value || '';
+    if (!id) return;
+    pkgMap[id] = pkgMap[id] || { id, selects: 0, purchases: 0, revenue: 0 };
+    pkgMap[id].selects = Number(r.metricValues?.[0]?.value || 0);
+  });
+  (purchaseByPkg.rows || []).forEach(r => {
+    const id = r.dimensionValues?.[0]?.value || '';
+    if (!id) return;
+    pkgMap[id] = pkgMap[id] || { id, selects: 0, purchases: 0, revenue: 0 };
+    pkgMap[id].purchases = Number(r.metricValues?.[0]?.value || 0);
+    pkgMap[id].revenue   = Number(r.metricValues?.[1]?.value || 0);
+  });
+  // Garante 3 pacotes mesmo se não tiver dado (ordem fixa pra UI consistente)
+  const PKG_ORDER = ['lembranca', 'economico', 'completo'];
+  const packages = PKG_ORDER.map(id => pkgMap[id] || { id, selects: 0, purchases: 0, revenue: 0 });
+  // Adiciona qualquer item_id extra que não esteja na ordem fixa (defesa)
+  Object.values(pkgMap).forEach(p => {
+    if (!PKG_ORDER.includes(p.id)) packages.push(p);
+  });
+
+  return res.status(200).json({
+    range:        { start: periodCurrent.startDate, end: 'today', days },
+    fetched_at:   new Date().toISOString(),
+    next_refresh: new Date(Date.now() + 12 * 3600 * 1000).toISOString(),
+    funnel,
+    packages,
+  });
+}
+
 /* ───────── Action handlers (POST body { action: '...', ... }) ───────── */
 
 async function handleCancel(req: VercelRequest, res: VercelResponse, auth: { user: string }) {
@@ -1028,6 +1158,15 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       console.error('[admin-bookings/ga4-acquisition]', msg);
+      return res.status(500).json({ error: msg });
+    }
+  }
+  if (endpoint === 'ga4-funnel') {
+    try {
+      return await handleGa4Funnel(req, res);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      console.error('[admin-bookings/ga4-funnel]', msg);
       return res.status(500).json({ error: msg });
     }
   }
