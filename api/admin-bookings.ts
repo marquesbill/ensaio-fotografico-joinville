@@ -505,19 +505,18 @@ async function handleGa4Funnel(req: VercelRequest, res: VercelResponse) {
     };
   });
 
-  // 2. Per-package: select_item events por itemId
+  // 2. Per-package: itemId × selects/purchases/revenue
+  // GA4 não permite eventCount (event-scoped) com itemId (item-scoped).
+  // Métricas item-scoped corretas:
+  //  - itemsClickedInList: units clicked in list (de select_item events)
+  //  - itemPurchaseQuantity: quantidade comprada (de purchase events)
+  //  - itemRevenue: receita (de purchase events)
   const [selectByPkg, purchaseByPkg] = await Promise.all([
     client.runReport({
       property,
       dateRanges: [periodCurrent],
       dimensions: [{ name: 'itemId' }],
-      metrics:    [{ name: 'eventCount' }],
-      dimensionFilter: {
-        filter: {
-          fieldName:    'eventName',
-          stringFilter: { value: 'select_item' },
-        },
-      },
+      metrics:    [{ name: 'itemsClickedInList' }],
     }),
     client.runReport({
       property,
