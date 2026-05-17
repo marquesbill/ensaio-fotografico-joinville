@@ -10,7 +10,7 @@
  */
 
 import { useEffect, useMemo, useState } from 'react';
-import { DollarSign, CheckCircle2, Clock, TrendingUp } from 'lucide-react';
+import { ListChecks, CheckCircle2, Clock, TrendingUp } from 'lucide-react';
 
 import { KpiCard } from '../components/KpiCard';
 import { DataTable } from '../components/DataTable';
@@ -37,10 +37,6 @@ const RANGE_OPTIONS = [
   { key: 'all', label: 'Tudo',    days: 99999 },
 ] as const;
 
-function brl(n: number) {
-  return 'R$ ' + n.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-}
-
 function timeAgo(iso?: string) {
   if (!iso) return '—';
   const ms = Date.now() - new Date(iso).getTime();
@@ -65,36 +61,30 @@ function normalizeBooking(b: Booking): Booking {
 
 function computeStats(bookings: Booking[]) {
   let confirmedCount = 0, pendingCount = 0, cancelledCount = 0;
-  let confirmedRevenue = 0, pendingValue = 0;
-  const byPackage: Record<string, { count: number; revenue: number; pending: number; pendingValue: number }> = {};
+  const byPackage: Record<string, { count: number; pending: number; cancelled: number }> = {};
 
   bookings.forEach(b => {
-    const price = Number(b.price) || 0;
     const status = (b.status || '').toLowerCase();
     const pkgKey = (b.package || 'unknown').toLowerCase();
 
-    byPackage[pkgKey] = byPackage[pkgKey] || { count: 0, revenue: 0, pending: 0, pendingValue: 0 };
+    byPackage[pkgKey] = byPackage[pkgKey] || { count: 0, pending: 0, cancelled: 0 };
 
     if (status.startsWith('confirm')) {
       confirmedCount++;
-      confirmedRevenue += price;
       byPackage[pkgKey].count++;
-      byPackage[pkgKey].revenue += price;
     } else if (status.startsWith('pend')) {
       pendingCount++;
-      pendingValue += price;
       byPackage[pkgKey].pending++;
-      byPackage[pkgKey].pendingValue += price;
     } else if (status.startsWith('cancel')) {
       cancelledCount++;
+      byPackage[pkgKey].cancelled++;
     }
   });
 
   const total = confirmedCount + pendingCount + cancelledCount;
   const conversionRate = total > 0 ? confirmedCount / total : 0;
 
-  return { confirmedCount, pendingCount, cancelledCount, total,
-           confirmedRevenue, pendingValue, conversionRate, byPackage };
+  return { confirmedCount, pendingCount, cancelledCount, total, conversionRate, byPackage };
 }
 
 function StatusPill({ status }: { status: string }) {
@@ -168,7 +158,7 @@ export function Payments({ token }: { token: string }) {
       k.toLowerCase().startsWith(matchStart.toLowerCase()) ||
       k.toLowerCase().includes(matchStart.toLowerCase().slice(0, 5))
     );
-    const data = entry?.[1] || { count: 0, revenue: 0, pending: 0, pendingValue: 0 };
+    const data = entry?.[1] || { count: 0, pending: 0, cancelled: 0 };
     return { label, ...data };
   };
 
@@ -222,25 +212,22 @@ export function Payments({ token }: { token: string }) {
               Total acumulado · desde o lançamento
             </p>
             <p className="font-black text-3xl md:text-4xl text-white tabular-nums mt-1">
-              {loading ? '—' : brl(lifetimeStats.confirmedRevenue)}
+              {loading ? '—' : `${lifetimeStats.confirmedCount.toLocaleString('pt-BR')} confirmados`}
             </p>
-            <p className="text-[11px] text-[#d4baeb]/50 mt-1">Receita confirmada · todas as datas</p>
+            <p className="text-[11px] text-[#d4baeb]/50 mt-1">Reservas pagas · todas as datas</p>
           </div>
           <div className="flex items-baseline gap-6 text-sm">
-            <div>
-              <p className="text-[10px] uppercase tracking-wider text-white/40 font-semibold">Confirmados</p>
-              <p className="text-white font-black tabular-nums text-2xl mt-0.5">
-                {loading ? '—' : lifetimeStats.confirmedCount.toLocaleString('pt-BR')}
-              </p>
-            </div>
             <div>
               <p className="text-[10px] uppercase tracking-wider text-white/40 font-semibold">Pendentes</p>
               <p className="text-[#e87060] font-black tabular-nums text-2xl mt-0.5">
                 {loading ? '—' : lifetimeStats.pendingCount.toLocaleString('pt-BR')}
               </p>
-              {!loading && lifetimeStats.pendingValue > 0 && (
-                <p className="text-[10px] text-[#e87060]/60 font-medium tabular-nums">{brl(lifetimeStats.pendingValue)} em aberto</p>
-              )}
+            </div>
+            <div>
+              <p className="text-[10px] uppercase tracking-wider text-white/40 font-semibold">Cancelados</p>
+              <p className="text-white/60 font-black tabular-nums text-2xl mt-0.5">
+                {loading ? '—' : lifetimeStats.cancelledCount.toLocaleString('pt-BR')}
+              </p>
             </div>
             <div>
               <p className="text-[10px] uppercase tracking-wider text-white/40 font-semibold">Taxa conv.</p>
@@ -260,24 +247,24 @@ export function Payments({ token }: { token: string }) {
       {/* KPIs (filtrados pelo range) */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 mb-6">
         <KpiCard
-          label="Receita confirmada"
-          value={loading ? '—' : brl(stats.confirmedRevenue)}
-          icon={DollarSign} source="Sheets"
-          hint={`${stats.confirmedCount} pagamento${stats.confirmedCount === 1 ? '' : 's'}`}
+          label="Total de reservas"
+          value={loading ? '—' : stats.total.toLocaleString('pt-BR')}
+          icon={ListChecks} source="Sheets"
+          hint="Confirmados + Pendentes + Cancelados no período"
           loading={loading}
         />
         <KpiCard
           label="Confirmados"
           value={loading ? '—' : stats.confirmedCount.toLocaleString('pt-BR')}
           icon={CheckCircle2} source="Sheets"
-          hint="Bookings pagos com sucesso"
+          hint="Reservas pagas com sucesso"
           loading={loading}
         />
         <KpiCard
           label="Pendentes"
           value={loading ? '—' : stats.pendingCount.toLocaleString('pt-BR')}
           icon={Clock} source="Sheets"
-          hint={`${brl(stats.pendingValue)} em aberto`}
+          hint="Aguardando pagamento"
           loading={loading}
         />
         <KpiCard
@@ -332,12 +319,12 @@ export function Payments({ token }: { token: string }) {
         </div>
       </div>
 
-      {/* Per-package revenue */}
+      {/* Reservas por pacote */}
       <div className="rounded-2xl border border-white/10 bg-white/[0.03] backdrop-blur-sm p-5 mb-6">
         <div className="flex items-baseline justify-between mb-4">
           <div>
-            <h3 className="text-sm font-bold text-white">Receita por pacote</h3>
-            <p className="text-[11px] text-[#d4baeb]/50 mt-0.5">Soma de bookings confirmados, breakdown por pacote</p>
+            <h3 className="text-sm font-bold text-white">Reservas por pacote</h3>
+            <p className="text-[11px] text-[#d4baeb]/50 mt-0.5">Breakdown por pacote escolhido (confirmados/pendentes/cancelados)</p>
           </div>
           <p className="text-[9px] uppercase tracking-wider text-[#c5a3d4]/30">Sheets</p>
         </div>
@@ -353,11 +340,14 @@ export function Payments({ token }: { token: string }) {
           ].map(card => (
             <div key={card.label} className="rounded-xl border border-white/[0.08] bg-white/[0.02] p-4">
               <p className="text-[11px] font-bold uppercase tracking-widest text-[#c5a3d4]/70">{card.label}</p>
-              <p className="font-black text-2xl text-white tabular-nums mt-2">{brl(card.revenue)}</p>
+              <p className="font-black text-3xl text-white tabular-nums mt-2">{card.count}</p>
               <p className="text-[11px] text-[#d4baeb]/50 mt-1">
-                {card.count} pago{card.count === 1 ? '' : 's'}
+                confirmado{card.count === 1 ? '' : 's'}
                 {card.pending > 0 && (
                   <span className="text-[#e87060]/70 ml-2">· {card.pending} pendente{card.pending === 1 ? '' : 's'}</span>
+                )}
+                {card.cancelled > 0 && (
+                  <span className="text-white/40 ml-2">· {card.cancelled} cancelado{card.cancelled === 1 ? '' : 's'}</span>
                 )}
               </p>
             </div>
@@ -367,33 +357,33 @@ export function Payments({ token }: { token: string }) {
 
       {/* Recent transactions */}
       <DataTable
-        title="Transações recentes"
+        title="Reservas recentes"
         source="Sheets"
         loading={loading}
         rows={recent.map(b => ({
           createdAt: timeAgo(b.createdAt),
           name:      b.name,
           package:   b.package,
-          price:     brl(Number(b.price) || 0),
           status:    b.status,
           date:      b.date && b.start ? `${b.date.split('-').reverse().join('/')} ${b.start}` : (b.date || '—'),
         }))}
         columns={[
-          { key: 'createdAt', label: 'Criado',   align: 'left'  },
-          { key: 'name',      label: 'Cliente',  align: 'left'  },
-          { key: 'package',   label: 'Pacote',   align: 'left'  },
-          { key: 'price',     label: 'Valor',    align: 'right' },
+          { key: 'createdAt', label: 'Criado',   align: 'left' },
+          { key: 'name',      label: 'Cliente',  align: 'left' },
+          { key: 'package',   label: 'Pacote',   align: 'left' },
           {
             key: 'status', label: 'Status', align: 'left',
             render: (r) => <StatusPill status={String(r.status)} />,
           },
-          { key: 'date',      label: 'Sessão',   align: 'left'  },
+          { key: 'date',      label: 'Sessão',   align: 'left' },
         ]}
         maxRows={15}
       />
 
       <p className="text-center text-[10px] text-[#c5a3d4]/30 mt-8 pb-4">
         Fonte: planilha de bookings via Apps Script · refresh manual (botão acima)
+        <br/>
+        <span className="text-[#e87060]/60">⚠️ Migração pendente: dados canon vêm da planilha agendamentos (1o5qmsX...) — em breve</span>
       </p>
     </div>
   );
