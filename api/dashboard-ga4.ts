@@ -1,22 +1,29 @@
 /**
  * /api/dashboard-ga4 — busca métricas do GA4 e retorna JSON pro Dashboard.
  *
- * Autenticação: token HMAC via Authorization header (mesmo /admin).
- * Provedor de dados: Google Analytics Data API v1beta usando service account.
+ * Autenticação dupla:
+ *  1. Token HMAC do admin (mesma do /admin) — só usuários da whitelist passam
+ *  2. OAuth refresh token pessoal — autoriza o backend a ler o GA4 como o André
+ *
+ * Por que OAuth e não Service Account:
+ *  GA4 com property em conta Gmail pessoal NÃO aceita adicionar service accounts.
+ *  É limitação documentada da Google: SA só funciona em GA4 quando a Account é
+ *  Workspace organization. Como André usa Gmail pessoal, OAuth é o único caminho.
+ *
+ * Como funciona:
+ *  - Setup 1x: script local (`scripts/setup-ga4-oauth.mjs`) abre browser, usuário
+ *    aprova consent, captura refresh_token.
+ *  - Env vars: GA4_OAUTH_CLIENT_ID + GA4_OAUTH_CLIENT_SECRET + GA4_OAUTH_REFRESH_TOKEN
+ *  - Cada request: pega access_token (vida 1h) trocando refresh_token, chama GA4.
+ *  - Refresh token: dura ~6 meses sem uso, então rodando o cron 12h ele NUNCA expira.
  *
  * Comparação automática: cada métrica compara `range` dias contra os
  * `range` dias anteriores → retorna deltaPct.
- *
- * Setup (1x):
- *  1. GCP `marketing-joinville-2026` → IAM → criar Service Account (Viewer)
- *  2. Baixar chave JSON
- *  3. Adicionar email do SA como Viewer em GA4 → Property → Gerenciamento de acesso
- *  4. Setar env var no Vercel: GA4_SERVICE_ACCOUNT_JSON (JSON inteiro, escaped)
- *  5. Setar GA4_PROPERTY_ID (= 494185724)
  */
 
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { BetaAnalyticsDataClient } from '@google-analytics/data';
+import { OAuth2Client } from 'google-auth-library';
 import { verifyToken } from './_adminAuth';
 
 const PROPERTY_ID = process.env.GA4_PROPERTY_ID || '494185724';
@@ -32,7 +39,6 @@ function pctDelta(current: number, previous: number): number | null {
   return ((current - previous) / previous) * 100;
 }
 
-/** Mapeia "primary channel grouping" do GA4 pra slug interno usado pelo ChannelBar */
 function categorizeChannel(channel: string): string {
   const c = channel.toLowerCase();
   if (c.includes('paid social')) return 'paid_social';
@@ -45,36 +51,46 @@ function categorizeChannel(channel: string): string {
   return 'other';
 }
 
+/** Constrói cliente GA4 usando refresh token via OAuth */
+function buildGa4Client(): BetaAnalyticsDataClient {
+  const clientId     = process.env.GA4_OAUTH_CLIENT_ID;
+  const clientSecret = process.env.GA4_OAUTH_CLIENT_SECRET;
+  const refreshToken = process.env.GA4_OAUTH_REFRESH_TOKEN;
+
+  if (!clientId || !clientSecret || !refreshToken) {
+    throw new Error('OAuth não configurado (GA4_OAUTH_CLIENT_ID, GA4_OAUTH_CLIENT_SECRET, GA4_OAUTH_REFRESH_TOKEN)');
+  }
+
+  const oauth2 = new OAuth2Client(clientId, clientSecret);
+  oauth2.setCredentials({ refresh_token: refreshToken });
+
+  // BetaAnalyticsDataClient aceita um authClient pré-configurado
+  // @ts-expect-error - tipos do GA4 SDK não expõem o construtor com authClient explícito
+  return new BetaAnalyticsDataClient({ authClient: oauth2 });
+}
+
 /* ─────────────── handler ─────────────── */
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
-  // Auth
+  // Auth: token HMAC do admin
   const auth = verifyToken(req.headers.authorization);
   if (!auth) return res.status(401).json({ error: 'Token inválido' });
 
-  // Ping endpoint (used by frontend to verify token without fetching data)
   if (req.query.ping) return res.status(200).json({ ok: true, user: auth.user });
 
-  // Validate service account env var
-  if (!process.env.GA4_SERVICE_ACCOUNT_JSON) {
+  // Verifica config OAuth
+  if (!process.env.GA4_OAUTH_REFRESH_TOKEN) {
     return res.status(503).json({
-      error: 'Service Account não configurada',
-      details: 'GA4_SERVICE_ACCOUNT_JSON env var ausente. Veja docs/ga4-service-account.md',
+      error: 'OAuth GA4 não configurado',
+      details: 'Refresh token ausente. Veja docs/ga4-oauth-setup.md (setup 1x, ~10min).',
     });
-  }
-
-  let credentials: object;
-  try {
-    credentials = JSON.parse(process.env.GA4_SERVICE_ACCOUNT_JSON);
-  } catch {
-    return res.status(500).json({ error: 'GA4_SERVICE_ACCOUNT_JSON tem JSON inválido' });
   }
 
   const days = Math.min(Math.max(parseInt(String(req.query.range || '28'), 10) || 28, 1), 365);
   const property = `properties/${PROPERTY_ID}`;
 
   try {
-    const client = new BetaAnalyticsDataClient({ credentials });
+    const client = buildGa4Client();
 
     const periodCurrent  = { startDate: daysAgo(days), endDate: 'today' };
     const periodPrevious = { startDate: daysAgo(days * 2), endDate: daysAgo(days + 1) };
@@ -108,22 +124,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const num = (i: number, src: typeof curRow) => Number(src?.[i]?.value || 0);
 
     const kpis = {
-      totalUsers: {
-        value: num(0, curRow),
-        deltaPct: pctDelta(num(0, curRow), num(0, prevRow)),
-      },
-      sessions: {
-        value: num(1, curRow),
-        deltaPct: pctDelta(num(1, curRow), num(1, prevRow)),
-      },
-      engagementRate: {
-        value: num(2, curRow), // 0..1
-        deltaPct: pctDelta(num(2, curRow), num(2, prevRow)),
-      },
-      newUsers: {
-        value: num(3, curRow),
-        deltaPct: pctDelta(num(3, curRow), num(3, prevRow)),
-      },
+      totalUsers:     { value: num(0, curRow), deltaPct: pctDelta(num(0, curRow), num(0, prevRow)) },
+      sessions:       { value: num(1, curRow), deltaPct: pctDelta(num(1, curRow), num(1, prevRow)) },
+      engagementRate: { value: num(2, curRow), deltaPct: pctDelta(num(2, curRow), num(2, prevRow)) },
+      newUsers:       { value: num(3, curRow), deltaPct: pctDelta(num(3, curRow), num(3, prevRow)) },
     };
 
     // 2. Tendência diária de usuários
@@ -136,7 +140,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     });
     const trend = (trendReport.rows || []).map((r) => {
       const raw = r.dimensionValues?.[0]?.value || '';
-      // GA4 retorna 'YYYYMMDD' → converte pra 'YYYY-MM-DD'
       const formatted = raw.length === 8
         ? `${raw.slice(0, 4)}-${raw.slice(4, 6)}-${raw.slice(6, 8)}`
         : raw;
