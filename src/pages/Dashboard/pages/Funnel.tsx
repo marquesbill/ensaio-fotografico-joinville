@@ -14,7 +14,7 @@
  */
 
 import { useEffect, useState } from 'react';
-import { Eye, MousePointerClick, ShoppingCart, CheckCircle2 } from 'lucide-react';
+import { Users, FileText, ShoppingCart, CheckCircle2 } from 'lucide-react';
 
 import { KpiCard } from '../components/KpiCard';
 import { DataSourceBadge } from '../components/DataSourceBadge';
@@ -46,11 +46,11 @@ const RANGE_OPTIONS = [
   { key: '90d', label: '90 dias', days: 90 },
 ] as const;
 
-const STEP_META: Record<string, { label: string; hint: string; icon: typeof Eye }> = {
-  view_item_list:  { label: 'Visualizou pacotes', hint: 'Sessões que viram a seção de preços',           icon: Eye },
-  select_item:     { label: 'Selecionou pacote',  hint: 'Sessões que clicaram em "Selecionar"',          icon: MousePointerClick },
-  begin_checkout:  { label: 'Iniciou checkout',   hint: 'Sessões que avançaram pra tela de pagamento',   icon: ShoppingCart },
-  purchase:        { label: 'Comprou',            hint: 'Sessões com purchase event confirmado (paid)',  icon: CheckCircle2 },
+const STEP_META: Record<string, { label: string; hint: string; icon: typeof Users }> = {
+  total_sessions:      { label: 'Visitou o site',         hint: 'Toda sessão que entrou (home, agendamento ou qualquer rota)',     icon: Users },
+  visited_agendamento: { label: 'Acessou /agendamento',   hint: 'Mostrou intenção real de reservar (de qualquer fonte)',           icon: FileText },
+  begin_checkout:      { label: 'Iniciou checkout',       hint: 'Avançou pra tela de pagamento',                                   icon: ShoppingCart },
+  purchase:            { label: 'Comprou',                hint: 'Pagamento confirmado',                                            icon: CheckCircle2 },
 };
 
 const PKG_META: Record<string, { label: string; sublabel: string }> = {
@@ -147,7 +147,7 @@ export function Funnel({ token }: { token: string }) {
 
       {/* KPIs — um por etapa do funil */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 mb-6">
-        {['view_item_list', 'select_item', 'begin_checkout', 'purchase'].map((stepKey) => {
+        {['total_sessions', 'visited_agendamento', 'begin_checkout', 'purchase'].map((stepKey) => {
           const s = pickStep(stepKey);
           const meta = STEP_META[stepKey];
           return (
@@ -172,8 +172,8 @@ export function Funnel({ token }: { token: string }) {
             <h3 className="text-sm font-bold text-white">Funil de conversão</h3>
             <p className="text-[11px] text-[#d4baeb]/50 mt-0.5">
               {topSessions > 0
-                ? `${overallConv.toFixed(2)}% das sessões que viram pacotes acabaram comprando`
-                : 'Aguardando dados de visualização de pacotes…'}
+                ? `${overallConv.toFixed(2)}% das sessões viraram compra (do topo do funil)`
+                : 'Aguardando dados…'}
             </p>
           </div>
           <p className="text-[9px] uppercase tracking-wider text-[#c5a3d4]/30">GA4</p>

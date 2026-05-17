@@ -450,41 +450,76 @@ async function handleGa4Funnel(req: VercelRequest, res: VercelResponse) {
   const periodCurrent  = { startDate: daysAgo(days),     endDate: 'today' };
   const periodPrevious = { startDate: daysAgo(days * 2), endDate: daysAgo(days + 1) };
 
-  // GA4 Enhanced Ecommerce funnel: view_item_list → select_item → begin_checkout → purchase
-  const STEP_EVENTS = ['view_item_list', 'select_item', 'begin_checkout', 'purchase'];
+  // Funnel path-based (captura todas as rotas de entrada — direta /agendamento
+  // via link de bio, ads, etc. + caminho via home).
+  //
+  // ❌ Antes: view_item_list → select_item → begin_checkout → purchase
+  //    Problema: view_item_list e select_item só disparam na home, então
+  //    visitantes que vinham direto pra /agendamento ficavam de fora do funil.
+  //
+  // ✅ Agora: total_sessions → visited_agendamento → begin_checkout → purchase
+  //    Cada step captura ambos caminhos de entrada.
+  const EVENT_STEPS = ['begin_checkout', 'purchase'];
 
-  // 1. Funnel atual + anterior — só `sessions` por step.
-  // GA4 não aceita misturar event-scoped (eventCount) + session-scoped (sessions)
-  // + user-scoped (totalUsers) no mesmo report. Como o funil é "% de sessões que
-  // chegaram em cada etapa", sessions é o que importa.
-  const [stepCur, stepPrev] = await Promise.all([
+  const [
+    totalCur, totalPrev,
+    agendaCur, agendaPrev,
+    eventCur, eventPrev,
+  ] = await Promise.all([
+    // Sessões totais current
     client.runReport({
-      property,
-      dateRanges: [periodCurrent],
-      dimensions: [{ name: 'eventName' }],
+      property, dateRanges: [periodCurrent],
+      metrics: [{ name: 'sessions' }],
+    }),
+    // Sessões totais previous
+    client.runReport({
+      property, dateRanges: [periodPrevious],
+      metrics: [{ name: 'sessions' }],
+    }),
+    // Sessões que visitaram /agendamento current
+    client.runReport({
+      property, dateRanges: [periodCurrent],
+      dimensions: [{ name: 'pagePath' }],
       metrics:    [{ name: 'sessions' }],
       dimensionFilter: {
-        filter: {
-          fieldName:    'eventName',
-          inListFilter: { values: STEP_EVENTS },
-        },
+        filter: { fieldName: 'pagePath', stringFilter: { value: '/agendamento' } },
       },
     }),
+    // Sessões que visitaram /agendamento previous
     client.runReport({
-      property,
-      dateRanges: [periodPrevious],
+      property, dateRanges: [periodPrevious],
+      dimensions: [{ name: 'pagePath' }],
+      metrics:    [{ name: 'sessions' }],
+      dimensionFilter: {
+        filter: { fieldName: 'pagePath', stringFilter: { value: '/agendamento' } },
+      },
+    }),
+    // begin_checkout + purchase sessions current
+    client.runReport({
+      property, dateRanges: [periodCurrent],
       dimensions: [{ name: 'eventName' }],
       metrics:    [{ name: 'sessions' }],
       dimensionFilter: {
-        filter: {
-          fieldName:    'eventName',
-          inListFilter: { values: STEP_EVENTS },
-        },
+        filter: { fieldName: 'eventName', inListFilter: { values: EVENT_STEPS } },
+      },
+    }),
+    // begin_checkout + purchase previous
+    client.runReport({
+      property, dateRanges: [periodPrevious],
+      dimensions: [{ name: 'eventName' }],
+      metrics:    [{ name: 'sessions' }],
+      dimensionFilter: {
+        filter: { fieldName: 'eventName', inListFilter: { values: EVENT_STEPS } },
       },
     }),
   ]);
 
-  const parseSteps = (rows: NonNullable<typeof stepCur[0]['rows']>) => {
+  const singleVal = (rows: NonNullable<typeof totalCur[0]['rows']>) =>
+    Number(rows?.[0]?.metricValues?.[0]?.value || 0);
+  const pathVal = (rows: NonNullable<typeof agendaCur[0]['rows']>) =>
+    // Soma todas as variantes de /agendamento (path exato + query strings)
+    rows.reduce((sum, r) => sum + Number(r.metricValues?.[0]?.value || 0), 0);
+  const eventMap = (rows: NonNullable<typeof eventCur[0]['rows']>) => {
     const m: Record<string, number> = {};
     rows.forEach(r => {
       const name = r.dimensionValues?.[0]?.value || '';
@@ -492,18 +527,20 @@ async function handleGa4Funnel(req: VercelRequest, res: VercelResponse) {
     });
     return m;
   };
-  const curMap  = parseSteps(stepCur[0].rows  || []);
-  const prevMap = parseSteps(stepPrev[0].rows || []);
 
-  const funnel = STEP_EVENTS.map(name => {
-    const cur  = curMap[name]  || 0;
-    const prev = prevMap[name] || 0;
-    return {
-      step:     name,
-      sessions: cur,
-      deltaPct: pctDelta(cur, prev),
-    };
-  });
+  const totalCurVal  = singleVal(totalCur[0].rows  || []);
+  const totalPrevVal = singleVal(totalPrev[0].rows || []);
+  const agendaCurVal  = pathVal(agendaCur[0].rows  || []);
+  const agendaPrevVal = pathVal(agendaPrev[0].rows || []);
+  const eventCurMap   = eventMap(eventCur[0].rows  || []);
+  const eventPrevMap  = eventMap(eventPrev[0].rows || []);
+
+  const funnel = [
+    { step: 'total_sessions',       sessions: totalCurVal,            deltaPct: pctDelta(totalCurVal, totalPrevVal) },
+    { step: 'visited_agendamento',  sessions: agendaCurVal,           deltaPct: pctDelta(agendaCurVal, agendaPrevVal) },
+    { step: 'begin_checkout',       sessions: eventCurMap['begin_checkout'] || 0, deltaPct: pctDelta(eventCurMap['begin_checkout'] || 0, eventPrevMap['begin_checkout'] || 0) },
+    { step: 'purchase',             sessions: eventCurMap['purchase']      || 0, deltaPct: pctDelta(eventCurMap['purchase']      || 0, eventPrevMap['purchase']      || 0) },
+  ];
 
   // 2. Per-package: itemId × selects/purchases/revenue
   // GA4 não permite eventCount (event-scoped) com itemId (item-scoped).
