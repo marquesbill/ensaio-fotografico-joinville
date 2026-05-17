@@ -451,90 +451,115 @@ function normalizeStatus(s: string | null | undefined): 'confirmado' | 'pendente
 /* ───────── Sheets endpoints (Pagamentos + Comportamento + Aquisição) ───────── */
 
 async function handleSheetsBookings(_req: VercelRequest, res: VercelResponse) {
-  // Lê toda a tabela de bookings (1 row = 1 customer, com Qtd ensaios agregado)
-  const rows = await fetchSheetRange(BOOKINGS_SHEET_ID, 'A2:L1000');
+  // Lê aba **Agendamentos** (transaction-level: 1 row = 1 ensaio).
+  // A aba Clientes (default) tem agregados por cliente que não bateram
+  // com a fonte da verdade — Agendamentos é canon.
+  //
+  // Estrutura (21 colunas):
+  //   A:ID  B:Data  C:Início  D:Fim  E:Pacote  F:Duração  G:Valor  H:Nome
+  //   I:E-mail  J:WhatsApp  K:Stripe Session  L:Stripe Payment  M:Status
+  //   N:Criado em  O-U: timestamps de notificações e Nº Bailarinas
+  //
+  // Cancelados ignorados (user: noise, clientes que marcaram 3-4x e ficaram com 1).
+  const rows = await fetchSheetRange(BOOKINGS_SHEET_ID, 'Agendamentos!A2:U1000');
 
-  type PkgStat = { customers: number; ensaios: number };
-  const byPackage: Record<string, PkgStat> = {
-    lembranca: { customers: 0, ensaios: 0 },
-    economico: { customers: 0, ensaios: 0 },
-    completo:  { customers: 0, ensaios: 0 },
-    unknown:   { customers: 0, ensaios: 0 },
-  };
-  const byStatus: Record<string, PkgStat> = {
-    confirmado: { customers: 0, ensaios: 0 },
-    pendente:   { customers: 0, ensaios: 0 },
-  };
-  const byState: Record<string, number> = {};
-  const byDDD:   Record<string, number> = {};
+  type PkgStat = { ensaios: number; customerSet: Set<string> };
+  const init = (): PkgStat => ({ ensaios: 0, customerSet: new Set<string>() });
 
-  let totalCustomers = 0;
-  let totalEnsaios = 0;
-  const recent: Array<{ name: string; pacote: string; ultima_data: string; qtd: number; status: string }> = [];
+  const confByPkg = { lembranca: init(), economico: init(), completo: init(), unknown: init() };
+  const pendByPkg = { lembranca: init(), economico: init(), completo: init(), unknown: init() };
+
+  const confCustomers = new Set<string>();
+  const pendCustomers = new Set<string>();
+  const customersByDDD:   Record<string, Set<string>> = {};
+  const customersByState: Record<string, Set<string>> = {};
+  let confEnsaios = 0;
+  let pendEnsaios = 0;
+
+  const recent: Array<{
+    id: string; name: string; pacote: string; date: string;
+    status: string; criado_em: string;
+  }> = [];
 
   for (const row of rows) {
-    // Skip linhas vazias
-    if (!row[0] || !row[0].trim()) continue;
+    if (!row[0] || !String(row[0]).trim()) continue;
 
-    const name      = row[0];
-    const whatsapp  = row[2] || '';
-    const pacote    = normalizePackage(row[7]);
-    const ultData   = row[8] || '';
-    const qtd       = Number(row[9]) || 0;
-    const statusRaw = row[10] || '';
-    const status    = normalizeStatus(statusRaw);
+    const id         = String(row[0]);
+    const date       = String(row[1] || '');
+    const pacote     = normalizePackage(row[4]);
+    const nome       = String(row[7] || '');
+    const email      = String(row[8] || '').toLowerCase().trim() || `id-${id}`;
+    const whatsapp   = String(row[9] || '');
+    const statusRaw  = String(row[12] || '');
+    const criado     = String(row[13] || '');
+    const status     = normalizeStatus(statusRaw);
 
-    // Cancelados são noise (user explicitou) — pula
-    if (status === 'cancelado') continue;
+    if (status !== 'confirmado' && status !== 'pendente') continue;
 
-    totalCustomers++;
-    totalEnsaios += qtd;
+    const bucket = status === 'confirmado' ? confByPkg : pendByPkg;
+    bucket[pacote].ensaios++;
+    bucket[pacote].customerSet.add(email);
 
-    byPackage[pacote].customers++;
-    byPackage[pacote].ensaios += qtd;
+    if (status === 'confirmado') {
+      confEnsaios++;
+      confCustomers.add(email);
 
-    if (status === 'confirmado' || status === 'pendente') {
-      byStatus[status].customers++;
-      byStatus[status].ensaios += qtd;
+      // DDD geo: só de confirmados (intent real de compra)
+      const ddd = extractDDD(whatsapp);
+      if (ddd) {
+        if (!customersByDDD[ddd]) customersByDDD[ddd] = new Set();
+        customersByDDD[ddd].add(email);
+        const info = DDD_TO_STATE[ddd];
+        if (info) {
+          if (!customersByState[info.state]) customersByState[info.state] = new Set();
+          customersByState[info.state].add(email);
+        }
+      }
+    } else {
+      pendEnsaios++;
+      pendCustomers.add(email);
     }
 
-    const ddd = extractDDD(whatsapp);
-    if (ddd) {
-      byDDD[ddd] = (byDDD[ddd] || 0) + 1;
-      const stateInfo = DDD_TO_STATE[ddd];
-      if (stateInfo) byState[stateInfo.state] = (byState[stateInfo.state] || 0) + 1;
-    }
-
-    recent.push({ name, pacote, ultima_data: ultData, qtd, status: statusRaw });
+    recent.push({ id, name: nome, pacote, date, status: statusRaw, criado_em: criado });
   }
 
-  // Top 15 customers ordenados por última data (assume DD/MM/YYYY)
   recent.sort((a, b) => {
-    const parse = (s: string) => {
-      const m = s.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
-      return m ? new Date(`${m[3]}-${m[2]}-${m[1]}T12:00:00`).getTime() : 0;
-    };
-    return parse(b.ultima_data) - parse(a.ultima_data);
+    const ta = new Date(a.criado_em).getTime() || 0;
+    const tb = new Date(b.criado_em).getTime() || 0;
+    return tb - ta;
   });
 
-  const dddList = Object.entries(byDDD)
-    .map(([ddd, count]) => {
+  // by_package: número primário = confirmados; mantém pending num campo aux
+  const byPackageOut = Object.fromEntries(
+    (['lembranca', 'economico', 'completo', 'unknown'] as const).map(k => [k, {
+      ensaios:           confByPkg[k].ensaios,
+      customers:         confByPkg[k].customerSet.size,
+      pending_ensaios:   pendByPkg[k].ensaios,
+      pending_customers: pendByPkg[k].customerSet.size,
+    }]),
+  );
+
+  const dddList = Object.entries(customersByDDD)
+    .map(([ddd, set]) => {
       const info = DDD_TO_STATE[ddd] || { state: '?', region: '?' };
-      return { ddd, state: info.state, region: info.region, count };
+      return { ddd, state: info.state, region: info.region, count: set.size };
     })
     .sort((a, b) => b.count - a.count);
 
-  const stateList = Object.entries(byState)
-    .map(([state, count]) => ({ state, count }))
+  const stateList = Object.entries(customersByState)
+    .map(([state, set]) => ({ state, count: set.size }))
     .sort((a, b) => b.count - a.count);
 
   return res.status(200).json({
     fetched_at:      new Date().toISOString(),
     next_refresh:    new Date(Date.now() + 12 * 3600 * 1000).toISOString(),
-    total_customers: totalCustomers,
-    total_ensaios:   totalEnsaios,
-    by_package:      byPackage,
-    by_status:       byStatus,
+    total_customers: confCustomers.size,
+    total_ensaios:   confEnsaios,
+    by_package:      byPackageOut,
+    by_status: {
+      confirmado: { customers: confCustomers.size, ensaios: confEnsaios },
+      pendente:   { customers: pendCustomers.size, ensaios: pendEnsaios },
+    },
     by_state:        stateList,
     by_ddd:          dddList,
     recent:          recent.slice(0, 15),
