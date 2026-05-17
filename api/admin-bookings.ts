@@ -1026,6 +1026,121 @@ async function handleGa4Funnel(req: VercelRequest, res: VercelResponse) {
   });
 }
 
+/* ───────── Meta Ads (custo por lead em Aquisição) ───────── */
+
+async function handleMetaAds(req: VercelRequest, res: VercelResponse) {
+  const token     = process.env.META_ADS_TOKEN;
+  const accountId = process.env.META_ADS_ACCOUNT_ID;
+
+  if (!token || !accountId) {
+    return res.status(503).json({
+      error:   'Meta Ads não configurado',
+      details: 'META_ADS_TOKEN ou META_ADS_ACCOUNT_ID ausentes nas env vars do Vercel',
+    });
+  }
+
+  const days = Math.min(Math.max(parseInt(String(req.query.range || '28'), 10) || 28, 1), 365);
+  const until = new Date().toISOString().slice(0, 10);
+  const since = new Date(Date.now() - days * 86400000).toISOString().slice(0, 10);
+  const timeRange = encodeURIComponent(JSON.stringify({ since, until }));
+
+  const acctPath = accountId.startsWith('act_') ? accountId : `act_${accountId}`;
+  const baseUrl  = `https://graph.facebook.com/v19.0/${acctPath}/insights`;
+  const fields   = [
+    'spend', 'impressions', 'clicks', 'actions',
+    'ctr', 'cpc', 'cpm', 'reach', 'frequency',
+  ].join(',');
+
+  // Parser de actions array — extrai lead count e purchase count
+  const extractActionCount = (actions: unknown, types: string[]): number => {
+    if (!Array.isArray(actions)) return 0;
+    let total = 0;
+    for (const a of actions as Array<{ action_type?: string; value?: string }>) {
+      if (a.action_type && types.includes(a.action_type)) {
+        total += Number(a.value) || 0;
+      }
+    }
+    return total;
+  };
+
+  const fetchMeta = async (url: string) => {
+    const r = await fetch(url);
+    if (!r.ok) {
+      const body = await r.text();
+      throw new Error(`Meta API ${r.status}: ${body.slice(0, 400)}`);
+    }
+    return r.json() as Promise<{ data?: Array<Record<string, unknown>> }>;
+  };
+
+  // 1. Account-level + 2. Per-campaign em paralelo
+  const [accountJson, campaignJson] = await Promise.all([
+    fetchMeta(`${baseUrl}?fields=${fields}&time_range=${timeRange}&access_token=${token}`),
+    fetchMeta(`${baseUrl}?fields=campaign_name,campaign_id,${fields}&level=campaign&time_range=${timeRange}&access_token=${token}`),
+  ]);
+
+  // Meta Pixel "Lead" event types — incluindo offsite_conversion (Pixel) e onsite_conversion
+  const LEAD_TYPES = [
+    'lead',
+    'offsite_conversion.fb_pixel_lead',
+    'onsite_conversion.lead_grouped',
+  ];
+  const PURCHASE_TYPES = [
+    'purchase',
+    'offsite_conversion.fb_pixel_purchase',
+    'onsite_web_purchase',
+  ];
+
+  const acct = accountJson.data?.[0] || {};
+  const acctLeads     = extractActionCount(acct.actions, LEAD_TYPES);
+  const acctPurchases = extractActionCount(acct.actions, PURCHASE_TYPES);
+  const acctSpend     = Number(acct.spend) || 0;
+
+  const accountSummary = {
+    spend:       acctSpend,
+    impressions: Number(acct.impressions) || 0,
+    clicks:      Number(acct.clicks)      || 0,
+    ctr:         Number(acct.ctr)         || 0,    // %
+    cpc:         Number(acct.cpc)         || 0,    // R$ por clique
+    cpm:         Number(acct.cpm)         || 0,    // R$ por mil impressões
+    reach:       Number(acct.reach)       || 0,
+    frequency:   Number(acct.frequency)   || 0,
+    leads:       acctLeads,
+    purchases:   acctPurchases,
+    cpl:         acctLeads     > 0 ? acctSpend / acctLeads     : 0,
+    cpa:         acctPurchases > 0 ? acctSpend / acctPurchases : 0,
+  };
+
+  const campaigns = (campaignJson.data || [])
+    .map(c => {
+      const cLeads     = extractActionCount(c.actions, LEAD_TYPES);
+      const cPurchases = extractActionCount(c.actions, PURCHASE_TYPES);
+      const cSpend     = Number(c.spend) || 0;
+      return {
+        id:          String(c.campaign_id || ''),
+        name:        String(c.campaign_name || '(unknown)'),
+        spend:       cSpend,
+        impressions: Number(c.impressions) || 0,
+        clicks:      Number(c.clicks)      || 0,
+        ctr:         Number(c.ctr)         || 0,
+        cpc:         Number(c.cpc)         || 0,
+        cpm:         Number(c.cpm)         || 0,
+        leads:       cLeads,
+        purchases:   cPurchases,
+        cpl:         cLeads     > 0 ? cSpend / cLeads     : 0,
+        cpa:         cPurchases > 0 ? cSpend / cPurchases : 0,
+      };
+    })
+    .sort((a, b) => b.spend - a.spend);
+
+  return res.status(200).json({
+    range:        { since, until, days },
+    fetched_at:   new Date().toISOString(),
+    next_refresh: new Date(Date.now() + 6 * 3600 * 1000).toISOString(), // Meta atualiza ~hora em hora
+    account:      accountSummary,
+    campaigns,
+  });
+}
+
 /* ───────── GA4 Behavior (página 6 do dashboard) ───────── */
 
 async function handleGa4Behavior(req: VercelRequest, res: VercelResponse) {
@@ -1947,6 +2062,15 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       console.error('[admin-bookings/ga4-behavior]', msg);
+      return res.status(500).json({ error: msg });
+    }
+  }
+  if (endpoint === 'meta-ads') {
+    try {
+      return await handleMetaAds(req, res);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      console.error('[admin-bookings/meta-ads]', msg);
       return res.status(500).json({ error: msg });
     }
   }

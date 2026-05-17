@@ -57,6 +57,24 @@ interface LeadsData {
   daily: Array<{ date: string; count: number }>;
 }
 
+interface MetaAdsData {
+  range: { since: string; until: string; days: number };
+  fetched_at: string;
+  account: {
+    spend: number; impressions: number; clicks: number; reach: number;
+    ctr: number; cpc: number; cpm: number; frequency: number;
+    leads: number; purchases: number; cpl: number; cpa: number;
+  };
+  campaigns: Array<{
+    id: string; name: string;
+    spend: number; impressions: number; clicks: number;
+    ctr: number; cpc: number; cpm: number;
+    leads: number; purchases: number; cpl: number; cpa: number;
+  }>;
+}
+
+interface MetaAdsError { error: string; details?: string }
+
 const RANGE_OPTIONS = [
   { key: '7d',  label: '7 dias',  days: 7 },
   { key: '28d', label: '28 dias', days: 28 },
@@ -79,6 +97,8 @@ function shortenPath(path: string, max = 38) {
 export function Acquisition({ token }: { token: string }) {
   const [data, setData] = useState<AcquisitionData | null>(null);
   const [leads, setLeads] = useState<LeadsData | null>(null);
+  const [meta, setMeta] = useState<MetaAdsData | null>(null);
+  const [metaError, setMetaError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [range, setRange] = useState<typeof RANGE_OPTIONS[number]['key']>('28d');
@@ -88,22 +108,33 @@ export function Acquisition({ token }: { token: string }) {
     setLoading(!data);
     if (forceRefresh) setRefreshing(true);
     setError(null);
+    setMetaError(null);
     try {
       const days = RANGE_OPTIONS.find((r) => r.key === range)?.days || 28;
       const refresh = forceRefresh ? `&refresh=${Date.now()}` : '';
-      const [rGa4, rLeads] = await Promise.all([
+      const [rGa4, rLeads, rMeta] = await Promise.all([
         fetch(`/api/admin-bookings?endpoint=ga4-acquisition&range=${days}${refresh}`, {
           headers: { Authorization: `Bearer ${token}` },
         }),
         fetch(`/api/admin-bookings?endpoint=sheets-leads&range=${days}${refresh}`, {
           headers: { Authorization: `Bearer ${token}` },
         }),
+        fetch(`/api/admin-bookings?endpoint=meta-ads&range=${days}${refresh}`, {
+          headers: { Authorization: `Bearer ${token}` },
+        }),
       ]);
-      const [jGa4, jLeads] = await Promise.all([rGa4.json(), rLeads.json()]);
+      const [jGa4, jLeads, jMeta] = await Promise.all([rGa4.json(), rLeads.json(), rMeta.json()]);
       if (!rGa4.ok) throw new Error(jGa4.error || `GA4 HTTP ${rGa4.status}`);
       if (!rLeads.ok) throw new Error(jLeads.error || `Leads HTTP ${rLeads.status}`);
       setData(jGa4);
       setLeads(jLeads);
+      // Meta Ads é opcional — falha não derruba a página
+      if (!rMeta.ok) {
+        setMetaError((jMeta as MetaAdsError).error || `Meta HTTP ${rMeta.status}`);
+        setMeta(null);
+      } else {
+        setMeta(jMeta);
+      }
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : 'Erro ao carregar dados');
     } finally {
@@ -151,8 +182,9 @@ export function Acquisition({ token }: { token: string }) {
       <div className="mb-6">
         <DataSourceBadge
           sources={[
-            { label: 'GA4',    detail: 'tráfego + canais',         status: error ? 'error' : 'live' },
-            { label: 'Sheets', detail: 'leads · captura de form',  status: 'live' },
+            { label: 'GA4',      detail: 'tráfego + canais',         status: error ? 'error' : 'live' },
+            { label: 'Sheets',   detail: 'leads · captura de form',  status: 'live' },
+            { label: 'Meta Ads', detail: 'spend · CPL · campaigns',  status: metaError ? 'error' : (meta ? 'live' : 'stale') },
           ]}
           lastFetched={data?.fetched_at}
           nextRefresh={data?.next_refresh}
@@ -263,6 +295,84 @@ export function Acquisition({ token }: { token: string }) {
           </div>
         )}
       </div>
+
+      {/* Meta Ads — spend, CPL, campaigns */}
+      {meta && (
+        <div className="mb-6 rounded-2xl border border-blue-500/20 bg-gradient-to-r from-blue-500/5 via-transparent to-[#7a3f8f]/5 p-5">
+          <div className="flex items-baseline justify-between mb-4">
+            <div>
+              <p className="text-[10px] uppercase tracking-widest text-blue-300/70 font-bold">Meta Ads · gasto e CPL no período</p>
+              <p className="font-black text-3xl text-white tabular-nums mt-1">
+                R$ {meta.account.spend.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+              </p>
+              <p className="text-[11px] text-[#d4baeb]/50 mt-1">
+                Gasto total · {meta.account.impressions.toLocaleString('pt-BR')} impressões · alcance {meta.account.reach.toLocaleString('pt-BR')}
+              </p>
+            </div>
+            <div className="flex items-baseline gap-6 text-sm">
+              <div>
+                <p className="text-[10px] uppercase tracking-wider text-white/40 font-semibold">Leads (Meta)</p>
+                <p className="text-[#e87060] font-black tabular-nums text-2xl mt-0.5">{meta.account.leads}</p>
+                <p className="text-[9px] text-white/30 mt-0.5">Pixel Lead events</p>
+              </div>
+              <div>
+                <p className="text-[10px] uppercase tracking-wider text-white/40 font-semibold">CPL</p>
+                <p className="text-white font-black tabular-nums text-2xl mt-0.5">
+                  {meta.account.cpl > 0 ? `R$ ${meta.account.cpl.toFixed(2)}` : '—'}
+                </p>
+                <p className="text-[9px] text-white/30 mt-0.5">custo por lead</p>
+              </div>
+              <div>
+                <p className="text-[10px] uppercase tracking-wider text-white/40 font-semibold">CPM · CTR</p>
+                <p className="text-white font-black tabular-nums text-2xl mt-0.5">
+                  R$ {meta.account.cpm.toFixed(2)} · {meta.account.ctr.toFixed(2)}%
+                </p>
+                <p className="text-[9px] text-white/30 mt-0.5">eficiência</p>
+              </div>
+            </div>
+          </div>
+
+          {/* Per-campaign table */}
+          {meta.campaigns.length > 0 && (
+            <div className="mt-4 border-t border-white/[0.06] pt-4">
+              <p className="text-[10px] uppercase tracking-widest text-[#c5a3d4]/60 font-bold mb-2">Por campanha</p>
+              <div className="space-y-1.5">
+                {meta.campaigns.slice(0, 8).map(c => {
+                  const maxSpend = meta.campaigns[0]?.spend || 1;
+                  const widthPct = (c.spend / maxSpend) * 100;
+                  return (
+                    <div key={c.id} className="grid grid-cols-12 gap-2 items-center text-xs">
+                      <span className="col-span-5 text-white truncate" title={c.name}>{c.name}</span>
+                      <div className="col-span-3 h-1.5 bg-white/[0.04] rounded overflow-hidden">
+                        <div className="h-full" style={{ width: `${widthPct}%`, background: '#7a3f8f' }} />
+                      </div>
+                      <span className="col-span-2 tabular-nums text-right text-white font-semibold">
+                        R$ {c.spend.toFixed(0)}
+                      </span>
+                      <span className="col-span-2 tabular-nums text-right text-[#e87060]">
+                        {c.leads > 0 ? `R$ ${c.cpl.toFixed(2)}/lead` : '—'}
+                      </span>
+                    </div>
+                  );
+                })}
+              </div>
+              {meta.campaigns.length > 8 && (
+                <p className="text-[10px] text-[#c5a3d4]/40 mt-2">+ {meta.campaigns.length - 8} campanhas menores</p>
+              )}
+            </div>
+          )}
+        </div>
+      )}
+
+      {metaError && !meta && (
+        <div className="mb-6 p-4 rounded-xl border border-dashed border-blue-500/30 bg-blue-500/5 text-blue-200/80 text-sm">
+          <p className="font-bold">Meta Ads não disponível</p>
+          <p className="text-blue-200/60 mt-1 text-[11px]">{metaError}</p>
+          <p className="text-blue-200/40 mt-1.5 text-[10px]">
+            Setar META_ADS_TOKEN e META_ADS_ACCOUNT_ID nas env vars do Vercel pra habilitar custo por lead.
+          </p>
+        </div>
+      )}
 
       {/* Channels (full width) */}
       <div className="grid grid-cols-1 gap-3 mb-6">
