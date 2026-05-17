@@ -52,7 +52,7 @@ export function Overview({ token }: { token: string }) {
     setError(null);
     try {
       const days = RANGE_OPTIONS.find((r) => r.key === range)?.days || 28;
-      const r = await fetch(`/api/dashboard-ga4?range=${days}${forceRefresh ? '&refresh=1' : ''}`, {
+      const r = await fetch(`/api/admin-bookings?endpoint=ga4-dashboard&range=${days}${forceRefresh ? '&refresh=1' : ''}`, {
         headers: { Authorization: `Bearer ${token}` },
       });
       const json = await r.json();
@@ -112,9 +112,9 @@ export function Overview({ token }: { token: string }) {
           <p className="font-bold">Não foi possível buscar dados ao vivo</p>
           <p className="text-amber-200/70 mt-1">{error}</p>
           <p className="text-amber-200/50 text-xs mt-2 leading-relaxed">
-            Configuração necessária: criar Service Account no GCP <code className="bg-amber-500/10 px-1 rounded">marketing-joinville-2026</code>,
-            adicionar como Viewer na property GA4, e setar env var <code className="bg-amber-500/10 px-1 rounded">GA4_SERVICE_ACCOUNT_JSON</code> no Vercel.
-            Veja docs/ga4-service-account.md.
+            Setup OAuth pendente. Veja <code className="bg-amber-500/10 px-1 rounded">docs/ga4-oauth-setup.md</code>:
+            criar OAuth Client no GCP, rodar <code className="bg-amber-500/10 px-1 rounded">scripts/setup-ga4-oauth.mjs</code>,
+            setar env vars <code className="bg-amber-500/10 px-1 rounded">GA4_OAUTH_*</code> no Vercel.
           </p>
         </div>
       )}

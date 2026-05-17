@@ -185,7 +185,7 @@ export default function Dashboard() {
   useEffect(() => {
     if (!token) return;
     // Se a chamada falhar com 401, faz logout
-    fetch('/api/dashboard-ga4?ping=1', { headers: { Authorization: `Bearer ${token}` } })
+    fetch('/api/admin-bookings?endpoint=ga4-dashboard&ping=1', { headers: { Authorization: `Bearer ${token}` } })
       .then(r => { if (r.status === 401) handleLogout(); })
       .catch(() => { /* ignore network errors */ });
   // eslint-disable-next-line react-hooks/exhaustive-deps
