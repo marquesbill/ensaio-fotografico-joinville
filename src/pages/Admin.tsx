@@ -1279,9 +1279,10 @@ function Dashboard({
   async function handleCancel(booking: Booking, reason: string) {
     setActionLoading(true);
     try {
-      const r = await fetch(`${API}/api/admin-cancel`, {
+      const r = await fetch(`${API}/api/admin-bookings`, {
         method: 'POST', headers,
         body: JSON.stringify({
+          action:        'cancel',
           bookingId:     booking.id,
           reason,
           name:          booking.name,
@@ -1307,9 +1308,10 @@ function Dashboard({
   async function handleReschedule(booking: Booking, newDate: string, newTime: string, pkgKey: string) {
     setActionLoading(true);
     try {
-      const r = await fetch(`${API}/api/admin-reschedule`, {
+      const r = await fetch(`${API}/api/admin-bookings`, {
         method: 'POST', headers,
         body: JSON.stringify({
+          action:        'reschedule',
           bookingId:     booking.id,
           name:          booking.name,
           email:         booking.email ?? '',
@@ -1339,9 +1341,9 @@ function Dashboard({
   ) {
     setActionLoading(true);
     try {
-      const r = await fetch(`${API}/api/admin-create-booking`, {
+      const r = await fetch(`${API}/api/admin-bookings`, {
         method: 'POST', headers,
-        body: JSON.stringify({ ...data, confirm }),
+        body: JSON.stringify({ action: 'create', ...data, confirm }),
       });
       const json = await r.json();
       if (!r.ok) throw new Error(json.error || 'Erro');
@@ -1365,9 +1367,9 @@ function Dashboard({
   ) {
     setActionLoading(true);
     try {
-      const r = await fetch(`${API}/api/admin-edit-booking`, {
+      const r = await fetch(`${API}/api/admin-bookings`, {
         method: 'POST', headers,
-        body: JSON.stringify({ bookingId: booking.id, ...data }),
+        body: JSON.stringify({ action: 'edit', bookingId: booking.id, ...data }),
       });
       if (!r.ok) throw new Error((await r.json()).error || 'Erro');
       setToast({ msg: `Agendamento de ${data.name} atualizado`, type: 'ok' });
@@ -1383,9 +1385,10 @@ function Dashboard({
   async function handleGetPaymentLink(booking: Booking) {
     setActionLoading(true);
     try {
-      const r = await fetch(`${API}/api/admin-payment-link`, {
+      const r = await fetch(`${API}/api/admin-bookings`, {
         method: 'POST', headers,
         body: JSON.stringify({
+          action:        'paymentLink',
           bookingId:     booking.id,
           name:          booking.name,
           email:         booking.email ?? '',
@@ -1410,9 +1413,10 @@ function Dashboard({
   async function handleConfirmPayment(booking: Booking) {
     setActionLoading(true);
     try {
-      const r = await fetch(`${API}/api/admin-confirm`, {
+      const r = await fetch(`${API}/api/admin-bookings`, {
         method: 'POST', headers,
         body: JSON.stringify({
+          action:        'confirm',
           bookingId:     booking.id,
           stripeSession: booking.stripeSession ?? '',
           name:          booking.name,
