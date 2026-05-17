@@ -28,7 +28,7 @@ interface Props {
 }
 
 const COLORS = {
-  purple:  { stroke: '#c084fc', fill: '#a855f7' },
+  purple:  { stroke: '#c5a3d4', fill: '#7a3f8f' },
   orange:  { stroke: '#fb923c', fill: '#f97316' },
   emerald: { stroke: '#6ee7b7', fill: '#10b981' },
 };
@@ -50,9 +50,9 @@ export function TrendChart({ data, title, metricLabel, color = 'purple', source,
       <div className="flex items-baseline justify-between mb-4">
         <div>
           <h3 className="text-sm font-bold text-white">{title}</h3>
-          <p className="text-[11px] text-purple-200/50 mt-0.5">{metricLabel} · {data.length} pontos diários</p>
+          <p className="text-[11px] text-[#d4baeb]/50 mt-0.5">{metricLabel} · {data.length} pontos diários</p>
         </div>
-        {source && <p className="text-[9px] uppercase tracking-wider text-purple-300/30">{source}</p>}
+        {source && <p className="text-[9px] uppercase tracking-wider text-[#c5a3d4]/30">{source}</p>}
       </div>
 
       {/* Chart */}
@@ -85,7 +85,7 @@ export function TrendChart({ data, title, metricLabel, color = 'purple', source,
                   borderRadius: 8,
                   fontSize: 12,
                 }}
-                labelStyle={{ color: '#c084fc', fontWeight: 700 }}
+                labelStyle={{ color: '#c5a3d4', fontWeight: 700 }}
                 itemStyle={{ color: '#fff' }}
                 labelFormatter={(d) => formatDate(d as string)}
                 formatter={(v: number) => [formatNumber(v), metricLabel]}

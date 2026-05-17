@@ -67,18 +67,18 @@ function LoginScreen({ onLogin }: { onLogin: (token: string, user: string) => vo
       <div className="w-full max-w-sm">
         <div className="text-center mb-8">
           <h1 className="font-headline text-3xl text-white font-black mb-2">Marketing Dashboard</h1>
-          <p className="text-purple-200 text-sm">Acesso restrito · J26 — Ensaios Joinville 2026</p>
+          <p className="text-[#d4baeb] text-sm">Acesso restrito · J26 — Ensaios Joinville 2026</p>
         </div>
         <form onSubmit={handleSubmit} className="bg-white/5 backdrop-blur-xl border border-white/10 rounded-2xl p-6 space-y-4">
           <input
             type="text" placeholder="Usuário" required value={user}
             onChange={(e) => setUser(e.target.value)}
-            className="w-full bg-white/10 border border-white/20 rounded-xl px-4 py-3 text-white placeholder:text-white/40 focus:ring-2 focus:ring-purple-400 focus:outline-none"
+            className="w-full bg-white/10 border border-white/20 rounded-xl px-4 py-3 text-white placeholder:text-white/40 focus:ring-2 focus:ring-[#a578bb] focus:outline-none"
           />
           <input
             type="password" placeholder="Senha" required value={pass}
             onChange={(e) => setPass(e.target.value)}
-            className="w-full bg-white/10 border border-white/20 rounded-xl px-4 py-3 text-white placeholder:text-white/40 focus:ring-2 focus:ring-purple-400 focus:outline-none"
+            className="w-full bg-white/10 border border-white/20 rounded-xl px-4 py-3 text-white placeholder:text-white/40 focus:ring-2 focus:ring-[#a578bb] focus:outline-none"
           />
           {error && <p className="text-red-300 text-sm">{error}</p>}
           <button
@@ -102,7 +102,7 @@ function DashboardShell({ token, user, onLogout }: { token: string; user: string
       {/* Sidebar */}
       <aside className="w-64 shrink-0 border-r border-white/5 flex flex-col" style={{ background: '#0f0a1f' }}>
         <div className="px-6 py-6 border-b border-white/5">
-          <p className="text-purple-300 text-xs font-bold tracking-widest uppercase">J26 · Marketing</p>
+          <p className="text-[#c5a3d4] text-xs font-bold tracking-widest uppercase">J26 · Marketing</p>
           <h2 className="font-headline text-xl text-white mt-1">Dashboard</h2>
         </div>
 
@@ -116,13 +116,13 @@ function DashboardShell({ token, user, onLogout }: { token: string; user: string
                 disabled={disabled}
                 onClick={() => !disabled && setActivePage(key)}
                 className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-colors text-left
-                  ${active ? 'bg-purple-500/15 text-white border border-purple-400/30' : 'text-purple-200/70 hover:bg-white/5 hover:text-white'}
+                  ${active ? 'bg-[#7a3f8f]/20 text-white border border-[#e87060]/40' : 'text-[#d4baeb]/70 hover:bg-white/5 hover:text-white'}
                   ${disabled ? 'opacity-40 cursor-not-allowed' : ''}`}
               >
                 <Icon className="w-4 h-4 shrink-0" />
                 <span className="flex-1 font-medium">{label}</span>
                 {status === 'wip' && (
-                  <span className="text-[9px] uppercase tracking-wider text-purple-300/60 bg-purple-500/10 px-1.5 py-0.5 rounded">em breve</span>
+                  <span className="text-[9px] uppercase tracking-wider text-[#c5a3d4]/60 bg-[#7a3f8f]/10 px-1.5 py-0.5 rounded">em breve</span>
                 )}
               </button>
             );
@@ -131,17 +131,17 @@ function DashboardShell({ token, user, onLogout }: { token: string; user: string
 
         <div className="p-3 border-t border-white/5">
           <div className="flex items-center gap-3 px-3 py-2 mb-2">
-            <div className="w-8 h-8 rounded-full bg-purple-500/20 border border-purple-400/30 flex items-center justify-center text-purple-200 text-sm font-bold">
+            <div className="w-8 h-8 rounded-full bg-[#7a3f8f]/20 border border-[#a578bb]/30 flex items-center justify-center text-[#d4baeb] text-sm font-bold">
               {user.charAt(0).toUpperCase()}
             </div>
             <div className="flex-1 min-w-0">
               <p className="text-sm font-semibold text-white truncate">{user}</p>
-              <p className="text-[10px] text-purple-300/60 uppercase tracking-wider">Acesso ativo</p>
+              <p className="text-[10px] text-[#c5a3d4]/60 uppercase tracking-wider">Acesso ativo</p>
             </div>
           </div>
           <button
             onClick={onLogout}
-            className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm text-purple-200/70 hover:bg-white/5 hover:text-white transition-colors"
+            className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm text-[#d4baeb]/70 hover:bg-white/5 hover:text-white transition-colors"
           >
             <LogOut className="w-4 h-4" />
             Sair
@@ -155,9 +155,9 @@ function DashboardShell({ token, user, onLogout }: { token: string; user: string
         {activePage !== 'overview' && (
           <div className="p-10 flex items-center justify-center h-full">
             <div className="text-center">
-              <p className="text-purple-300/60 text-sm uppercase tracking-widest">Em construção</p>
+              <p className="text-[#c5a3d4]/60 text-sm uppercase tracking-widest">Em construção</p>
               <p className="text-white font-headline text-2xl mt-2">Página em breve</p>
-              <p className="text-purple-200/50 text-sm mt-3 max-w-sm">Próxima entrega desta página depende de dados do BigQuery (24-48h após primeiro export) ou ativação da Meta Ads API.</p>
+              <p className="text-[#d4baeb]/50 text-sm mt-3 max-w-sm">Próxima entrega desta página depende de dados do BigQuery (24-48h após primeiro export) ou ativação da Meta Ads API.</p>
             </div>
           </div>
         )}

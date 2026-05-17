@@ -34,11 +34,11 @@ export function DataTable({ title, columns, rows, barColumn, source, loading, ma
       <div className="flex items-baseline justify-between mb-4">
         <div>
           <h3 className="text-sm font-bold text-white">{title}</h3>
-          <p className="text-[11px] text-purple-200/50 mt-0.5">
+          <p className="text-[11px] text-[#d4baeb]/50 mt-0.5">
             {loading ? '…' : `${displayed.length} de ${rows.length} ${rows.length === 1 ? 'linha' : 'linhas'}`}
           </p>
         </div>
-        {source && <p className="text-[9px] uppercase tracking-wider text-purple-300/30">{source}</p>}
+        {source && <p className="text-[9px] uppercase tracking-wider text-[#c5a3d4]/30">{source}</p>}
       </div>
 
       {loading ? (
@@ -53,7 +53,7 @@ export function DataTable({ title, columns, rows, barColumn, source, loading, ma
                 {columns.map((c) => (
                   <th
                     key={c.key}
-                    className={`pb-2 text-[10px] font-bold uppercase tracking-widest text-purple-300/60 ${c.align === 'right' ? 'text-right' : 'text-left'}`}
+                    className={`pb-2 text-[10px] font-bold uppercase tracking-widest text-[#c5a3d4]/60 ${c.align === 'right' ? 'text-right' : 'text-left'}`}
                     style={c.width ? { width: c.width } : undefined}
                   >
                     {c.label}
@@ -71,7 +71,7 @@ export function DataTable({ title, columns, rows, barColumn, source, loading, ma
                         {c.key === barColumn ? (
                           <div className="flex items-center justify-end gap-2">
                             <div className="flex-1 h-1 bg-white/5 rounded-full overflow-hidden max-w-[60px]">
-                              <div className="h-full bg-purple-400/60 rounded-full" style={{ width: `${((Number(val) || 0) / max) * 100}%` }} />
+                              <div className="h-full bg-[#a578bb]/60 rounded-full" style={{ width: `${((Number(val) || 0) / max) * 100}%` }} />
                             </div>
                             <span className="tabular-nums font-semibold text-white w-12 text-right">
                               {(Number(val) || 0).toLocaleString('pt-BR')}
@@ -80,7 +80,7 @@ export function DataTable({ title, columns, rows, barColumn, source, loading, ma
                         ) : c.render ? (
                           c.render(row)
                         ) : (
-                          <span className={c.align === 'right' ? 'tabular-nums text-white' : 'text-purple-100'}>
+                          <span className={c.align === 'right' ? 'tabular-nums text-white' : 'text-[#e5d2ef]'}>
                             {String(val ?? '—')}
                           </span>
                         )}

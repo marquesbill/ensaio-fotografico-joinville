@@ -147,7 +147,7 @@ function CountdownTimer() {
   return (
     <div className="mt-3 mb-2 rounded-2xl px-3 py-3" style={{ background: 'linear-gradient(135deg, #a46db5 0%, #e8a2e8 100%)', boxShadow: '0 2px 10px rgba(164,109,181,0.25)' }}>
       <p className="font-bold text-xs uppercase tracking-widest text-center mb-2 text-white drop-shadow-sm">
-        ⏰ Oferta expira em
+        ⏰ Lote 1 termina em
       </p>
       <div className="flex justify-center gap-2 text-center">
         {[{ v: pad(days), l: 'dias' }, { v: pad(hours), l: 'hrs' }, { v: pad(minutes), l: 'min' }, { v: pad(seconds), l: 'seg' }].map(({ v, l }) => (
@@ -529,49 +529,44 @@ export default function App() {
         </div>
       </section>
 
-      {/* Poetic Quote Section */}
-      <section className="py-24 bg-surface-container-low relative">
-        <div className="container mx-auto px-6 text-center max-w-4xl">
-          <motion.div
-            initial={{ opacity: 0, scale: 0.5 }}
-            whileInView={{ opacity: 1, scale: 1 }}
+      {/* For Whom Section */}
+      <section className="py-24 bg-surface">
+        <div className="container mx-auto px-6">
+          <motion.h2 
+            className="font-headline text-4xl text-on-surface text-center mb-16 italic"
+            initial={{ opacity: 0 }}
+            whileInView={{ opacity: 1 }}
             viewport={{ once: true }}
           >
-            <QuoteIcon className="mx-auto text-primary w-16 h-16 mb-6 opacity-30" />
-          </motion.div>
-          <div className="space-y-4">
-            <motion.p 
-              className="font-headline text-3xl md:text-4xl text-on-surface leading-relaxed"
-              initial={{ opacity: 0 }}
-              whileInView={{ opacity: 1 }}
-              viewport={{ once: true }}
-              transition={{ delay: 0.2 }}
-            >
-              "Queremos te entregar fotos perfeitas, impecáveis. Cuidamos de tudo para isso."
-            </motion.p>
-            <motion.p 
-              className="text-lg md:text-xl text-primary font-medium italic"
-              initial={{ opacity: 0 }}
-              whileInView={{ opacity: 1 }}
-              viewport={{ once: true }}
-              transition={{ delay: 0.4 }}
-            >
-              Montamos nossa estrutura no hotel Le Village, na mesma avenida do Centreventos.
-            </motion.p>
-          </div>
+            Para quem é este ensaio
+          </motion.h2>
           <motion.div 
-            className="mt-12"
-            initial={{ opacity: 0, y: 20 }}
-            whileInView={{ opacity: 1, y: 0 }}
+            className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-8"
+            variants={staggerContainer}
+            initial="initial"
+            whileInView="animate"
             viewport={{ once: true }}
-            transition={{ delay: 0.6 }}
           >
-            <a href="#cadastro" className="inline-block signature-gradient text-white font-bold px-12 py-5 rounded-full shadow-xl hover:scale-105 active:scale-95 transition-all duration-300 text-lg">
-              Entrar na Fila de Espera
-            </a>
+            {[
+              { icon: Camera, title: "Material para Audição", desc: "Fotos técnicas e expressivas para companhias e escolas internacionais.", color: "bg-tertiary-container", iconColor: "text-tertiary" },
+              { icon: Sparkles, title: "Iniciantes e Amadores", desc: "Celebrando cada etapa da sua evolução no mundo da dança.", color: "bg-primary-container/30", iconColor: "text-primary" },
+              { icon: Heart, title: "Feito para quem ama a dança", desc: "Para quem vive e respira a arte do movimento todos os dias.", color: "bg-surface-container-high", iconColor: "text-on-surface" },
+              { icon: Users, title: "Mães de Bailarinas", desc: "Eternizando o sonho e a dedicação da sua filha nos palcos.", color: "bg-secondary-container", iconColor: "text-secondary" }
+            ].map((item, i) => (
+              <motion.div 
+                key={i}
+                variants={fadeIn}
+                className="bg-surface-container-low/50 border border-outline-variant/10 p-8 rounded-2xl flex flex-col items-center text-center space-y-4 hover:translate-y-[-12px] transition-all duration-500 shadow-sm hover:shadow-xl group"
+              >
+                <div className={`w-16 h-16 rounded-full ${item.color} flex items-center justify-center transition-colors group-hover:bg-primary group-hover:text-white`}>
+                  <item.icon className={`${item.iconColor} w-8 h-8 group-hover:text-white transition-colors`} />
+                </div>
+                <h4 className="font-bold text-on-surface">{item.title}</h4>
+                <p className="text-sm text-on-surface-variant">{item.desc}</p>
+              </motion.div>
+            ))}
           </motion.div>
         </div>
-        <div className="absolute bottom-0 left-0 w-full h-16 bg-surface sinuous-divider"></div>
       </section>
 
       {/* Packages Section */}
@@ -741,44 +736,49 @@ export default function App() {
         </div>
       </section>
 
-      {/* For Whom Section */}
-      <section className="py-24 bg-surface">
-        <div className="container mx-auto px-6">
-          <motion.h2 
-            className="font-headline text-4xl text-on-surface text-center mb-16 italic"
-            initial={{ opacity: 0 }}
-            whileInView={{ opacity: 1 }}
+      {/* Poetic Quote Section */}
+      <section className="py-24 bg-surface-container-low relative">
+        <div className="container mx-auto px-6 text-center max-w-4xl">
+          <motion.div
+            initial={{ opacity: 0, scale: 0.5 }}
+            whileInView={{ opacity: 1, scale: 1 }}
             viewport={{ once: true }}
           >
-            Para quem é este ensaio
-          </motion.h2>
+            <QuoteIcon className="mx-auto text-primary w-16 h-16 mb-6 opacity-30" />
+          </motion.div>
+          <div className="space-y-4">
+            <motion.p 
+              className="font-headline text-3xl md:text-4xl text-on-surface leading-relaxed"
+              initial={{ opacity: 0 }}
+              whileInView={{ opacity: 1 }}
+              viewport={{ once: true }}
+              transition={{ delay: 0.2 }}
+            >
+              "Queremos te entregar fotos perfeitas, impecáveis. Cuidamos de tudo para isso."
+            </motion.p>
+            <motion.p 
+              className="text-lg md:text-xl text-primary font-medium italic"
+              initial={{ opacity: 0 }}
+              whileInView={{ opacity: 1 }}
+              viewport={{ once: true }}
+              transition={{ delay: 0.4 }}
+            >
+              Montamos nossa estrutura no hotel Le Village, na mesma avenida do Centreventos.
+            </motion.p>
+          </div>
           <motion.div 
-            className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-8"
-            variants={staggerContainer}
-            initial="initial"
-            whileInView="animate"
+            className="mt-12"
+            initial={{ opacity: 0, y: 20 }}
+            whileInView={{ opacity: 1, y: 0 }}
             viewport={{ once: true }}
+            transition={{ delay: 0.6 }}
           >
-            {[
-              { icon: Camera, title: "Material para Audição", desc: "Fotos técnicas e expressivas para companhias e escolas internacionais.", color: "bg-tertiary-container", iconColor: "text-tertiary" },
-              { icon: Sparkles, title: "Iniciantes e Amadores", desc: "Celebrando cada etapa da sua evolução no mundo da dança.", color: "bg-primary-container/30", iconColor: "text-primary" },
-              { icon: Heart, title: "Feito para quem ama a dança", desc: "Para quem vive e respira a arte do movimento todos os dias.", color: "bg-surface-container-high", iconColor: "text-on-surface" },
-              { icon: Users, title: "Mães de Bailarinas", desc: "Eternizando o sonho e a dedicação da sua filha nos palcos.", color: "bg-secondary-container", iconColor: "text-secondary" }
-            ].map((item, i) => (
-              <motion.div 
-                key={i}
-                variants={fadeIn}
-                className="bg-surface-container-low/50 border border-outline-variant/10 p-8 rounded-2xl flex flex-col items-center text-center space-y-4 hover:translate-y-[-12px] transition-all duration-500 shadow-sm hover:shadow-xl group"
-              >
-                <div className={`w-16 h-16 rounded-full ${item.color} flex items-center justify-center transition-colors group-hover:bg-primary group-hover:text-white`}>
-                  <item.icon className={`${item.iconColor} w-8 h-8 group-hover:text-white transition-colors`} />
-                </div>
-                <h4 className="font-bold text-on-surface">{item.title}</h4>
-                <p className="text-sm text-on-surface-variant">{item.desc}</p>
-              </motion.div>
-            ))}
+            <a href="#cadastro" className="inline-block signature-gradient text-white font-bold px-12 py-5 rounded-full shadow-xl hover:scale-105 active:scale-95 transition-all duration-300 text-lg">
+              Entrar na Fila de Espera
+            </a>
           </motion.div>
         </div>
+        <div className="absolute bottom-0 left-0 w-full h-16 bg-surface sinuous-divider"></div>
       </section>
 
             {/* Testimonials Section */}

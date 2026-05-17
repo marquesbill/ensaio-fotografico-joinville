@@ -73,9 +73,9 @@ export function Overview({ token }: { token: string }) {
       {/* Header */}
       <div className="flex flex-wrap items-end justify-between gap-4 mb-6">
         <div>
-          <p className="text-[11px] font-bold uppercase tracking-widest text-purple-300/60">Página 1 · Overview</p>
+          <p className="text-[11px] font-bold uppercase tracking-widest text-[#c5a3d4]/60">Página 1 · Overview</p>
           <h1 className="font-headline text-3xl font-black mt-1">Visão Geral</h1>
-          <p className="text-purple-200/60 text-sm mt-1">
+          <p className="text-[#d4baeb]/60 text-sm mt-1">
             Como os visitantes estão chegando e se engajando com o site
           </p>
         </div>
@@ -87,7 +87,7 @@ export function Overview({ token }: { token: string }) {
               key={opt.key}
               onClick={() => setRange(opt.key)}
               className={`px-3 py-1.5 rounded-md text-xs font-semibold transition-colors
-                ${range === opt.key ? 'bg-purple-500/20 text-white' : 'text-purple-200/60 hover:text-white'}`}
+                ${range === opt.key ? 'bg-[#7a3f8f]/20 text-white' : 'text-[#d4baeb]/60 hover:text-white'}`}
             >
               {opt.label}
             </button>
@@ -196,7 +196,7 @@ export function Overview({ token }: { token: string }) {
       </div>
 
       {/* Footer note */}
-      <p className="text-center text-[10px] text-purple-300/30 mt-8 pb-4">
+      <p className="text-center text-[10px] text-[#c5a3d4]/30 mt-8 pb-4">
         Dados via Google Analytics Data API · refresh automático a cada 12h ·
         BigQuery export (dados granulares) a partir de 17/mai
       </p>

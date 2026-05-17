@@ -37,8 +37,8 @@ export function KpiCard({ label, value, deltaPct, deltaLabel, icon: Icon, source
     <div className="relative rounded-2xl border border-white/10 bg-white/[0.03] backdrop-blur-sm p-5 hover:bg-white/[0.05] transition-colors">
       {/* Header */}
       <div className="flex items-start justify-between mb-3">
-        <p className="text-[11px] font-bold uppercase tracking-widest text-purple-300/80">{label}</p>
-        {Icon && <Icon className="w-4 h-4 text-purple-300/40" />}
+        <p className="text-[11px] font-bold uppercase tracking-widest text-[#c5a3d4]/80">{label}</p>
+        {Icon && <Icon className="w-4 h-4 text-[#c5a3d4]/40" />}
       </div>
 
       {/* Valor principal */}
@@ -58,14 +58,14 @@ export function KpiCard({ label, value, deltaPct, deltaLabel, icon: Icon, source
       {/* Hint + delta label */}
       <div className="mt-2 space-y-1">
         {deltaLabel && delta !== null && (
-          <p className="text-[11px] text-purple-200/50">{deltaLabel}</p>
+          <p className="text-[11px] text-[#d4baeb]/50">{deltaLabel}</p>
         )}
-        {hint && <p className="text-[11px] text-purple-200/40 leading-tight">{hint}</p>}
+        {hint && <p className="text-[11px] text-[#d4baeb]/40 leading-tight">{hint}</p>}
       </div>
 
       {/* Source — bottom-right, always visible */}
       {source && (
-        <p className="absolute bottom-2 right-3 text-[9px] uppercase tracking-wider text-purple-300/30 font-medium">
+        <p className="absolute bottom-2 right-3 text-[9px] uppercase tracking-wider text-[#c5a3d4]/30 font-medium">
           {source}
         </p>
       )}

@@ -25,10 +25,10 @@ interface Props {
 }
 
 const CATEGORY_COLORS: Record<string, string> = {
-  paid_social:    '#a855f7', // roxo (ads pagos)
-  organic_social: '#c084fc', // roxo claro
+  paid_social:    '#7a3f8f', // roxo (ads pagos)
+  organic_social: '#c5a3d4', // roxo claro
   direct:         '#6ee7b7', // verde
-  referral:       '#fb923c', // laranja
+  referral:       '#e87060', // laranja
   organic_search: '#60a5fa', // azul
   email:          '#f472b6', // rosa
   paid_search:    '#fbbf24', // amarelo
@@ -45,9 +45,9 @@ export function ChannelBar({ title, data, unit = '', source, loading }: Props) {
       <div className="flex items-baseline justify-between mb-4">
         <div>
           <h3 className="text-sm font-bold text-white">{title}</h3>
-          <p className="text-[11px] text-purple-200/50 mt-0.5">{total.toLocaleString('pt-BR')} {unit} total</p>
+          <p className="text-[11px] text-[#d4baeb]/50 mt-0.5">{total.toLocaleString('pt-BR')} {unit} total</p>
         </div>
-        {source && <p className="text-[9px] uppercase tracking-wider text-purple-300/30">{source}</p>}
+        {source && <p className="text-[9px] uppercase tracking-wider text-[#c5a3d4]/30">{source}</p>}
       </div>
 
       <div className="space-y-2.5">
@@ -63,9 +63,9 @@ export function ChannelBar({ title, data, unit = '', source, loading }: Props) {
             <div key={row.label} className="group">
               <div className="flex items-baseline justify-between text-xs mb-1">
                 <span className="text-white font-medium truncate flex-1 mr-2">{row.label}</span>
-                <span className="tabular-nums text-purple-200/70">
+                <span className="tabular-nums text-[#d4baeb]/70">
                   <span className="text-white font-semibold">{row.value.toLocaleString('pt-BR')}</span>
-                  <span className="text-purple-300/50 ml-1.5">({pct.toFixed(1)}%)</span>
+                  <span className="text-[#c5a3d4]/50 ml-1.5">({pct.toFixed(1)}%)</span>
                 </span>
               </div>
               <div className="h-2 bg-white/[0.05] rounded-full overflow-hidden">
