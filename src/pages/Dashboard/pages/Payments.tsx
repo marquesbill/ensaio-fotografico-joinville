@@ -63,6 +63,40 @@ function normalizeBooking(b: Booking): Booking {
   };
 }
 
+function computeStats(bookings: Booking[]) {
+  let confirmedCount = 0, pendingCount = 0, cancelledCount = 0;
+  let confirmedRevenue = 0, pendingValue = 0;
+  const byPackage: Record<string, { count: number; revenue: number; pending: number; pendingValue: number }> = {};
+
+  bookings.forEach(b => {
+    const price = Number(b.price) || 0;
+    const status = (b.status || '').toLowerCase();
+    const pkgKey = (b.package || 'unknown').toLowerCase();
+
+    byPackage[pkgKey] = byPackage[pkgKey] || { count: 0, revenue: 0, pending: 0, pendingValue: 0 };
+
+    if (status.startsWith('confirm')) {
+      confirmedCount++;
+      confirmedRevenue += price;
+      byPackage[pkgKey].count++;
+      byPackage[pkgKey].revenue += price;
+    } else if (status.startsWith('pend')) {
+      pendingCount++;
+      pendingValue += price;
+      byPackage[pkgKey].pending++;
+      byPackage[pkgKey].pendingValue += price;
+    } else if (status.startsWith('cancel')) {
+      cancelledCount++;
+    }
+  });
+
+  const total = confirmedCount + pendingCount + cancelledCount;
+  const conversionRate = total > 0 ? confirmedCount / total : 0;
+
+  return { confirmedCount, pendingCount, cancelledCount, total,
+           confirmedRevenue, pendingValue, conversionRate, byPackage };
+}
+
 function StatusPill({ status }: { status: string }) {
   const s = (status || '').toLowerCase();
   let color = 'bg-white/5 text-white/60 border-white/10';
@@ -115,39 +149,8 @@ export function Payments({ token }: { token: string }) {
     });
   }, [bookings, range]);
 
-  const stats = useMemo(() => {
-    let confirmedCount = 0, pendingCount = 0, cancelledCount = 0;
-    let confirmedRevenue = 0, pendingValue = 0;
-    const byPackage: Record<string, { count: number; revenue: number; pending: number; pendingValue: number }> = {};
-
-    filtered.forEach(b => {
-      const price = Number(b.price) || 0;
-      const status = (b.status || '').toLowerCase();
-      const pkgKey = (b.package || 'unknown').toLowerCase();
-
-      byPackage[pkgKey] = byPackage[pkgKey] || { count: 0, revenue: 0, pending: 0, pendingValue: 0 };
-
-      if (status.startsWith('confirm')) {
-        confirmedCount++;
-        confirmedRevenue += price;
-        byPackage[pkgKey].count++;
-        byPackage[pkgKey].revenue += price;
-      } else if (status.startsWith('pend')) {
-        pendingCount++;
-        pendingValue += price;
-        byPackage[pkgKey].pending++;
-        byPackage[pkgKey].pendingValue += price;
-      } else if (status.startsWith('cancel')) {
-        cancelledCount++;
-      }
-    });
-
-    const total = confirmedCount + pendingCount + cancelledCount;
-    const conversionRate = total > 0 ? confirmedCount / total : 0;
-
-    return { confirmedCount, pendingCount, cancelledCount, total,
-             confirmedRevenue, pendingValue, conversionRate, byPackage };
-  }, [filtered]);
+  const lifetimeStats = useMemo(() => computeStats(bookings), [bookings]);
+  const stats         = useMemo(() => computeStats(filtered), [filtered]);
 
   const recent = useMemo(() => {
     return [...filtered]
@@ -211,7 +214,50 @@ export function Payments({ token }: { token: string }) {
         </div>
       )}
 
-      {/* KPIs */}
+      {/* Total acumulado — sempre histórico completo, ignora o range picker */}
+      <div className="mb-6 rounded-2xl border border-[#7a3f8f]/30 bg-gradient-to-r from-[#7a3f8f]/15 via-[#7a3f8f]/5 to-[#e87060]/10 p-5">
+        <div className="flex flex-wrap items-baseline justify-between gap-4">
+          <div>
+            <p className="text-[10px] uppercase tracking-widest text-[#c5a3d4]/70 font-bold">
+              Total acumulado · desde o lançamento
+            </p>
+            <p className="font-black text-3xl md:text-4xl text-white tabular-nums mt-1">
+              {loading ? '—' : brl(lifetimeStats.confirmedRevenue)}
+            </p>
+            <p className="text-[11px] text-[#d4baeb]/50 mt-1">Receita confirmada · todas as datas</p>
+          </div>
+          <div className="flex items-baseline gap-6 text-sm">
+            <div>
+              <p className="text-[10px] uppercase tracking-wider text-white/40 font-semibold">Confirmados</p>
+              <p className="text-white font-black tabular-nums text-2xl mt-0.5">
+                {loading ? '—' : lifetimeStats.confirmedCount.toLocaleString('pt-BR')}
+              </p>
+            </div>
+            <div>
+              <p className="text-[10px] uppercase tracking-wider text-white/40 font-semibold">Pendentes</p>
+              <p className="text-[#e87060] font-black tabular-nums text-2xl mt-0.5">
+                {loading ? '—' : lifetimeStats.pendingCount.toLocaleString('pt-BR')}
+              </p>
+              {!loading && lifetimeStats.pendingValue > 0 && (
+                <p className="text-[10px] text-[#e87060]/60 font-medium tabular-nums">{brl(lifetimeStats.pendingValue)} em aberto</p>
+              )}
+            </div>
+            <div>
+              <p className="text-[10px] uppercase tracking-wider text-white/40 font-semibold">Taxa conv.</p>
+              <p className="text-white font-black tabular-nums text-2xl mt-0.5">
+                {loading ? '—' : `${(lifetimeStats.conversionRate * 100).toFixed(1)}%`}
+              </p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Header da seção "no período" */}
+      <p className="mb-3 text-[11px] uppercase tracking-widest text-[#c5a3d4]/50 font-bold">
+        No período · {RANGE_OPTIONS.find(r => r.key === range)?.label}
+      </p>
+
+      {/* KPIs (filtrados pelo range) */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 mb-6">
         <KpiCard
           label="Receita confirmada"
