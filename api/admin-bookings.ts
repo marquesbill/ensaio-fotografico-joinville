@@ -344,6 +344,287 @@ async function fetchSheetRange(spreadsheetId: string, range: string): Promise<st
   return json.values || [];
 }
 
+/* ───────── Brazil DDD → State mapping (geo inference de WhatsApp) ───────── */
+
+const DDD_TO_STATE: Record<string, { state: string; region: string }> = {
+  '11': { state: 'SP', region: 'São Paulo' },
+  '12': { state: 'SP', region: 'Vale do Paraíba' },
+  '13': { state: 'SP', region: 'Baixada Santista' },
+  '14': { state: 'SP', region: 'Bauru' },
+  '15': { state: 'SP', region: 'Sorocaba' },
+  '16': { state: 'SP', region: 'Ribeirão Preto' },
+  '17': { state: 'SP', region: 'São José do Rio Preto' },
+  '18': { state: 'SP', region: 'Presidente Prudente' },
+  '19': { state: 'SP', region: 'Campinas' },
+  '21': { state: 'RJ', region: 'Rio de Janeiro' },
+  '22': { state: 'RJ', region: 'Campos dos Goytacazes' },
+  '24': { state: 'RJ', region: 'Volta Redonda' },
+  '27': { state: 'ES', region: 'Vitória' },
+  '28': { state: 'ES', region: 'Cachoeiro de Itapemirim' },
+  '31': { state: 'MG', region: 'Belo Horizonte' },
+  '32': { state: 'MG', region: 'Juiz de Fora' },
+  '33': { state: 'MG', region: 'Governador Valadares' },
+  '34': { state: 'MG', region: 'Uberlândia' },
+  '35': { state: 'MG', region: 'Poços de Caldas' },
+  '37': { state: 'MG', region: 'Divinópolis' },
+  '38': { state: 'MG', region: 'Montes Claros' },
+  '41': { state: 'PR', region: 'Curitiba' },
+  '42': { state: 'PR', region: 'Ponta Grossa' },
+  '43': { state: 'PR', region: 'Londrina' },
+  '44': { state: 'PR', region: 'Maringá' },
+  '45': { state: 'PR', region: 'Cascavel/Foz' },
+  '46': { state: 'PR', region: 'Pato Branco' },
+  '47': { state: 'SC', region: 'Joinville/Itajaí' },
+  '48': { state: 'SC', region: 'Florianópolis' },
+  '49': { state: 'SC', region: 'Chapecó' },
+  '51': { state: 'RS', region: 'Porto Alegre' },
+  '53': { state: 'RS', region: 'Pelotas' },
+  '54': { state: 'RS', region: 'Caxias do Sul' },
+  '55': { state: 'RS', region: 'Santa Maria' },
+  '61': { state: 'DF', region: 'Brasília' },
+  '62': { state: 'GO', region: 'Goiânia' },
+  '63': { state: 'TO', region: 'Palmas' },
+  '64': { state: 'GO', region: 'Rio Verde' },
+  '65': { state: 'MT', region: 'Cuiabá' },
+  '66': { state: 'MT', region: 'Rondonópolis' },
+  '67': { state: 'MS', region: 'Campo Grande' },
+  '68': { state: 'AC', region: 'Rio Branco' },
+  '69': { state: 'RO', region: 'Porto Velho' },
+  '71': { state: 'BA', region: 'Salvador' },
+  '73': { state: 'BA', region: 'Ilhéus/Itabuna' },
+  '74': { state: 'BA', region: 'Juazeiro' },
+  '75': { state: 'BA', region: 'Feira de Santana' },
+  '77': { state: 'BA', region: 'Vitória da Conquista' },
+  '79': { state: 'SE', region: 'Aracaju' },
+  '81': { state: 'PE', region: 'Recife' },
+  '82': { state: 'AL', region: 'Maceió' },
+  '83': { state: 'PB', region: 'João Pessoa' },
+  '84': { state: 'RN', region: 'Natal' },
+  '85': { state: 'CE', region: 'Fortaleza' },
+  '86': { state: 'PI', region: 'Teresina' },
+  '87': { state: 'PE', region: 'Petrolina' },
+  '88': { state: 'CE', region: 'Juazeiro do Norte' },
+  '89': { state: 'PI', region: 'Picos' },
+  '91': { state: 'PA', region: 'Belém' },
+  '92': { state: 'AM', region: 'Manaus' },
+  '93': { state: 'PA', region: 'Santarém' },
+  '94': { state: 'PA', region: 'Marabá' },
+  '95': { state: 'RR', region: 'Boa Vista' },
+  '96': { state: 'AP', region: 'Macapá' },
+  '97': { state: 'AM', region: 'Coari' },
+  '98': { state: 'MA', region: 'São Luís' },
+  '99': { state: 'MA', region: 'Imperatriz' },
+};
+
+function extractDDD(whatsapp: string | null | undefined): string | null {
+  if (!whatsapp) return null;
+  const digits = String(whatsapp).replace(/\D/g, '');
+  if (digits.length < 10) return null;
+  // Remove código país 55 se presente (12 ou 13 dígitos totais)
+  let cleaned = digits;
+  if ((cleaned.length === 12 || cleaned.length === 13) && cleaned.startsWith('55')) {
+    cleaned = cleaned.slice(2);
+  }
+  if (cleaned.length !== 10 && cleaned.length !== 11) return null;
+  const ddd = cleaned.slice(0, 2);
+  if (!/^[1-9][0-9]$/.test(ddd)) return null;
+  // Aceita só DDDs conhecidos (filtra dígitos aleatórios)
+  return DDD_TO_STATE[ddd] ? ddd : null;
+}
+
+function normalizePackage(p: string | null | undefined): 'lembranca' | 'economico' | 'completo' | 'unknown' {
+  const s = String(p || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
+  if (s.startsWith('lemb')) return 'lembranca';
+  if (s.startsWith('econ')) return 'economico';
+  if (s.startsWith('comp')) return 'completo';
+  return 'unknown';
+}
+
+function normalizeStatus(s: string | null | undefined): 'confirmado' | 'pendente' | 'cancelado' | 'other' {
+  const x = String(s || '').toLowerCase();
+  if (x.startsWith('confirm')) return 'confirmado';
+  if (x.startsWith('pend')) return 'pendente';
+  if (x.startsWith('cancel')) return 'cancelado';
+  return 'other';
+}
+
+/* ───────── Sheets endpoints (Pagamentos + Comportamento + Aquisição) ───────── */
+
+async function handleSheetsBookings(_req: VercelRequest, res: VercelResponse) {
+  // Lê toda a tabela de bookings (1 row = 1 customer, com Qtd ensaios agregado)
+  const rows = await fetchSheetRange(BOOKINGS_SHEET_ID, 'A2:L1000');
+
+  type PkgStat = { customers: number; ensaios: number };
+  const byPackage: Record<string, PkgStat> = {
+    lembranca: { customers: 0, ensaios: 0 },
+    economico: { customers: 0, ensaios: 0 },
+    completo:  { customers: 0, ensaios: 0 },
+    unknown:   { customers: 0, ensaios: 0 },
+  };
+  const byStatus: Record<string, PkgStat> = {
+    confirmado: { customers: 0, ensaios: 0 },
+    pendente:   { customers: 0, ensaios: 0 },
+  };
+  const byState: Record<string, number> = {};
+  const byDDD:   Record<string, number> = {};
+
+  let totalCustomers = 0;
+  let totalEnsaios = 0;
+  const recent: Array<{ name: string; pacote: string; ultima_data: string; qtd: number; status: string }> = [];
+
+  for (const row of rows) {
+    // Skip linhas vazias
+    if (!row[0] || !row[0].trim()) continue;
+
+    const name      = row[0];
+    const whatsapp  = row[2] || '';
+    const pacote    = normalizePackage(row[7]);
+    const ultData   = row[8] || '';
+    const qtd       = Number(row[9]) || 0;
+    const statusRaw = row[10] || '';
+    const status    = normalizeStatus(statusRaw);
+
+    // Cancelados são noise (user explicitou) — pula
+    if (status === 'cancelado') continue;
+
+    totalCustomers++;
+    totalEnsaios += qtd;
+
+    byPackage[pacote].customers++;
+    byPackage[pacote].ensaios += qtd;
+
+    if (status === 'confirmado' || status === 'pendente') {
+      byStatus[status].customers++;
+      byStatus[status].ensaios += qtd;
+    }
+
+    const ddd = extractDDD(whatsapp);
+    if (ddd) {
+      byDDD[ddd] = (byDDD[ddd] || 0) + 1;
+      const stateInfo = DDD_TO_STATE[ddd];
+      if (stateInfo) byState[stateInfo.state] = (byState[stateInfo.state] || 0) + 1;
+    }
+
+    recent.push({ name, pacote, ultima_data: ultData, qtd, status: statusRaw });
+  }
+
+  // Top 15 customers ordenados por última data (assume DD/MM/YYYY)
+  recent.sort((a, b) => {
+    const parse = (s: string) => {
+      const m = s.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+      return m ? new Date(`${m[3]}-${m[2]}-${m[1]}T12:00:00`).getTime() : 0;
+    };
+    return parse(b.ultima_data) - parse(a.ultima_data);
+  });
+
+  const dddList = Object.entries(byDDD)
+    .map(([ddd, count]) => {
+      const info = DDD_TO_STATE[ddd] || { state: '?', region: '?' };
+      return { ddd, state: info.state, region: info.region, count };
+    })
+    .sort((a, b) => b.count - a.count);
+
+  const stateList = Object.entries(byState)
+    .map(([state, count]) => ({ state, count }))
+    .sort((a, b) => b.count - a.count);
+
+  return res.status(200).json({
+    fetched_at:      new Date().toISOString(),
+    next_refresh:    new Date(Date.now() + 12 * 3600 * 1000).toISOString(),
+    total_customers: totalCustomers,
+    total_ensaios:   totalEnsaios,
+    by_package:      byPackage,
+    by_status:       byStatus,
+    by_state:        stateList,
+    by_ddd:          dddList,
+    recent:          recent.slice(0, 15),
+  });
+}
+
+async function handleSheetsLeads(req: VercelRequest, res: VercelResponse) {
+  const days = req.query.range
+    ? Math.min(Math.max(parseInt(String(req.query.range), 10) || 28, 1), 365)
+    : 0; // 0 = sem filtro (lifetime)
+
+  const rows = await fetchSheetRange(LEADS_SHEET_ID, 'A2:F1000');
+
+  const cutoff = days > 0 ? Date.now() - days * 24 * 60 * 60 * 1000 : 0;
+
+  const bySource: Record<string, number> = {};
+  const byIntent: Record<string, number> = { sim: 0, nao: 0, none: 0 };
+  const byState:  Record<string, number> = {};
+  const byDDD:    Record<string, number> = {};
+  const dailyMap: Record<string, number> = {};
+
+  let total = 0;
+  const recent: Array<{
+    data_hora: string; nome: string; email: string; fonte: string; vai_joinville: string;
+  }> = [];
+
+  for (const row of rows) {
+    if (!row[0]) continue;
+    const dh        = row[0];
+    const vai       = String(row[1] || '').toLowerCase();
+    const nome      = row[2] || '';
+    const whatsapp  = row[3] || '';
+    const email     = row[4] || '';
+    const fonte     = row[5] || 'unknown';
+
+    const ts = new Date(dh).getTime();
+    if (Number.isNaN(ts)) continue;
+    if (cutoff > 0 && ts < cutoff) continue;
+
+    total++;
+
+    bySource[fonte] = (bySource[fonte] || 0) + 1;
+    if (vai === 'sim') byIntent.sim++;
+    else if (vai.startsWith('nã') || vai === 'nao') byIntent.nao++;
+    else byIntent.none++;
+
+    const ddd = extractDDD(whatsapp);
+    if (ddd) {
+      byDDD[ddd] = (byDDD[ddd] || 0) + 1;
+      const stateInfo = DDD_TO_STATE[ddd];
+      if (stateInfo) byState[stateInfo.state] = (byState[stateInfo.state] || 0) + 1;
+    }
+
+    const dateKey = new Date(ts).toISOString().slice(0, 10);
+    dailyMap[dateKey] = (dailyMap[dateKey] || 0) + 1;
+
+    recent.push({ data_hora: dh, nome, email, fonte, vai_joinville: vai });
+  }
+
+  recent.sort((a, b) => new Date(b.data_hora).getTime() - new Date(a.data_hora).getTime());
+
+  const dddList = Object.entries(byDDD)
+    .map(([ddd, count]) => {
+      const info = DDD_TO_STATE[ddd] || { state: '?', region: '?' };
+      return { ddd, state: info.state, region: info.region, count };
+    })
+    .sort((a, b) => b.count - a.count);
+
+  const stateList = Object.entries(byState)
+    .map(([state, count]) => ({ state, count }))
+    .sort((a, b) => b.count - a.count);
+
+  const daily = Object.entries(dailyMap)
+    .map(([date, count]) => ({ date, count }))
+    .sort((a, b) => a.date.localeCompare(b.date));
+
+  return res.status(200).json({
+    fetched_at:   new Date().toISOString(),
+    next_refresh: new Date(Date.now() + 12 * 3600 * 1000).toISOString(),
+    range_days:   days || 'all',
+    total,
+    by_source:    bySource,
+    by_intent:    byIntent,
+    by_state:     stateList,
+    by_ddd:       dddList,
+    daily,
+    recent:       recent.slice(0, 20),
+  });
+}
+
 async function handleSheetsPing(_req: VercelRequest, res: VercelResponse) {
   // Verifica env var primeiro
   let saEmail = 'unknown';
@@ -1491,6 +1772,24 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       console.error('[admin-bookings/sheets-ping]', msg);
+      return res.status(500).json({ error: msg });
+    }
+  }
+  if (endpoint === 'sheets-bookings') {
+    try {
+      return await handleSheetsBookings(req, res);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      console.error('[admin-bookings/sheets-bookings]', msg);
+      return res.status(500).json({ error: msg });
+    }
+  }
+  if (endpoint === 'sheets-leads') {
+    try {
+      return await handleSheetsLeads(req, res);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      console.error('[admin-bookings/sheets-leads]', msg);
       return res.status(500).json({ error: msg });
     }
   }
