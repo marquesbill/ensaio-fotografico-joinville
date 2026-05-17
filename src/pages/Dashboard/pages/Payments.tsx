@@ -258,9 +258,9 @@ export function Payments({ token }: { token: string }) {
       </div>
 
       <p className="text-center text-[10px] text-[#c5a3d4]/30 mt-8 pb-4">
-        Fonte: planilha agendamentos canon · 1 row = 1 cliente · Qtd ensaios agregado
+        Fonte: planilha agendamentos canon · aba <strong>Agendamentos</strong> · 1 row = 1 ensaio
         <br/>
-        Receita e dados financeiros: tratados no Sharp.
+        Cancelados ignorados. Receita e dados financeiros: tratados no Sharp.
       </p>
     </div>
   );
