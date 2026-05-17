@@ -987,6 +987,142 @@ async function handleGa4Funnel(req: VercelRequest, res: VercelResponse) {
   });
 }
 
+/* ───────── GA4 Behavior (página 6 do dashboard) ───────── */
+
+async function handleGa4Behavior(req: VercelRequest, res: VercelResponse) {
+  if (!process.env.GA4_OAUTH_REFRESH_TOKEN) {
+    return res.status(503).json({
+      error:   'OAuth GA4 não configurado',
+      details: 'Veja docs/ga4-oauth-setup.md',
+    });
+  }
+
+  const days = Math.min(Math.max(parseInt(String(req.query.range || '28'), 10) || 28, 1), 365);
+  const property = `properties/${GA4_PROPERTY_ID}`;
+  const client = buildGa4Client();
+
+  const periodCurrent  = { startDate: daysAgo(days), endDate: 'today' };
+  const periodPrevious = { startDate: daysAgo(days * 2), endDate: daysAgo(days + 1) };
+
+  const [
+    devicesCur, devicesPrev,
+    newReturning,
+    hourReport,
+    dayOfWeekReport,
+    cityReport,
+  ] = await Promise.all([
+    // Device — current
+    client.runReport({
+      property, dateRanges: [periodCurrent],
+      dimensions: [{ name: 'deviceCategory' }],
+      metrics:    [{ name: 'sessions' }],
+      orderBys:   [{ metric: { metricName: 'sessions' }, desc: true }],
+    }),
+    // Device — previous (pra delta)
+    client.runReport({
+      property, dateRanges: [periodPrevious],
+      dimensions: [{ name: 'deviceCategory' }],
+      metrics:    [{ name: 'sessions' }],
+    }),
+    // New vs Returning
+    client.runReport({
+      property, dateRanges: [periodCurrent],
+      dimensions: [{ name: 'newVsReturning' }],
+      metrics:    [{ name: 'sessions' }],
+    }),
+    // Hour of day (0-23)
+    client.runReport({
+      property, dateRanges: [periodCurrent],
+      dimensions: [{ name: 'hour' }],
+      metrics:    [{ name: 'sessions' }],
+      orderBys:   [{ dimension: { dimensionName: 'hour' } }],
+    }),
+    // Day of week (0=Sunday..6=Saturday)
+    client.runReport({
+      property, dateRanges: [periodCurrent],
+      dimensions: [{ name: 'dayOfWeek' }],
+      metrics:    [{ name: 'sessions' }],
+      orderBys:   [{ dimension: { dimensionName: 'dayOfWeek' } }],
+    }),
+    // City (top 20)
+    client.runReport({
+      property, dateRanges: [periodCurrent],
+      dimensions: [{ name: 'city' }, { name: 'country' }],
+      metrics:    [{ name: 'sessions' }],
+      orderBys:   [{ metric: { metricName: 'sessions' }, desc: true }],
+      limit:      20,
+    }),
+  ]);
+
+  const parseRows = (rows: NonNullable<typeof devicesCur[0]['rows']>): Record<string, number> => {
+    const m: Record<string, number> = {};
+    rows.forEach(r => {
+      const k = r.dimensionValues?.[0]?.value || 'unknown';
+      m[k] = Number(r.metricValues?.[0]?.value || 0);
+    });
+    return m;
+  };
+
+  const deviceCur  = parseRows(devicesCur[0].rows  || []);
+  const devicePrev = parseRows(devicesPrev[0].rows || []);
+  const totalCur   = Object.values(deviceCur).reduce((s, n) => s + n, 0);
+  const totalPrev  = Object.values(devicePrev).reduce((s, n) => s + n, 0);
+
+  const devices = ['mobile', 'desktop', 'tablet', 'smart tv'].map(key => {
+    const cur  = deviceCur[key]  || 0;
+    const prev = devicePrev[key] || 0;
+    return {
+      device:   key,
+      sessions: cur,
+      share:    totalCur  > 0 ? cur / totalCur   : 0,
+      prevSessions: prev,
+      prevShare:    totalPrev > 0 ? prev / totalPrev : 0,
+      deltaPct: pctDelta(cur, prev),
+    };
+  }).filter(d => d.sessions > 0 || d.prevSessions > 0);
+
+  const nrMap = parseRows(newReturning[0].rows || []);
+  const newCount  = nrMap['new']       || 0;
+  const retCount  = nrMap['returning'] || 0;
+  const nrTotal   = newCount + retCount;
+
+  const hourMap = parseRows(hourReport[0].rows || []);
+  const hours = Array.from({ length: 24 }, (_, h) => ({
+    hour:     h,
+    sessions: hourMap[String(h)] || hourMap[String(h).padStart(2, '0')] || 0,
+  }));
+  const peakHour = hours.reduce((max, h) => h.sessions > max.sessions ? h : max, hours[0]);
+
+  const dowMap = parseRows(dayOfWeekReport[0].rows || []);
+  const dayNames = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'];
+  const daysOfWeek = Array.from({ length: 7 }, (_, d) => ({
+    day:      d,
+    name:     dayNames[d],
+    sessions: dowMap[String(d)] || 0,
+  }));
+
+  const cities = (cityReport.rows || []).map(r => ({
+    city:     r.dimensionValues?.[0]?.value || '(unknown)',
+    country:  r.dimensionValues?.[1]?.value || '(unknown)',
+    sessions: Number(r.metricValues?.[0]?.value || 0),
+  }));
+
+  return res.status(200).json({
+    range:        { start: periodCurrent.startDate, end: 'today', days },
+    fetched_at:   new Date().toISOString(),
+    next_refresh: new Date(Date.now() + 12 * 3600 * 1000).toISOString(),
+    devices,
+    new_vs_returning: {
+      new:       { count: newCount, share: nrTotal > 0 ? newCount / nrTotal : 0 },
+      returning: { count: retCount, share: nrTotal > 0 ? retCount / nrTotal : 0 },
+    },
+    hours,
+    peak_hour:   peakHour,
+    days_of_week: daysOfWeek,
+    cities,
+  });
+}
+
 /* ───────── GA4 Engagement (página 4 do dashboard) ───────── */
 
 async function handleGa4Engagement(req: VercelRequest, res: VercelResponse) {
@@ -1763,6 +1899,15 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       console.error('[admin-bookings/ga4-engagement]', msg);
+      return res.status(500).json({ error: msg });
+    }
+  }
+  if (endpoint === 'ga4-behavior') {
+    try {
+      return await handleGa4Behavior(req, res);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      console.error('[admin-bookings/ga4-behavior]', msg);
       return res.status(500).json({ error: msg });
     }
   }
