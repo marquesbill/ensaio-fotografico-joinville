@@ -4,6 +4,7 @@ import { BrowserRouter, Routes, Route } from 'react-router-dom';
 import App from './App.tsx';
 import Agendamento, { AgendamentoSucesso } from './pages/Agendamento.tsx';
 import Admin from './pages/Admin.tsx';
+import Dashboard from './pages/Dashboard/Dashboard.tsx';
 import { trackRouteChanges } from './lib/analytics';
 import './index.css';
 
@@ -18,6 +19,7 @@ createRoot(document.getElementById('root')!).render(
         <Route path="/agendamento" element={<Agendamento />} />
         <Route path="/agendamento/sucesso" element={<AgendamentoSucesso />} />
         <Route path="/admin" element={<Admin />} />
+        <Route path="/dashboard" element={<Dashboard />} />
       </Routes>
     </BrowserRouter>
   </StrictMode>,
