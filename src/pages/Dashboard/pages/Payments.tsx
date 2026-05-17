@@ -10,10 +10,9 @@
  */
 
 import { useEffect, useMemo, useState } from 'react';
-import { ListChecks, CheckCircle2, Clock, TrendingUp } from 'lucide-react';
+import { CheckCircle2, Clock, TrendingUp } from 'lucide-react';
 
 import { KpiCard } from '../components/KpiCard';
-import { DataTable } from '../components/DataTable';
 import { DataSourceBadge } from '../components/DataSourceBadge';
 
 interface Booking {
@@ -37,19 +36,6 @@ const RANGE_OPTIONS = [
   { key: 'all', label: 'Tudo',    days: 99999 },
 ] as const;
 
-function timeAgo(iso?: string) {
-  if (!iso) return '—';
-  const ms = Date.now() - new Date(iso).getTime();
-  if (Number.isNaN(ms)) return '—';
-  const min = Math.floor(ms / 60000);
-  if (min < 1) return 'agora';
-  if (min < 60) return `há ${min}min`;
-  const h = Math.floor(min / 60);
-  if (h < 24) return `há ${h}h`;
-  const d = Math.floor(h / 24);
-  return `há ${d}d`;
-}
-
 function normalizeBooking(b: Booking): Booking {
   return {
     ...b,
@@ -60,14 +46,17 @@ function normalizeBooking(b: Booking): Booking {
 }
 
 function computeStats(bookings: Booking[]) {
-  let confirmedCount = 0, pendingCount = 0, cancelledCount = 0;
-  const byPackage: Record<string, { count: number; pending: number; cancelled: number }> = {};
+  let confirmedCount = 0, pendingCount = 0;
+  const byPackage: Record<string, { count: number; pending: number }> = {};
+
+  // Cancelados ignorados intencionalmente: maioria são clientes que marcaram
+  // 3-4 vezes e ficaram com 1. A estatística não agrega valor aqui.
 
   bookings.forEach(b => {
     const status = (b.status || '').toLowerCase();
     const pkgKey = (b.package || 'unknown').toLowerCase();
 
-    byPackage[pkgKey] = byPackage[pkgKey] || { count: 0, pending: 0, cancelled: 0 };
+    byPackage[pkgKey] = byPackage[pkgKey] || { count: 0, pending: 0 };
 
     if (status.startsWith('confirm')) {
       confirmedCount++;
@@ -75,25 +64,16 @@ function computeStats(bookings: Booking[]) {
     } else if (status.startsWith('pend')) {
       pendingCount++;
       byPackage[pkgKey].pending++;
-    } else if (status.startsWith('cancel')) {
-      cancelledCount++;
-      byPackage[pkgKey].cancelled++;
     }
   });
 
-  const total = confirmedCount + pendingCount + cancelledCount;
-  const conversionRate = total > 0 ? confirmedCount / total : 0;
+  const total = confirmedCount + pendingCount;
+  // Taxa de "fechamento": % das reservas tentadas que viraram pagamento.
+  // Não confundir com conversion-rate de marketing (leads → reserva), que vai
+  // ser adicionado quando integrarmos a planilha de leads.
+  const closingRate = total > 0 ? confirmedCount / total : 0;
 
-  return { confirmedCount, pendingCount, cancelledCount, total, conversionRate, byPackage };
-}
-
-function StatusPill({ status }: { status: string }) {
-  const s = (status || '').toLowerCase();
-  let color = 'bg-white/5 text-white/60 border-white/10';
-  if (s.startsWith('confirm'))      color = 'bg-emerald-500/15 text-emerald-300 border-emerald-500/30';
-  else if (s.startsWith('pend'))    color = 'bg-[#e87060]/15 text-[#e87060] border-[#e87060]/30';
-  else if (s.startsWith('cancel'))  color = 'bg-red-500/10 text-red-300/80 border-red-500/20';
-  return <span className={`inline-block px-2 py-0.5 rounded text-[10px] font-semibold uppercase tracking-wider border ${color}`}>{status}</span>;
+  return { confirmedCount, pendingCount, total, closingRate, byPackage };
 }
 
 export function Payments({ token }: { token: string }) {
@@ -141,16 +121,6 @@ export function Payments({ token }: { token: string }) {
 
   const lifetimeStats = useMemo(() => computeStats(bookings), [bookings]);
   const stats         = useMemo(() => computeStats(filtered), [filtered]);
-
-  const recent = useMemo(() => {
-    return [...filtered]
-      .sort((a, b) => {
-        const ta = a.createdAt ? new Date(a.createdAt).getTime() : 0;
-        const tb = b.createdAt ? new Date(b.createdAt).getTime() : 0;
-        return tb - ta;
-      })
-      .slice(0, 15);
-  }, [filtered]);
 
   // Pra cards de pacote — fallback caso bookings tenham várias variações de label
   const pkgCard = (matchStart: string, label: string) => {
@@ -212,11 +182,11 @@ export function Payments({ token }: { token: string }) {
               Total acumulado · desde o lançamento
             </p>
             <p className="font-black text-3xl md:text-4xl text-white tabular-nums mt-1">
-              {loading ? '—' : `${lifetimeStats.confirmedCount.toLocaleString('pt-BR')} confirmados`}
+              {loading ? '—' : `${lifetimeStats.confirmedCount.toLocaleString('pt-BR')} pacotes fechados`}
             </p>
-            <p className="text-[11px] text-[#d4baeb]/50 mt-1">Reservas pagas · todas as datas</p>
+            <p className="text-[11px] text-[#d4baeb]/50 mt-1">Reservas confirmadas · todas as datas</p>
           </div>
-          <div className="flex items-baseline gap-6 text-sm">
+          <div className="flex items-baseline gap-8 text-sm">
             <div>
               <p className="text-[10px] uppercase tracking-wider text-white/40 font-semibold">Pendentes</p>
               <p className="text-[#e87060] font-black tabular-nums text-2xl mt-0.5">
@@ -224,16 +194,11 @@ export function Payments({ token }: { token: string }) {
               </p>
             </div>
             <div>
-              <p className="text-[10px] uppercase tracking-wider text-white/40 font-semibold">Cancelados</p>
-              <p className="text-white/60 font-black tabular-nums text-2xl mt-0.5">
-                {loading ? '—' : lifetimeStats.cancelledCount.toLocaleString('pt-BR')}
-              </p>
-            </div>
-            <div>
-              <p className="text-[10px] uppercase tracking-wider text-white/40 font-semibold">Taxa conv.</p>
+              <p className="text-[10px] uppercase tracking-wider text-white/40 font-semibold">Taxa de fechamento</p>
               <p className="text-white font-black tabular-nums text-2xl mt-0.5">
-                {loading ? '—' : `${(lifetimeStats.conversionRate * 100).toFixed(1)}%`}
+                {loading ? '—' : `${(lifetimeStats.closingRate * 100).toFixed(1)}%`}
               </p>
+              <p className="text-[9px] text-white/30 mt-0.5">confirmados / reservas iniciadas</p>
             </div>
           </div>
         </div>
@@ -245,19 +210,12 @@ export function Payments({ token }: { token: string }) {
       </p>
 
       {/* KPIs (filtrados pelo range) */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 mb-6">
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-6">
         <KpiCard
-          label="Total de reservas"
-          value={loading ? '—' : stats.total.toLocaleString('pt-BR')}
-          icon={ListChecks} source="Sheets"
-          hint="Confirmados + Pendentes + Cancelados no período"
-          loading={loading}
-        />
-        <KpiCard
-          label="Confirmados"
+          label="Pacotes fechados"
           value={loading ? '—' : stats.confirmedCount.toLocaleString('pt-BR')}
           icon={CheckCircle2} source="Sheets"
-          hint="Reservas pagas com sucesso"
+          hint="Reservas confirmadas no período"
           loading={loading}
         />
         <KpiCard
@@ -268,36 +226,35 @@ export function Payments({ token }: { token: string }) {
           loading={loading}
         />
         <KpiCard
-          label="Taxa de conversão"
-          value={loading ? '—' : `${(stats.conversionRate * 100).toFixed(1)}%`}
+          label="Taxa de fechamento"
+          value={loading ? '—' : `${(stats.closingRate * 100).toFixed(1)}%`}
           icon={TrendingUp} source="Sheets"
-          hint="Confirmados / total (inclui cancelados)"
+          hint="Confirmados / (Confirmados + Pendentes)"
           loading={loading}
         />
       </div>
 
-      {/* Status breakdown */}
+      {/* Status breakdown — confirmados vs pendentes (cancelados ignorados) */}
       <div className="rounded-2xl border border-white/10 bg-white/[0.03] backdrop-blur-sm p-5 mb-6">
         <div className="flex items-baseline justify-between mb-4">
           <div>
-            <h3 className="text-sm font-bold text-white">Distribuição por status</h3>
+            <h3 className="text-sm font-bold text-white">Confirmados vs Pendentes</h3>
             <p className="text-[11px] text-[#d4baeb]/50 mt-0.5">
-              {stats.total > 0 ? `${stats.total} booking${stats.total === 1 ? '' : 's'} no período` : 'Sem dados no período'}
+              {stats.total > 0 ? `${stats.total} reserva${stats.total === 1 ? '' : 's'} no período` : 'Sem dados no período'}
             </p>
           </div>
           <p className="text-[9px] uppercase tracking-wider text-[#c5a3d4]/30">Sheets</p>
         </div>
         <div className="space-y-3">
           {loading ? (
-            [...Array(3)].map((_, i) => (
+            [...Array(2)].map((_, i) => (
               <div key={i} className="h-10 bg-white/[0.02] rounded animate-pulse" />
             ))
           ) : [
             { key: 'confirmed', label: 'Confirmados', count: stats.confirmedCount, color: '#7a3f8f' },
             { key: 'pending',   label: 'Pendentes',   count: stats.pendingCount,   color: '#e87060' },
-            { key: 'cancelled', label: 'Cancelados',  count: stats.cancelledCount, color: '#71717a' },
           ].map(row => {
-            const maxCount = Math.max(stats.confirmedCount, stats.pendingCount, stats.cancelledCount, 1);
+            const maxCount = Math.max(stats.confirmedCount, stats.pendingCount, 1);
             const widthPct = (row.count / maxCount) * 100;
             const sharePct = stats.total > 0 ? (row.count / stats.total) * 100 : 0;
             return (
@@ -319,12 +276,12 @@ export function Payments({ token }: { token: string }) {
         </div>
       </div>
 
-      {/* Reservas por pacote */}
+      {/* Pacotes fechados por tipo */}
       <div className="rounded-2xl border border-white/10 bg-white/[0.03] backdrop-blur-sm p-5 mb-6">
         <div className="flex items-baseline justify-between mb-4">
           <div>
-            <h3 className="text-sm font-bold text-white">Reservas por pacote</h3>
-            <p className="text-[11px] text-[#d4baeb]/50 mt-0.5">Breakdown por pacote escolhido (confirmados/pendentes/cancelados)</p>
+            <h3 className="text-sm font-bold text-white">Pacotes por tipo</h3>
+            <p className="text-[11px] text-[#d4baeb]/50 mt-0.5">Quantos confirmados de cada pacote</p>
           </div>
           <p className="text-[9px] uppercase tracking-wider text-[#c5a3d4]/30">Sheets</p>
         </div>
@@ -342,12 +299,9 @@ export function Payments({ token }: { token: string }) {
               <p className="text-[11px] font-bold uppercase tracking-widest text-[#c5a3d4]/70">{card.label}</p>
               <p className="font-black text-3xl text-white tabular-nums mt-2">{card.count}</p>
               <p className="text-[11px] text-[#d4baeb]/50 mt-1">
-                confirmado{card.count === 1 ? '' : 's'}
+                fechado{card.count === 1 ? '' : 's'}
                 {card.pending > 0 && (
                   <span className="text-[#e87060]/70 ml-2">· {card.pending} pendente{card.pending === 1 ? '' : 's'}</span>
-                )}
-                {card.cancelled > 0 && (
-                  <span className="text-white/40 ml-2">· {card.cancelled} cancelado{card.cancelled === 1 ? '' : 's'}</span>
                 )}
               </p>
             </div>
@@ -355,35 +309,20 @@ export function Payments({ token }: { token: string }) {
         </div>
       </div>
 
-      {/* Recent transactions */}
-      <DataTable
-        title="Reservas recentes"
-        source="Sheets"
-        loading={loading}
-        rows={recent.map(b => ({
-          createdAt: timeAgo(b.createdAt),
-          name:      b.name,
-          package:   b.package,
-          status:    b.status,
-          date:      b.date && b.start ? `${b.date.split('-').reverse().join('/')} ${b.start}` : (b.date || '—'),
-        }))}
-        columns={[
-          { key: 'createdAt', label: 'Criado',   align: 'left' },
-          { key: 'name',      label: 'Cliente',  align: 'left' },
-          { key: 'package',   label: 'Pacote',   align: 'left' },
-          {
-            key: 'status', label: 'Status', align: 'left',
-            render: (r) => <StatusPill status={String(r.status)} />,
-          },
-          { key: 'date',      label: 'Sessão',   align: 'left' },
-        ]}
-        maxRows={15}
-      />
+      {/* Placeholder pra integração com leads */}
+      <div className="rounded-2xl border border-dashed border-[#e87060]/30 bg-[#e87060]/5 p-5">
+        <p className="text-[10px] uppercase tracking-widest text-[#e87060]/70 font-bold">Próximo passo</p>
+        <p className="text-sm text-white font-semibold mt-1">
+          Integração com planilha de leads em andamento
+        </p>
+        <p className="text-[11px] text-[#d4baeb]/60 mt-1.5 leading-relaxed">
+          Quando rolar, essa página vai mostrar <strong className="text-white">taxa de conversão leads → reserva</strong>
+          {' '}— a métrica que de fato importa pra avaliar campanhas. Receita continua sendo tratada no Sharp.
+        </p>
+      </div>
 
       <p className="text-center text-[10px] text-[#c5a3d4]/30 mt-8 pb-4">
-        Fonte: planilha de bookings via Apps Script · refresh manual (botão acima)
-        <br/>
-        <span className="text-[#e87060]/60">⚠️ Migração pendente: dados canon vêm da planilha agendamentos (1o5qmsX...) — em breve</span>
+        Fonte: planilha de bookings via Apps Script · refresh manual
       </p>
     </div>
   );
