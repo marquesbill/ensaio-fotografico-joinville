@@ -29,6 +29,7 @@ import {
 import { Overview } from './pages/Overview';
 import { Acquisition } from './pages/Acquisition';
 import { Funnel } from './pages/Funnel';
+import { Engagement } from './pages/Engagement';
 
 type DashboardPage = 'overview' | 'acquisition' | 'funnel' | 'engagement' | 'payments' | 'behavior';
 
@@ -36,7 +37,7 @@ const NAV: Array<{ key: DashboardPage; label: string; icon: typeof LayoutGrid; s
   { key: 'overview',    label: 'Visão Geral',    icon: LayoutGrid,        status: 'live' },
   { key: 'acquisition', label: 'Aquisição',      icon: TrendingUp,         status: 'live' },
   { key: 'funnel',      label: 'Funil de Pacotes', icon: Filter,           status: 'live' },
-  { key: 'engagement',  label: 'Engajamento',    icon: MousePointerClick, status: 'wip' },
+  { key: 'engagement',  label: 'Engajamento',    icon: MousePointerClick, status: 'live' },
   { key: 'payments',    label: 'Pagamentos',     icon: CreditCard,        status: 'wip' },
   { key: 'behavior',    label: 'Comportamento',  icon: Smartphone,        status: 'wip' },
 ];
@@ -156,7 +157,8 @@ function DashboardShell({ token, user, onLogout }: { token: string; user: string
         {activePage === 'overview'    && <Overview token={token} />}
         {activePage === 'acquisition' && <Acquisition token={token} />}
         {activePage === 'funnel'      && <Funnel token={token} />}
-        {activePage !== 'overview' && activePage !== 'acquisition' && activePage !== 'funnel' && (
+        {activePage === 'engagement'  && <Engagement token={token} />}
+        {activePage !== 'overview' && activePage !== 'acquisition' && activePage !== 'funnel' && activePage !== 'engagement' && (
           <div className="p-10 flex items-center justify-center h-full">
             <div className="text-center">
               <p className="text-[#c5a3d4]/60 text-sm uppercase tracking-widest">Em construção</p>

@@ -563,6 +563,172 @@ async function handleGa4Funnel(req: VercelRequest, res: VercelResponse) {
   });
 }
 
+/* ───────── GA4 Engagement (página 4 do dashboard) ───────── */
+
+async function handleGa4Engagement(req: VercelRequest, res: VercelResponse) {
+  if (!process.env.GA4_OAUTH_REFRESH_TOKEN) {
+    return res.status(503).json({
+      error:   'OAuth GA4 não configurado',
+      details: 'Veja docs/ga4-oauth-setup.md',
+    });
+  }
+
+  const days = Math.min(Math.max(parseInt(String(req.query.range || '28'), 10) || 28, 1), 365);
+  const property = `properties/${GA4_PROPERTY_ID}`;
+  const client = buildGa4Client();
+
+  const periodCurrent  = { startDate: daysAgo(days),     endDate: 'today' };
+  const periodPrevious = { startDate: daysAgo(days * 2), endDate: daysAgo(days + 1) };
+
+  const SCROLL_EVENTS = ['scroll_depth_25', 'scroll_depth_50', 'scroll_depth_75', 'scroll_depth_100'];
+  const FORM_EVENTS = [
+    'hero_form_started', 'hero_form_submit_attempt', 'hero_form_submit_success', 'hero_form_submit_error', 'hero_form_submit_blocked_validation',
+    'footer_form_started', 'footer_form_submit_attempt', 'footer_form_submit_success', 'footer_form_submit_error', 'footer_form_submit_blocked_validation',
+  ];
+
+  const [kpiCur, kpiPrev, scrollReport, formsReport, faqReport, eventsReport] = await Promise.all([
+    // KPIs atuais
+    client.runReport({
+      property,
+      dateRanges: [periodCurrent],
+      metrics: [
+        { name: 'averageSessionDuration' },
+        { name: 'engagementRate' },
+        { name: 'screenPageViewsPerSession' },
+        { name: 'bounceRate' },
+      ],
+    }),
+    // KPIs anteriores
+    client.runReport({
+      property,
+      dateRanges: [periodPrevious],
+      metrics: [
+        { name: 'averageSessionDuration' },
+        { name: 'engagementRate' },
+        { name: 'screenPageViewsPerSession' },
+        { name: 'bounceRate' },
+      ],
+    }),
+    // Scroll depth (4 thresholds)
+    client.runReport({
+      property,
+      dateRanges: [periodCurrent],
+      dimensions: [{ name: 'eventName' }],
+      metrics:    [{ name: 'sessions' }, { name: 'eventCount' }],
+      dimensionFilter: {
+        filter: { fieldName: 'eventName', inListFilter: { values: SCROLL_EVENTS } },
+      },
+    }),
+    // Formulários (hero + footer, todas as etapas)
+    client.runReport({
+      property,
+      dateRanges: [periodCurrent],
+      dimensions: [{ name: 'eventName' }],
+      metrics:    [{ name: 'sessions' }, { name: 'eventCount' }],
+      dimensionFilter: {
+        filter: { fieldName: 'eventName', inListFilter: { values: FORM_EVENTS } },
+      },
+    }),
+    // FAQ opens (faq_open_*)
+    client.runReport({
+      property,
+      dateRanges: [periodCurrent],
+      dimensions: [{ name: 'eventName' }],
+      metrics:    [{ name: 'eventCount' }, { name: 'sessions' }],
+      dimensionFilter: {
+        filter: {
+          fieldName:    'eventName',
+          stringFilter: { matchType: 'BEGINS_WITH', value: 'faq_open_' },
+        },
+      },
+      orderBys: [{ metric: { metricName: 'eventCount' }, desc: true }],
+      limit: 20,
+    }),
+    // Top custom events (excluindo padrão GA4)
+    client.runReport({
+      property,
+      dateRanges: [periodCurrent],
+      dimensions: [{ name: 'eventName' }],
+      metrics:    [{ name: 'eventCount' }, { name: 'sessions' }],
+      orderBys:   [{ metric: { metricName: 'eventCount' }, desc: true }],
+      limit:      25,
+    }),
+  ]);
+
+  const curRow  = kpiCur[0].rows?.[0]?.metricValues  || [];
+  const prevRow = kpiPrev[0].rows?.[0]?.metricValues || [];
+  const num = (i: number, src: typeof curRow) => Number(src?.[i]?.value || 0);
+
+  const kpis = {
+    avgSessionDuration: { value: num(0, curRow), deltaPct: pctDelta(num(0, curRow), num(0, prevRow)) },
+    engagementRate:     { value: num(1, curRow), deltaPct: pctDelta(num(1, curRow), num(1, prevRow)) },
+    pagesPerSession:    { value: num(2, curRow), deltaPct: pctDelta(num(2, curRow), num(2, prevRow)) },
+    bounceRate:         { value: num(3, curRow), deltaPct: pctDelta(num(3, curRow), num(3, prevRow)) },
+  };
+
+  // Scroll depth — map por depth value
+  const scrollMap: Record<string, { sessions: number; eventCount: number }> = {};
+  (scrollReport.rows || []).forEach(r => {
+    const name = r.dimensionValues?.[0]?.value || '';
+    scrollMap[name] = {
+      sessions:   Number(r.metricValues?.[0]?.value || 0),
+      eventCount: Number(r.metricValues?.[1]?.value || 0),
+    };
+  });
+  const scrollDepth = SCROLL_EVENTS.map(name => ({
+    depth:    parseInt(name.replace('scroll_depth_', ''), 10),
+    sessions: scrollMap[name]?.sessions || 0,
+  }));
+
+  // Formulários — map por evento
+  const formMap: Record<string, number> = {};
+  (formsReport.rows || []).forEach(r => {
+    const name = r.dimensionValues?.[0]?.value || '';
+    formMap[name] = Number(r.metricValues?.[0]?.value || 0); // sessions
+  });
+  const forms = {
+    hero: {
+      started: formMap['hero_form_started'] || 0,
+      attempt: formMap['hero_form_submit_attempt'] || 0,
+      success: formMap['hero_form_submit_success'] || 0,
+      error:   formMap['hero_form_submit_error']   || 0,
+      blocked: formMap['hero_form_submit_blocked_validation'] || 0,
+    },
+    footer: {
+      started: formMap['footer_form_started'] || 0,
+      attempt: formMap['footer_form_submit_attempt'] || 0,
+      success: formMap['footer_form_submit_success'] || 0,
+      error:   formMap['footer_form_submit_error']   || 0,
+      blocked: formMap['footer_form_submit_blocked_validation'] || 0,
+    },
+  };
+
+  // FAQ — parse index from event name
+  const faq = (faqReport.rows || []).map(r => {
+    const name = r.dimensionValues?.[0]?.value || '';
+    const idx  = parseInt(name.replace('faq_open_', ''), 10);
+    return {
+      idx,
+      opens:    Number(r.metricValues?.[0]?.value || 0),
+      sessions: Number(r.metricValues?.[1]?.value || 0),
+    };
+  }).filter(f => !Number.isNaN(f.idx)).sort((a, b) => a.idx - b.idx);
+
+  // Top events
+  const topEvents = (eventsReport.rows || []).map(r => ({
+    event_name: r.dimensionValues?.[0]?.value || 'unknown',
+    count:      Number(r.metricValues?.[0]?.value || 0),
+    sessions:   Number(r.metricValues?.[1]?.value || 0),
+  }));
+
+  return res.status(200).json({
+    range:        { start: periodCurrent.startDate, end: 'today', days },
+    fetched_at:   new Date().toISOString(),
+    next_refresh: new Date(Date.now() + 12 * 3600 * 1000).toISOString(),
+    kpis, scrollDepth, forms, faq, topEvents,
+  });
+}
+
 /* ───────── Action handlers (POST body { action: '...', ... }) ───────── */
 
 async function handleCancel(req: VercelRequest, res: VercelResponse, auth: { user: string }) {
@@ -1167,6 +1333,15 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       console.error('[admin-bookings/ga4-funnel]', msg);
+      return res.status(500).json({ error: msg });
+    }
+  }
+  if (endpoint === 'ga4-engagement') {
+    try {
+      return await handleGa4Engagement(req, res);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      console.error('[admin-bookings/ga4-engagement]', msg);
       return res.status(500).json({ error: msg });
     }
   }
