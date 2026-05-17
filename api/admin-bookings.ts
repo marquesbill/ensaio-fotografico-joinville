@@ -23,7 +23,7 @@ import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { createHmac } from 'crypto';
 import { Resend } from 'resend';
 import { BetaAnalyticsDataClient } from '@google-analytics/data';
-import { OAuth2Client } from 'google-auth-library';
+import { OAuth2Client, JWT } from 'google-auth-library';
 
 /* ───────── Config ───────── */
 
@@ -277,6 +277,117 @@ async function handleGa4Dashboard(req: VercelRequest, res: VercelResponse) {
     next_refresh: new Date(Date.now() + 12 * 3600 * 1000).toISOString(),
     kpis, trend, channels, topEvents,
   });
+}
+
+/* ───────── Google Sheets (Service Account JWT) ───────── */
+
+const LEADS_SHEET_ID    = '1H7AT6rJ0ojyTi4zp0DG6PEUMfzdFn-lUlZ6-8fXNBqA';
+const BOOKINGS_SHEET_ID = '1o5qmsXuMZ0elx-uwD0RcQpD0HzrQBHLU3W1VepP1too';
+
+interface SACredentials {
+  client_email: string;
+  private_key:  string;
+}
+
+function loadSACredentials(): SACredentials {
+  const raw = process.env.GOOGLE_SA_JSON || process.env.GOOGLE_SA_JSON_B64;
+  if (!raw) throw new Error('GOOGLE_SA_JSON (ou _B64) ausente nas env vars do Vercel');
+
+  // Suporta tanto JSON puro quanto base64 (pra contornar UIs que mexem em \n)
+  let jsonStr = raw;
+  if (process.env.GOOGLE_SA_JSON_B64 && !process.env.GOOGLE_SA_JSON) {
+    jsonStr = Buffer.from(raw, 'base64').toString('utf8');
+  }
+
+  let creds: SACredentials;
+  try {
+    creds = JSON.parse(jsonStr) as SACredentials;
+  } catch (e) {
+    throw new Error('GOOGLE_SA_JSON não é JSON válido: ' + (e instanceof Error ? e.message : String(e)));
+  }
+
+  if (!creds.client_email || !creds.private_key) {
+    throw new Error('GOOGLE_SA_JSON faltando client_email ou private_key');
+  }
+
+  // Normaliza \n literal em quebras reais (caso o paste no Vercel tenha mantido \n como texto)
+  if (creds.private_key.includes('\\n')) {
+    creds.private_key = creds.private_key.replace(/\\n/g, '\n');
+  }
+
+  return creds;
+}
+
+function buildSheetsAuth(scopes = ['https://www.googleapis.com/auth/spreadsheets.readonly']): JWT {
+  const creds = loadSACredentials();
+  return new JWT({
+    email:  creds.client_email,
+    key:    creds.private_key,
+    scopes,
+  });
+}
+
+async function fetchSheetRange(spreadsheetId: string, range: string): Promise<string[][]> {
+  const auth = buildSheetsAuth();
+  const tokenResp = await auth.getAccessToken();
+  const token = typeof tokenResp === 'string' ? tokenResp : tokenResp?.token;
+  if (!token) throw new Error('Não foi possível obter access token da SA');
+
+  const url = `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/${encodeURIComponent(range)}`;
+  const r = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
+
+  if (!r.ok) {
+    const body = await r.text();
+    throw new Error(`Sheets API ${r.status}: ${body.slice(0, 300)}`);
+  }
+  const json = await r.json() as { values?: string[][] };
+  return json.values || [];
+}
+
+async function handleSheetsPing(_req: VercelRequest, res: VercelResponse) {
+  // Verifica env var primeiro
+  let saEmail = 'unknown';
+  try {
+    const creds = loadSACredentials();
+    saEmail = creds.client_email;
+  } catch (e) {
+    return res.status(200).json({
+      ok:    false,
+      stage: 'env_var',
+      error: e instanceof Error ? e.message : String(e),
+      hint:  'Vercel → Project Settings → Environment Variables → GOOGLE_SA_JSON',
+    });
+  }
+
+  // Tenta ler cada planilha
+  const sheets = { leads: LEADS_SHEET_ID, bookings: BOOKINGS_SHEET_ID };
+  const results: Record<string, unknown> = {};
+
+  for (const [name, id] of Object.entries(sheets)) {
+    try {
+      const rows = await fetchSheetRange(id, 'A1:Z3');
+      results[name] = {
+        ok:           true,
+        sheet_id:     id,
+        rows_returned: rows.length,
+        headers:       rows[0]    || [],
+        sample_row:    rows[1]    || null,
+      };
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      const isPermissionError = /403|PERMISSION_DENIED|permission/i.test(msg);
+      results[name] = {
+        ok:       false,
+        sheet_id: id,
+        error:    msg,
+        hint:     isPermissionError
+          ? `Compartilhe essa planilha com ${saEmail} (acesso leitor)`
+          : 'Verifique o ID da planilha ou conexão',
+      };
+    }
+  }
+
+  return res.status(200).json({ ok: true, sa_email: saEmail, results });
 }
 
 /* ───────── GA4 Acquisition (página 2 do dashboard) ───────── */
@@ -1371,6 +1482,15 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       console.error('[admin-bookings/ga4-engagement]', msg);
+      return res.status(500).json({ error: msg });
+    }
+  }
+  if (endpoint === 'sheets-ping') {
+    try {
+      return await handleSheetsPing(req, res);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      console.error('[admin-bookings/sheets-ping]', msg);
       return res.status(500).json({ error: msg });
     }
   }

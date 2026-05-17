@@ -36,6 +36,104 @@ const RANGE_OPTIONS = [
   { key: 'all', label: 'Tudo',    days: 99999 },
 ] as const;
 
+interface PingResult {
+  ok: boolean;
+  sa_email?: string;
+  stage?: string;
+  error?: string;
+  hint?: string;
+  results?: Record<string, {
+    ok: boolean;
+    sheet_id: string;
+    rows_returned?: number;
+    headers?: string[];
+    sample_row?: string[] | null;
+    error?: string;
+    hint?: string;
+  }>;
+}
+
+function SheetsSetupStatus({ token }: { token: string }) {
+  const [ping, setPing] = useState<PingResult | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    fetch('/api/admin-bookings?endpoint=sheets-ping', {
+      headers: { Authorization: `Bearer ${token}` },
+    })
+      .then(r => r.json())
+      .then(setPing)
+      .catch(e => setPing({ ok: false, error: e instanceof Error ? e.message : String(e) }))
+      .finally(() => setLoading(false));
+  }, [token]);
+
+  if (loading) {
+    return (
+      <div className="rounded-2xl border border-white/10 bg-white/[0.02] p-5">
+        <p className="text-[10px] uppercase tracking-widest text-[#c5a3d4]/50 font-bold">Verificando integração…</p>
+        <div className="mt-2 h-10 bg-white/[0.03] rounded animate-pulse" />
+      </div>
+    );
+  }
+
+  if (!ping) return null;
+
+  // Env var problem
+  if (ping.stage === 'env_var' || (!ping.ok && !ping.results)) {
+    return (
+      <div className="rounded-2xl border border-red-500/30 bg-red-500/5 p-5">
+        <p className="text-[10px] uppercase tracking-widest text-red-300/70 font-bold">❌ Env var não configurada</p>
+        <p className="text-sm text-white font-semibold mt-1">{ping.error}</p>
+        {ping.hint && <p className="text-[11px] text-[#d4baeb]/60 mt-1.5">{ping.hint}</p>}
+      </div>
+    );
+  }
+
+  return (
+    <div className="rounded-2xl border border-white/10 bg-white/[0.02] p-5 space-y-4">
+      <div>
+        <p className="text-[10px] uppercase tracking-widest text-[#c5a3d4]/70 font-bold">Integração com planilhas</p>
+        <p className="text-[11px] text-[#d4baeb]/50 mt-1">SA: <code className="font-mono text-[10px] text-[#c5a3d4]/80">{ping.sa_email}</code></p>
+      </div>
+
+      {ping.results && Object.entries(ping.results).map(([name, r]) => (
+        <div key={name} className={`rounded-xl border p-3 ${r.ok ? 'border-emerald-500/20 bg-emerald-500/5' : 'border-amber-500/30 bg-amber-500/5'}`}>
+          <div className="flex items-baseline justify-between mb-1">
+            <p className="text-sm font-bold text-white">
+              {r.ok ? '✅' : '⚠️'} Planilha <span className="capitalize">{name}</span>
+            </p>
+            <code className="text-[9px] text-white/30 font-mono truncate ml-2">{r.sheet_id}</code>
+          </div>
+          {r.ok ? (
+            <>
+              <p className="text-[11px] text-[#d4baeb]/60 mb-1.5">
+                {r.rows_returned} linhas lidas · {(r.headers || []).length} colunas
+              </p>
+              <details className="text-[10px]">
+                <summary className="text-emerald-300/80 cursor-pointer hover:text-emerald-200">Ver cabeçalhos</summary>
+                <div className="mt-2 p-2 rounded bg-black/30 font-mono text-[10px] text-white/80 leading-relaxed">
+                  {(r.headers || []).map((h, i) => (
+                    <div key={i}>{i + 1}. {h}</div>
+                  ))}
+                </div>
+              </details>
+            </>
+          ) : (
+            <>
+              <p className="text-[11px] text-amber-200 mb-1">{r.error}</p>
+              {r.hint && (
+                <p className="text-[11px] text-[#d4baeb]/70 mt-1.5">
+                  💡 {r.hint}
+                </p>
+              )}
+            </>
+          )}
+        </div>
+      ))}
+    </div>
+  );
+}
+
 function normalizeBooking(b: Booking): Booking {
   return {
     ...b,
@@ -309,17 +407,8 @@ export function Payments({ token }: { token: string }) {
         </div>
       </div>
 
-      {/* Placeholder pra integração com leads */}
-      <div className="rounded-2xl border border-dashed border-[#e87060]/30 bg-[#e87060]/5 p-5">
-        <p className="text-[10px] uppercase tracking-widest text-[#e87060]/70 font-bold">Próximo passo</p>
-        <p className="text-sm text-white font-semibold mt-1">
-          Integração com planilha de leads em andamento
-        </p>
-        <p className="text-[11px] text-[#d4baeb]/60 mt-1.5 leading-relaxed">
-          Quando rolar, essa página vai mostrar <strong className="text-white">taxa de conversão leads → reserva</strong>
-          {' '}— a métrica que de fato importa pra avaliar campanhas. Receita continua sendo tratada no Sharp.
-        </p>
-      </div>
+      {/* Diagnóstico da integração de planilhas */}
+      <SheetsSetupStatus token={token} />
 
       <p className="text-center text-[10px] text-[#c5a3d4]/30 mt-8 pb-4">
         Fonte: planilha de bookings via Apps Script · refresh manual
