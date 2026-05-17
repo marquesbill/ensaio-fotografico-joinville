@@ -307,31 +307,41 @@ export function Behavior({ token }: { token: string }) {
           </div>
           <p className="text-[9px] uppercase tracking-wider text-[#c5a3d4]/30">GA4</p>
         </div>
-        <div className="flex items-end gap-1 h-32">
-          {loading ? (
-            <div className="w-full h-full bg-white/[0.02] rounded animate-pulse" />
-          ) : (ga4?.hours || []).map(h => {
-            const heightPct = (h.sessions / hoursMax) * 100;
-            const isPeak = h.hour === ga4?.peak_hour.hour;
-            return (
-              <div key={h.hour} className="flex-1 flex flex-col items-center justify-end h-full group relative">
-                <div
-                  className="w-full rounded-t transition-all duration-300"
-                  style={{
-                    height:     `${Math.max(heightPct, h.sessions > 0 ? 4 : 0)}%`,
-                    background: isPeak ? '#e87060' : '#7a3f8f',
-                  }}
-                />
-                <span className="text-[9px] text-[#c5a3d4]/40 mt-1 tabular-nums">
+        {loading ? (
+          <div className="w-full h-32 bg-white/[0.02] rounded animate-pulse" />
+        ) : (
+          <div>
+            {/* Linha das barras — todas alinham pelo mesmo baseline */}
+            <div className="flex items-end gap-1 h-32">
+              {(ga4?.hours || []).map(h => {
+                const heightPct = (h.sessions / hoursMax) * 100;
+                const isPeak = h.hour === ga4?.peak_hour.hour;
+                return (
+                  <div key={h.hour} className="flex-1 h-full flex items-end group relative">
+                    <div
+                      className="w-full rounded-t transition-all duration-300"
+                      style={{
+                        height:     `${Math.max(heightPct, h.sessions > 0 ? 4 : 0)}%`,
+                        background: isPeak ? '#e87060' : '#7a3f8f',
+                      }}
+                    />
+                    <div className="absolute -top-8 left-1/2 -translate-x-1/2 px-2 py-1 rounded bg-black/80 text-[10px] text-white tabular-nums opacity-0 group-hover:opacity-100 pointer-events-none whitespace-nowrap z-10">
+                      {fmtHour(h.hour)}: {h.sessions}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+            {/* Linha dos labels — separada das barras pra evitar desalinhamento */}
+            <div className="flex gap-1 mt-2 border-t border-white/[0.06] pt-1">
+              {(ga4?.hours || []).map(h => (
+                <div key={h.hour} className="flex-1 text-center text-[9px] text-[#c5a3d4]/40 tabular-nums">
                   {h.hour % 3 === 0 ? fmtHour(h.hour) : ''}
-                </span>
-                <div className="absolute -top-8 px-2 py-1 rounded bg-black/80 text-[10px] text-white tabular-nums opacity-0 group-hover:opacity-100 pointer-events-none whitespace-nowrap z-10">
-                  {fmtHour(h.hour)}: {h.sessions}
                 </div>
-              </div>
-            );
-          })}
-        </div>
+              ))}
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Dia da semana */}
@@ -340,21 +350,40 @@ export function Behavior({ token }: { token: string }) {
           <h3 className="text-sm font-bold text-white">Sessões por dia da semana</h3>
           <p className="text-[9px] uppercase tracking-wider text-[#c5a3d4]/30">GA4</p>
         </div>
-        <div className="flex items-end gap-2 h-24">
-          {loading ? (
-            <div className="w-full h-full bg-white/[0.02] rounded animate-pulse" />
-          ) : (ga4?.days_of_week || []).map(d => {
-            const heightPct = (d.sessions / daysMax) * 100;
-            return (
-              <div key={d.day} className="flex-1 flex flex-col items-center justify-end h-full">
-                <span className="text-[10px] text-[#c5a3d4]/60 tabular-nums mb-1">{d.sessions}</span>
-                <div className="w-full rounded-t transition-all duration-300"
-                  style={{ height: `${Math.max(heightPct, d.sessions > 0 ? 4 : 0)}%`, background: '#7a3f8f' }} />
-                <span className="text-[10px] text-white/60 mt-1">{d.name}</span>
-              </div>
-            );
-          })}
-        </div>
+        {loading ? (
+          <div className="w-full h-24 bg-white/[0.02] rounded animate-pulse" />
+        ) : (
+          <div>
+            {/* Linha dos valores no topo */}
+            <div className="flex gap-2 mb-1">
+              {(ga4?.days_of_week || []).map(d => (
+                <div key={d.day} className="flex-1 text-center text-[10px] text-[#c5a3d4]/60 tabular-nums">
+                  {d.sessions}
+                </div>
+              ))}
+            </div>
+            {/* Linha das barras */}
+            <div className="flex items-end gap-2 h-20">
+              {(ga4?.days_of_week || []).map(d => {
+                const heightPct = (d.sessions / daysMax) * 100;
+                return (
+                  <div key={d.day} className="flex-1 h-full flex items-end">
+                    <div className="w-full rounded-t transition-all duration-300"
+                      style={{ height: `${Math.max(heightPct, d.sessions > 0 ? 4 : 0)}%`, background: '#7a3f8f' }} />
+                  </div>
+                );
+              })}
+            </div>
+            {/* Linha dos labels */}
+            <div className="flex gap-2 mt-1 border-t border-white/[0.06] pt-1">
+              {(ga4?.days_of_week || []).map(d => (
+                <div key={d.day} className="flex-1 text-center text-[10px] text-white/60">
+                  {d.name}
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
       </div>
 
       <p className="text-center text-[10px] text-[#c5a3d4]/30 mt-8 pb-4">
