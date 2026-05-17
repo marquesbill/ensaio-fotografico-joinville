@@ -279,6 +279,160 @@ async function handleGa4Dashboard(req: VercelRequest, res: VercelResponse) {
   });
 }
 
+/* ───────── GA4 Acquisition (página 2 do dashboard) ───────── */
+
+async function handleGa4Acquisition(req: VercelRequest, res: VercelResponse) {
+  if (!process.env.GA4_OAUTH_REFRESH_TOKEN) {
+    return res.status(503).json({
+      error:   'OAuth GA4 não configurado',
+      details: 'Veja docs/ga4-oauth-setup.md',
+    });
+  }
+
+  const days = Math.min(Math.max(parseInt(String(req.query.range || '28'), 10) || 28, 1), 365);
+  const property = `properties/${GA4_PROPERTY_ID}`;
+  const client = buildGa4Client();
+
+  const periodCurrent  = { startDate: daysAgo(days),     endDate: 'today' };
+  const periodPrevious = { startDate: daysAgo(days * 2), endDate: daysAgo(days + 1) };
+
+  // KPIs totais (sessions/users/engagementRate) atual e anterior
+  const [kpiCur, kpiPrev] = await Promise.all([
+    client.runReport({
+      property,
+      dateRanges: [periodCurrent],
+      metrics:    [{ name: 'sessions' }, { name: 'totalUsers' }, { name: 'engagementRate' }],
+    }),
+    client.runReport({
+      property,
+      dateRanges: [periodPrevious],
+      metrics:    [{ name: 'sessions' }, { name: 'totalUsers' }, { name: 'engagementRate' }],
+    }),
+  ]);
+
+  // Channels (com engagement rate por canal)
+  const [channelCur, channelPrev] = await Promise.all([
+    client.runReport({
+      property,
+      dateRanges: [periodCurrent],
+      dimensions: [{ name: 'sessionDefaultChannelGroup' }],
+      metrics:    [{ name: 'sessions' }, { name: 'totalUsers' }, { name: 'engagementRate' }],
+      orderBys:   [{ metric: { metricName: 'sessions' }, desc: true }],
+    }),
+    client.runReport({
+      property,
+      dateRanges: [periodPrevious],
+      dimensions: [{ name: 'sessionDefaultChannelGroup' }],
+      metrics:    [{ name: 'sessions' }],
+    }),
+  ]);
+
+  // Source/Medium pairs
+  const [sourcesReport] = await client.runReport({
+    property,
+    dateRanges: [periodCurrent],
+    dimensions: [{ name: 'sessionSource' }, { name: 'sessionMedium' }],
+    metrics:    [{ name: 'sessions' }, { name: 'totalUsers' }, { name: 'engagementRate' }],
+    orderBys:   [{ metric: { metricName: 'sessions' }, desc: true }],
+    limit:      15,
+  });
+
+  // Campanhas (UTM)
+  const [campaignsReport] = await client.runReport({
+    property,
+    dateRanges: [periodCurrent],
+    dimensions: [{ name: 'sessionCampaignName' }],
+    metrics:    [{ name: 'sessions' }, { name: 'totalUsers' }, { name: 'engagementRate' }],
+    orderBys:   [{ metric: { metricName: 'sessions' }, desc: true }],
+    limit:      10,
+  });
+
+  // Landing pages
+  const [landingReport] = await client.runReport({
+    property,
+    dateRanges: [periodCurrent],
+    dimensions: [{ name: 'landingPage' }],
+    metrics:    [
+      { name: 'sessions' },
+      { name: 'engagementRate' },
+      { name: 'averageSessionDuration' },
+    ],
+    orderBys:   [{ metric: { metricName: 'sessions' }, desc: true }],
+    limit:      10,
+  });
+
+  // Computa share de tráfego pago a partir dos canais
+  const sumPaid = (rows: NonNullable<typeof channelCur[0]['rows']>) => {
+    let total = 0, paid = 0;
+    rows.forEach(r => {
+      const label = (r.dimensionValues?.[0]?.value || '').toLowerCase();
+      const s = Number(r.metricValues?.[0]?.value || 0);
+      total += s;
+      if (label.includes('paid')) paid += s;
+    });
+    return { total, paid, share: total > 0 ? paid / total : 0 };
+  };
+  const paidCur  = sumPaid(channelCur[0].rows || []);
+  const paidPrev = sumPaid(channelPrev[0].rows || []);
+
+  const curRow  = kpiCur[0].rows?.[0]?.metricValues || [];
+  const prevRow = kpiPrev[0].rows?.[0]?.metricValues || [];
+  const num = (i: number, src: typeof curRow) => Number(src?.[i]?.value || 0);
+
+  const kpis = {
+    sessions:       { value: num(0, curRow), deltaPct: pctDelta(num(0, curRow), num(0, prevRow)) },
+    users:          { value: num(1, curRow), deltaPct: pctDelta(num(1, curRow), num(1, prevRow)) },
+    engagementRate: { value: num(2, curRow), deltaPct: pctDelta(num(2, curRow), num(2, prevRow)) },
+    paidShare:      { value: paidCur.share, deltaPct: pctDelta(paidCur.share, paidPrev.share) },
+  };
+
+  const channels = (channelCur[0].rows || []).map(r => {
+    const label = r.dimensionValues?.[0]?.value || 'Unknown';
+    return {
+      label,
+      category:       categorizeChannel(label),
+      sessions:       Number(r.metricValues?.[0]?.value || 0),
+      users:          Number(r.metricValues?.[1]?.value || 0),
+      engagementRate: Number(r.metricValues?.[2]?.value || 0),
+    };
+  });
+
+  const sources = (sourcesReport.rows || []).map(r => ({
+    source:         r.dimensionValues?.[0]?.value || '(none)',
+    medium:         r.dimensionValues?.[1]?.value || '(none)',
+    sessions:       Number(r.metricValues?.[0]?.value || 0),
+    users:          Number(r.metricValues?.[1]?.value || 0),
+    engagementRate: Number(r.metricValues?.[2]?.value || 0),
+  }));
+
+  // Filtra "(not set)" / "(direct)" etc. — só campanhas reais
+  const campaigns = (campaignsReport.rows || [])
+    .filter(r => {
+      const c = r.dimensionValues?.[0]?.value || '';
+      return c && !c.startsWith('(');
+    })
+    .map(r => ({
+      campaign:       r.dimensionValues?.[0]?.value || '(unknown)',
+      sessions:       Number(r.metricValues?.[0]?.value || 0),
+      users:          Number(r.metricValues?.[1]?.value || 0),
+      engagementRate: Number(r.metricValues?.[2]?.value || 0),
+    }));
+
+  const landingPages = (landingReport.rows || []).map(r => ({
+    page:                r.dimensionValues?.[0]?.value || '/',
+    sessions:            Number(r.metricValues?.[0]?.value || 0),
+    engagementRate:      Number(r.metricValues?.[1]?.value || 0),
+    avgSessionDuration:  Number(r.metricValues?.[2]?.value || 0),
+  }));
+
+  return res.status(200).json({
+    range:        { start: periodCurrent.startDate, end: 'today', days },
+    fetched_at:   new Date().toISOString(),
+    next_refresh: new Date(Date.now() + 12 * 3600 * 1000).toISOString(),
+    kpis, channels, sources, campaigns, landingPages,
+  });
+}
+
 /* ───────── Action handlers (POST body { action: '...', ... }) ───────── */
 
 async function handleCancel(req: VercelRequest, res: VercelResponse, auth: { user: string }) {
@@ -856,7 +1010,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   const auth = verifyToken(req.headers.authorization as string | undefined);
   if (!auth) return res.status(401).json({ error: 'Não autorizado' });
 
-  // ── GA4 dashboard (GET ?endpoint=ga4-dashboard) ──
+  // ── GA4 endpoints (GET ?endpoint=ga4-xxx) ──
   const endpoint = String(req.query.endpoint || '');
   if (endpoint === 'ga4-dashboard') {
     if (req.query.ping) return res.status(200).json({ ok: true, user: auth.user });
@@ -865,6 +1019,15 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       console.error('[admin-bookings/ga4-dashboard]', msg);
+      return res.status(500).json({ error: msg });
+    }
+  }
+  if (endpoint === 'ga4-acquisition') {
+    try {
+      return await handleGa4Acquisition(req, res);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      console.error('[admin-bookings/ga4-acquisition]', msg);
       return res.status(500).json({ error: msg });
     }
   }

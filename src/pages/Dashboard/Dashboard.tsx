@@ -27,12 +27,13 @@ import {
 } from 'lucide-react';
 
 import { Overview } from './pages/Overview';
+import { Acquisition } from './pages/Acquisition';
 
 type DashboardPage = 'overview' | 'acquisition' | 'funnel' | 'engagement' | 'payments' | 'behavior';
 
 const NAV: Array<{ key: DashboardPage; label: string; icon: typeof LayoutGrid; status: 'live' | 'wip' }> = [
   { key: 'overview',    label: 'Visão Geral',    icon: LayoutGrid,        status: 'live' },
-  { key: 'acquisition', label: 'Aquisição',      icon: TrendingUp,         status: 'wip' },
+  { key: 'acquisition', label: 'Aquisição',      icon: TrendingUp,         status: 'live' },
   { key: 'funnel',      label: 'Funil de Pacotes', icon: Filter,           status: 'wip' },
   { key: 'engagement',  label: 'Engajamento',    icon: MousePointerClick, status: 'wip' },
   { key: 'payments',    label: 'Pagamentos',     icon: CreditCard,        status: 'wip' },
@@ -151,8 +152,9 @@ function DashboardShell({ token, user, onLogout }: { token: string; user: string
 
       {/* Main content */}
       <main className="flex-1 overflow-x-hidden">
-        {activePage === 'overview' && <Overview token={token} />}
-        {activePage !== 'overview' && (
+        {activePage === 'overview'    && <Overview token={token} />}
+        {activePage === 'acquisition' && <Acquisition token={token} />}
+        {activePage !== 'overview' && activePage !== 'acquisition' && (
           <div className="p-10 flex items-center justify-center h-full">
             <div className="text-center">
               <p className="text-[#c5a3d4]/60 text-sm uppercase tracking-widest">Em construção</p>
