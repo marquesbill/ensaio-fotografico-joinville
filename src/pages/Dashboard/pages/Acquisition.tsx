@@ -49,6 +49,14 @@ interface AcquisitionData {
   }>;
 }
 
+interface LeadsData {
+  fetched_at: string;
+  total: number;
+  by_source: Record<string, number>;
+  by_intent: { sim: number; nao: number; none: number };
+  daily: Array<{ date: string; count: number }>;
+}
+
 const RANGE_OPTIONS = [
   { key: '7d',  label: '7 dias',  days: 7 },
   { key: '28d', label: '28 dias', days: 28 },
@@ -70,6 +78,7 @@ function shortenPath(path: string, max = 38) {
 
 export function Acquisition({ token }: { token: string }) {
   const [data, setData] = useState<AcquisitionData | null>(null);
+  const [leads, setLeads] = useState<LeadsData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [range, setRange] = useState<typeof RANGE_OPTIONS[number]['key']>('28d');
@@ -81,12 +90,20 @@ export function Acquisition({ token }: { token: string }) {
     setError(null);
     try {
       const days = RANGE_OPTIONS.find((r) => r.key === range)?.days || 28;
-      const r = await fetch(`/api/admin-bookings?endpoint=ga4-acquisition&range=${days}${forceRefresh ? '&refresh=1' : ''}`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      const json = await r.json();
-      if (!r.ok) throw new Error(json.error || `HTTP ${r.status}`);
-      setData(json);
+      const refresh = forceRefresh ? `&refresh=${Date.now()}` : '';
+      const [rGa4, rLeads] = await Promise.all([
+        fetch(`/api/admin-bookings?endpoint=ga4-acquisition&range=${days}${refresh}`, {
+          headers: { Authorization: `Bearer ${token}` },
+        }),
+        fetch(`/api/admin-bookings?endpoint=sheets-leads&range=${days}${refresh}`, {
+          headers: { Authorization: `Bearer ${token}` },
+        }),
+      ]);
+      const [jGa4, jLeads] = await Promise.all([rGa4.json(), rLeads.json()]);
+      if (!rGa4.ok) throw new Error(jGa4.error || `GA4 HTTP ${rGa4.status}`);
+      if (!rLeads.ok) throw new Error(jLeads.error || `Leads HTTP ${rLeads.status}`);
+      setData(jGa4);
+      setLeads(jLeads);
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : 'Erro ao carregar dados');
     } finally {
@@ -133,7 +150,10 @@ export function Acquisition({ token }: { token: string }) {
       {/* Source badge */}
       <div className="mb-6">
         <DataSourceBadge
-          sources={[{ label: 'GA4', detail: 'property 494185724', status: error ? 'error' : 'live' }]}
+          sources={[
+            { label: 'GA4',    detail: 'tráfego + canais',         status: error ? 'error' : 'live' },
+            { label: 'Sheets', detail: 'leads · captura de form',  status: 'live' },
+          ]}
           lastFetched={data?.fetched_at}
           nextRefresh={data?.next_refresh}
           onRefresh={() => load(true)}
@@ -187,6 +207,61 @@ export function Acquisition({ token }: { token: string }) {
           hint="% sessões com >10s ou múltiplas páginas"
           loading={loading}
         />
+      </div>
+
+      {/* Leads no período — métrica de captura crítica pra avaliar campanha */}
+      <div className="rounded-2xl border border-[#7a3f8f]/30 bg-gradient-to-r from-[#7a3f8f]/10 via-transparent to-[#e87060]/10 p-5 mb-6">
+        <div className="flex items-baseline justify-between mb-4">
+          <div>
+            <p className="text-[10px] uppercase tracking-widest text-[#c5a3d4]/70 font-bold">Leads capturados no período</p>
+            <p className="font-black text-4xl text-white tabular-nums mt-1">
+              {loading ? '—' : (leads?.total ?? 0).toLocaleString('pt-BR')}
+            </p>
+            <p className="text-[11px] text-[#d4baeb]/50 mt-1">
+              {leads ? `~${(leads.total / Math.max(RANGE_OPTIONS.find(r => r.key === range)?.days || 28, 1)).toFixed(1)} leads/dia em média` : ''}
+            </p>
+          </div>
+          <div className="flex items-baseline gap-6 text-sm">
+            <div>
+              <p className="text-[10px] uppercase tracking-wider text-white/40 font-semibold">Hero</p>
+              <p className="text-white font-black tabular-nums text-2xl mt-0.5">
+                {loading ? '—' : (leads?.by_source.hero ?? 0).toLocaleString('pt-BR')}
+              </p>
+              <p className="text-[9px] text-white/30 mt-0.5">acima da dobra</p>
+            </div>
+            <div>
+              <p className="text-[10px] uppercase tracking-wider text-white/40 font-semibold">Footer</p>
+              <p className="text-white font-black tabular-nums text-2xl mt-0.5">
+                {loading ? '—' : (leads?.by_source.footer ?? 0).toLocaleString('pt-BR')}
+              </p>
+              <p className="text-[9px] text-white/30 mt-0.5">perto do mapa</p>
+            </div>
+            <div>
+              <p className="text-[10px] uppercase tracking-wider text-[#e87060]/80 font-semibold">High intent 🔥</p>
+              <p className="text-[#e87060] font-black tabular-nums text-2xl mt-0.5">
+                {loading ? '—' : (leads?.by_intent.sim ?? 0).toLocaleString('pt-BR')}
+              </p>
+              <p className="text-[9px] text-[#e87060]/60 mt-0.5">"Vai pra Joinville: Sim"</p>
+            </div>
+          </div>
+        </div>
+        {/* Daily leads trend (compact sparkline) */}
+        {leads && leads.daily.length > 0 && (
+          <div className="mt-2 flex items-end gap-0.5 h-10 border-t border-white/[0.06] pt-2">
+            {leads.daily.map(d => {
+              const max = Math.max(...leads.daily.map(x => x.count), 1);
+              const heightPct = (d.count / max) * 100;
+              return (
+                <div key={d.date} className="flex-1 flex flex-col items-center justify-end h-full group relative">
+                  <div className="w-full rounded-t" style={{ height: `${Math.max(heightPct, d.count > 0 ? 4 : 0)}%`, background: '#7a3f8f' }} />
+                  <div className="absolute -top-7 px-1.5 py-0.5 rounded bg-black/80 text-[9px] text-white opacity-0 group-hover:opacity-100 pointer-events-none whitespace-nowrap z-10">
+                    {d.date.slice(5)}: {d.count}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
       </div>
 
       {/* Channels (full width) */}
