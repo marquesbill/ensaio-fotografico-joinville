@@ -44,6 +44,9 @@ async function asaas<T = unknown>(
 type AsaasPaymentLink = { id: string; url: string };
 
 // Encode booking metadata em string compacta pipe-delimited (limite ASAAS = 100 chars).
+// REGRA: nunca trunca email — email é essencial pro Resend mandar confirmação.
+// Trunca o nome até zero; se ainda assim não couber, lança erro pra create-checkout
+// retornar 400 e cliente saber que precisa ajustar.
 function encodeAsaasRef(o: {
   date: string; time: string; packageKey: string; numBailarinas: number;
   name: string; email: string; whatsapp: string;
@@ -55,11 +58,14 @@ function encodeAsaasRef(o: {
     `v1|${o.date}|${o.time}|${pkg}|${o.numBailarinas}|${o.whatsapp}|${n}|${e}`;
   let ref = build(safeName, safeEmail);
   if (ref.length <= 100) return ref;
-  const overhead = build('', '').length + safeEmail.length;
+  // Trunca nome até caber, mantendo email íntegro
+  const overhead = build('', safeEmail).length;
   const nameBudget = Math.max(0, 100 - overhead);
   ref = build(safeName.slice(0, nameBudget), safeEmail);
   if (ref.length <= 100) return ref;
-  return build('', safeEmail.slice(0, Math.max(0, 100 - build('', '').length)));
+  // Mesmo com nome vazio não couber — email + whatsapp + data é > 100 chars.
+  // Bloqueia checkout: cliente precisa email mais curto (improvável mas possível).
+  throw new Error(`Email muito longo pra checkout ASAAS (${safeEmail.length} chars). Use um email mais curto.`);
 }
 
 async function createAsaasPaymentLink(opts: {

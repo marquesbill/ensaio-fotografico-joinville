@@ -74,6 +74,8 @@ async function asaasApi<T = unknown>(
 
 // Encoder do externalReference compacto (formato `v1|...`) — mesmo de create-checkout.ts.
 // Limite ASAAS é 100 chars; JSON do MP tem ~180. Por isso usamos pipe-delimited.
+// REGRA: nunca trunca email — email é essencial pro Resend mandar confirmação.
+// Trunca o nome até zero; se ainda assim não couber, lança erro.
 function encodeAsaasRefAdmin(o: {
   date: string; time: string; packageKey: string; numBailarinas: number;
   name: string; email: string; whatsapp: string;
@@ -85,11 +87,11 @@ function encodeAsaasRefAdmin(o: {
     `v1|${o.date}|${o.time}|${pkg}|${o.numBailarinas}|${o.whatsapp}|${n}|${e}`;
   let ref = build(safeName, safeEmail);
   if (ref.length <= 100) return ref;
-  const overhead = build('', '').length + safeEmail.length;
+  const overhead = build('', safeEmail).length;
   const nameBudget = Math.max(0, 100 - overhead);
   ref = build(safeName.slice(0, nameBudget), safeEmail);
   if (ref.length <= 100) return ref;
-  return build('', safeEmail.slice(0, Math.max(0, 100 - build('', '').length)));
+  throw new Error(`Email muito longo pra checkout ASAAS (${safeEmail.length} chars). Use um email mais curto.`);
 }
 
 /**
