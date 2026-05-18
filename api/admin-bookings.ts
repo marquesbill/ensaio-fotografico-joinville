@@ -1384,7 +1384,7 @@ async function handleGa4Engagement(req: VercelRequest, res: VercelResponse) {
 
   // Scroll depth — map por depth value
   const scrollMap: Record<string, number> = {};
-  (scrollReport.rows || []).forEach(r => {
+  (scrollReport[0].rows || []).forEach(r => {
     const name = r.dimensionValues?.[0]?.value || '';
     scrollMap[name] = Number(r.metricValues?.[0]?.value || 0);
   });
@@ -1395,7 +1395,7 @@ async function handleGa4Engagement(req: VercelRequest, res: VercelResponse) {
 
   // Formulários — map por evento (sessions count)
   const formMap: Record<string, number> = {};
-  (formsReport.rows || []).forEach(r => {
+  (formsReport[0].rows || []).forEach(r => {
     const name = r.dimensionValues?.[0]?.value || '';
     formMap[name] = Number(r.metricValues?.[0]?.value || 0);
   });
@@ -1417,7 +1417,7 @@ async function handleGa4Engagement(req: VercelRequest, res: VercelResponse) {
   };
 
   // FAQ — parse index from event name
-  const faq = (faqReport.rows || []).map(r => {
+  const faq = (faqReport[0].rows || []).map(r => {
     const name = r.dimensionValues?.[0]?.value || '';
     const idx  = parseInt(name.replace('faq_open_', ''), 10);
     return {
@@ -1427,7 +1427,7 @@ async function handleGa4Engagement(req: VercelRequest, res: VercelResponse) {
   }).filter(f => !Number.isNaN(f.idx)).sort((a, b) => a.idx - b.idx);
 
   // Top events
-  const topEvents = (eventsReport.rows || []).map(r => ({
+  const topEvents = (eventsReport[0].rows || []).map(r => ({
     event_name: r.dimensionValues?.[0]?.value || 'unknown',
     count:      Number(r.metricValues?.[0]?.value || 0),
   }));
