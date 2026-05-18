@@ -1600,14 +1600,27 @@ async function handleClarityInsights(req: VercelRequest, res: VercelResponse) {
   const scriptErrors    = frictionPct('scripterrorcount');
   const errorClicks     = frictionPct('errorclickcount');
 
-  // Scroll depth médio (Clarity tem nativo)
+  // Traffic — sessões reais + bot count + pages/sessão
+  // Estrutura esperada (sample doc):
+  // { totalSessionCount: "9554", totalBotSessionCount: "8369", distantUserCount, PagesPerSessionPercentage: 1.09 }
+  const trafficInfo = byMetric['traffic']?.[0];
+  const sessions       = Number(trafficInfo?.totalSessionCount)        || 0;
+  const botSessions    = Number(trafficInfo?.totalBotSessionCount)     || 0;
+  const pagesPerSession = Number(trafficInfo?.PagesPerSessionPercentage) || 0;
+
+  // Scroll depth médio (campo exato vem do log defensivo abaixo)
   const scrollInfo = byMetric['scrolldepth']?.[0];
   const averageScrollDepth = Number(scrollInfo?.averageScrollDepth) || 0;
 
-  // Engagement time (active vs total — Clarity diferencia)
+  // Engagement time (active vs total)
   const engageInfo = byMetric['engagementtime']?.[0];
   const totalTime  = Number(engageInfo?.totalTime)  || 0;
   const activeTime = Number(engageInfo?.activeTime) || 0;
+
+  // Log defensivo — confirma a estrutura real dos 3 metrics novos
+  console.log('[clarity] traffic row:', JSON.stringify(trafficInfo));
+  console.log('[clarity] scrolldepth row:', JSON.stringify(scrollInfo));
+  console.log('[clarity] engagementtime row:', JSON.stringify(engageInfo));
 
   const payload = {
     range:        { days: numOfDays, note: 'Clarity API limita a janela máxima a 3 dias' },
@@ -1621,10 +1634,13 @@ async function handleClarityInsights(req: VercelRequest, res: VercelResponse) {
       scriptErrors,
       errorClicks,
     },
-    engagement: {
+    kpis: {
+      sessions,           // real users count
+      botSessions,        // bots excluded
+      pagesPerSession,    // ratio (PagesPerSessionPercentage é misleading no doc — é ratio mesmo)
       averageScrollDepth, // 0..100
-      totalTime,          // ms ou s, depende da resposta — frontend formata
-      activeTime,
+      activeTime,         // ms ou s (frontend formata via fmtClarityTime)
+      totalTime,
     },
   };
 

@@ -8,7 +8,7 @@
  */
 
 import { useEffect, useState } from 'react';
-import { Clock, Sparkles, Layers, LogOut as Bounce, Zap, MousePointerClick, MoveVertical, Undo2, AlertTriangle, AlertCircle } from 'lucide-react';
+import { Clock, Sparkles, Layers, LogOut as Bounce, Zap, MousePointerClick, MoveVertical, Undo2, AlertTriangle, AlertCircle, Users, BookOpen, MoveDown, Timer } from 'lucide-react';
 
 import { KpiCard } from '../components/KpiCard';
 import { DataTable } from '../components/DataTable';
@@ -52,10 +52,13 @@ interface ClarityData {
     scriptErrors:    ClarityFrictionMetric;
     errorClicks:     ClarityFrictionMetric;
   };
-  engagement: {
+  kpis: {
+    sessions:           number;
+    botSessions:        number;
+    pagesPerSession:    number;
     averageScrollDepth: number; // 0..100
+    activeTime:         number; // seconds (assume)
     totalTime:          number;
-    activeTime:         number;
   };
   cache_hit?: boolean;
 }
@@ -102,6 +105,15 @@ function fmtDuration(sec: number) {
   const s = Math.floor(sec % 60);
   if (m === 0) return `${s}s`;
   return `${m}m ${String(s).padStart(2, '0')}s`;
+}
+
+// Clarity pode retornar tempo em segundos OU milissegundos — auto-detecta:
+// se > 86400 (1 dia em segundos) assume ms e divide. Funciona pra ranges
+// até 24h por sessão; nesse projeto sessão média <5min, então safe.
+function fmtClarityTime(raw: number): string {
+  if (!raw || raw < 0.001) return '—';
+  const sec = raw > 86400 ? raw / 1000 : raw;
+  return fmtDuration(sec);
 }
 
 function FormFunnel({ title, data }: { title: string; data: { started: number; attempt: number; success: number; error: number; blocked: number } }) {
@@ -298,6 +310,38 @@ export function Engagement({ token }: { token: string }) {
           icon={Bounce} source="GA4"
           hint="% sessões <10s ou 1 só pageview (menor = melhor)"
           loading={loading}
+        />
+      </div>
+
+      {/* KPIs Clarity (4 cards complementares) */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 mb-6">
+        <KpiCard
+          label="Sessões"
+          value={clarity ? clarity.kpis.sessions.toLocaleString('pt-BR') : '—'}
+          icon={Users} source="Clarity"
+          hint={clarity ? `${clarity.kpis.botSessions.toLocaleString('pt-BR')} sessões de bot excluídas` : 'Sessões reais (bots já excluídos)'}
+          loading={!clarity && !clarityError}
+        />
+        <KpiCard
+          label="Páginas por sessão"
+          value={clarity ? clarity.kpis.pagesPerSession.toFixed(2).replace('.', ',') : '—'}
+          icon={BookOpen} source="Clarity"
+          hint="Média de páginas vistas por sessão"
+          loading={!clarity && !clarityError}
+        />
+        <KpiCard
+          label="Profundidade de rolagem"
+          value={clarity ? `${clarity.kpis.averageScrollDepth.toFixed(2).replace('.', ',')}%` : '—'}
+          icon={MoveDown} source="Clarity"
+          hint="Média do quanto o usuário rola na página"
+          loading={!clarity && !clarityError}
+        />
+        <KpiCard
+          label="Tempo ativo gasto"
+          value={clarity ? fmtClarityTime(clarity.kpis.activeTime) : '—'}
+          icon={Timer} source="Clarity"
+          hint={clarity ? `de ${fmtClarityTime(clarity.kpis.totalTime)} tempo total` : 'Tempo de interação ativa (active vs total)'}
+          loading={!clarity && !clarityError}
         />
       </div>
 
