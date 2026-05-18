@@ -1597,22 +1597,19 @@ async function handleClarityInsights(req: VercelRequest, res: VercelResponse) {
     });
   }
 
-  // Log defensivo — primeira chamada após deploy expõe a estrutura real
-  // dos metricName/information no log da Vercel, pra ajustar parser se preciso.
-  console.log('[clarity] metricNames:', Object.keys(byMetric));
-  console.log('[clarity] sample row (rageclickcount):', JSON.stringify(byMetric['rageclickcount']?.[0]));
-
-  // Extrai counts de fricção. Clarity retorna sessionsWithMetricCount + sessionsWithoutMetricCount;
-  // % = with / (with + without).
+  // Extrai counts de fricção. Estrutura real (confirmada em produção):
+  // { sessionsCount: "216", sessionsWithMetricPercentage: 0, sessionsWithoutMetricPercentage: 100,
+  //   pagesViews: "0", subTotal: "0" }
+  // O percentage já vem em 0..100; normalizamos pra 0..1 pro frontend.
   const frictionPct = (metricKey: string) => {
     const info = byMetric[metricKey]?.[0];
     if (!info) return { pct: 0, sessions: 0, total: 0 };
-    const withCount    = Number(info.sessionsWithMetricCount)    || 0;
-    const withoutCount = Number(info.sessionsWithoutMetricCount) || 0;
-    const total        = withCount + withoutCount;
+    const pctRaw   = Number(info.sessionsWithMetricPercentage) || 0; // 0..100
+    const total    = Number(info.sessionsCount)                || 0;
+    const sessions = Math.round(total * pctRaw / 100);
     return {
-      pct:      total > 0 ? withCount / total : 0,
-      sessions: withCount,
+      pct:      pctRaw / 100, // 0..1
+      sessions,
       total,
     };
   };
