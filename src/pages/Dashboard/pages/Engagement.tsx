@@ -13,6 +13,7 @@ import { Clock, Sparkles, Layers, LogOut as Bounce, Zap, MousePointerClick, Move
 import { KpiCard } from '../components/KpiCard';
 import { DataTable } from '../components/DataTable';
 import { DataSourceBadge } from '../components/DataSourceBadge';
+import { BrazilMap } from '../components/BrazilMap';
 
 interface EngagementData {
   range: { start: string; end: string; days: number };
@@ -58,6 +59,24 @@ interface ClarityData {
   };
   cache_hit?: boolean;
 }
+
+type GeoMetric = 'leads' | 'clientes' | 'sessions' | 'impressions';
+
+interface GeoBrazilData {
+  range:        { days: number };
+  fetched_at:   string;
+  next_refresh: string;
+  states:       Record<string, { leads: number; clientes: number; sessions: number; impressions: number }>;
+  sources:      Record<GeoMetric, boolean>;
+  errors:       Record<GeoMetric, string | null>;
+}
+
+const GEO_METRICS: Array<{ key: GeoMetric; label: string; tooltipLabel: string }> = [
+  { key: 'leads',       label: 'Leads',       tooltipLabel: 'leads'       },
+  { key: 'clientes',    label: 'Clientes',    tooltipLabel: 'clientes'    },
+  { key: 'sessions',    label: 'Sessões',     tooltipLabel: 'sessões'     },
+  { key: 'impressions', label: 'Impressões',  tooltipLabel: 'impressões'  },
+];
 
 const RANGE_OPTIONS = [
   { key: '7d',  label: '7 dias',  days: 7 },
@@ -132,6 +151,9 @@ export function Engagement({ token }: { token: string }) {
   const [data, setData] = useState<EngagementData | null>(null);
   const [clarity, setClarity] = useState<ClarityData | null>(null);
   const [clarityError, setClarityError] = useState<string | null>(null);
+  const [geo, setGeo] = useState<GeoBrazilData | null>(null);
+  const [geoError, setGeoError] = useState<string | null>(null);
+  const [geoMetric, setGeoMetric] = useState<GeoMetric>('leads');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [range, setRange] = useState<typeof RANGE_OPTIONS[number]['key']>('28d');
@@ -142,6 +164,7 @@ export function Engagement({ token }: { token: string }) {
     if (forceRefresh) setRefreshing(true);
     setError(null);
     setClarityError(null);
+    setGeoError(null);
     const days = RANGE_OPTIONS.find((r) => r.key === range)?.days || 28;
     const refreshQs = forceRefresh ? '&refresh=1' : '';
 
@@ -172,6 +195,19 @@ export function Engagement({ token }: { token: string }) {
     } catch (e: unknown) {
       setClarityError(e instanceof Error ? e.message : 'Erro ao carregar Clarity');
       setClarity(null);
+    }
+
+    // Geo Brasil (complementar) — falha só esconde o mapa
+    try {
+      const r = await fetch(`/api/admin-bookings?endpoint=geo-brazil&range=${days}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const json = await r.json();
+      if (!r.ok) throw new Error(json.error || `HTTP ${r.status}`);
+      setGeo(json);
+    } catch (e: unknown) {
+      setGeoError(e instanceof Error ? e.message : 'Erro ao carregar dados geográficos');
+      setGeo(null);
     }
   };
 
@@ -461,8 +497,111 @@ export function Engagement({ token }: { token: string }) {
         </div>
       </div>
 
+      {/* ───────── Geografia (Brasil) ───────── */}
+      <div className="mt-8 rounded-2xl border border-white/10 bg-white/[0.03] backdrop-blur-sm p-5">
+        <div className="flex items-baseline justify-between mb-4 flex-wrap gap-2">
+          <div>
+            <h2 className="font-headline text-xl font-black text-white">Geografia (Brasil)</h2>
+            <p className="text-[#d4baeb]/60 text-xs mt-0.5">
+              Distribuição por estado · escolha a métrica abaixo
+            </p>
+          </div>
+          <p className="text-[10px] uppercase tracking-wider text-[#c5a3d4]/40 whitespace-nowrap">
+            Leads/Clientes via DDD · Sessões GA4 · Impressões Meta Ads
+          </p>
+        </div>
+
+        {/* Radio buttons de métrica */}
+        <div className="flex flex-wrap gap-2 mb-5">
+          {GEO_METRICS.map(m => {
+            const available = geo?.sources?.[m.key] !== false;
+            const isSelected = geoMetric === m.key;
+            return (
+              <button
+                key={m.key}
+                onClick={() => available && setGeoMetric(m.key)}
+                disabled={!available}
+                className={`px-3 py-2 rounded-lg text-xs font-bold transition-all border
+                  ${isSelected
+                    ? 'bg-[#7a3f8f]/30 border-[#7a3f8f]/60 text-white'
+                    : available
+                      ? 'bg-white/[0.02] border-white/10 text-[#d4baeb]/70 hover:bg-white/[0.05] hover:text-white'
+                      : 'bg-white/[0.01] border-white/[0.05] text-[#d4baeb]/30 cursor-not-allowed'
+                  }`}
+              >
+                <span className={`inline-block w-2 h-2 rounded-full mr-2 ${isSelected ? 'bg-[#e87060]' : 'bg-white/20'}`} />
+                {m.label}
+                {!available && <span className="ml-1.5 text-[9px] opacity-60">indisponível</span>}
+              </button>
+            );
+          })}
+        </div>
+
+        {geoError && (
+          <div className="mb-4 p-4 rounded-xl border border-amber-500/30 bg-amber-500/5 text-amber-200 text-sm">
+            <p className="font-bold">Mapa indisponível</p>
+            <p className="text-amber-200/70 mt-1">{geoError}</p>
+          </div>
+        )}
+
+        {!geoError && (
+          <div className="grid grid-cols-1 lg:grid-cols-[2fr_1fr] gap-5">
+            <BrazilMap
+              data={Object.fromEntries(
+                Object.entries(geo?.states || {}).map(([uf, v]) => [uf, v[geoMetric]])
+              )}
+              metricLabel={GEO_METRICS.find(m => m.key === geoMetric)?.tooltipLabel}
+            />
+
+            {/* Top 8 estados */}
+            <div>
+              <p className="text-[11px] font-bold uppercase tracking-widest text-[#c5a3d4]/70 mb-3">
+                Top estados · {GEO_METRICS.find(m => m.key === geoMetric)?.label.toLowerCase()}
+              </p>
+              <div className="space-y-1.5">
+                {Object.entries(geo?.states || {})
+                  .map(([uf, v]) => ({ uf, value: v[geoMetric] }))
+                  .filter(e => e.value > 0)
+                  .sort((a, b) => b.value - a.value)
+                  .slice(0, 8)
+                  .map(({ uf, value }, i, arr) => {
+                    const max = arr[0]?.value || 1;
+                    return (
+                      <div key={uf}>
+                        <div className="flex items-baseline justify-between text-xs mb-0.5">
+                          <span className="text-white font-semibold tabular-nums">{i + 1}. {uf}</span>
+                          <span className="tabular-nums text-white font-bold">{value.toLocaleString('pt-BR')}</span>
+                        </div>
+                        <div className="h-1 bg-white/5 rounded overflow-hidden">
+                          <div
+                            className="h-full rounded"
+                            style={{
+                              width: `${(value / max) * 100}%`,
+                              background: 'linear-gradient(90deg, #7a3f8f 0%, #e87060 100%)',
+                            }}
+                          />
+                        </div>
+                      </div>
+                    );
+                  })
+                }
+                {Object.values(geo?.states || {}).every(v => v[geoMetric] === 0) && (
+                  <p className="text-[#d4baeb]/40 text-xs italic">Sem dados pra essa métrica no período.</p>
+                )}
+              </div>
+
+              {geo?.errors?.[geoMetric] && (
+                <p className="mt-3 text-[10px] text-amber-300/70 leading-tight">
+                  ⚠ {geo.errors[geoMetric]}
+                </p>
+              )}
+            </div>
+          </div>
+        )}
+      </div>
+
       <p className="text-center text-[10px] text-[#c5a3d4]/30 mt-8 pb-4">
-        GA4 Data API (12h) · Clarity Live Insights (6h, máx 3 dias · 10 req/dia)
+        GA4 Data API (12h) · Clarity Live Insights (6h, máx 3 dias · 10 req/dia) · Geo (12h)
       </p>
     </div>
   );

@@ -1636,6 +1636,201 @@ async function handleClarityInsights(req: VercelRequest, res: VercelResponse) {
   return res.status(200).json({ ...payload, cache_hit: false });
 }
 
+/* ───────── Geo Brasil (mapa por UF — agregação multi-fonte) ───────── */
+
+// Normaliza nome de estado (GA4/Meta retornam variantes) pra UF de 2 letras.
+// GA4 dimension `region` pra Brasil retorna "State of São Paulo", "São Paulo",
+// "Federal District", etc. Meta breakdown=region retorna nomes em português ou inglês.
+const BR_STATE_NAME_TO_UF: Record<string, string> = {
+  'acre': 'AC',
+  'alagoas': 'AL',
+  'amapa': 'AP', 'amapá': 'AP',
+  'amazonas': 'AM',
+  'bahia': 'BA',
+  'ceara': 'CE', 'ceará': 'CE',
+  'distrito federal': 'DF', 'federal district': 'DF',
+  'espirito santo': 'ES', 'espírito santo': 'ES',
+  'goias': 'GO', 'goiás': 'GO',
+  'maranhao': 'MA', 'maranhão': 'MA',
+  'mato grosso': 'MT',
+  'mato grosso do sul': 'MS',
+  'minas gerais': 'MG',
+  'para': 'PA', 'pará': 'PA',
+  'paraiba': 'PB', 'paraíba': 'PB',
+  'parana': 'PR', 'paraná': 'PR',
+  'pernambuco': 'PE',
+  'piaui': 'PI', 'piauí': 'PI',
+  'rio de janeiro': 'RJ',
+  'rio grande do norte': 'RN',
+  'rio grande do sul': 'RS',
+  'rondonia': 'RO', 'rondônia': 'RO',
+  'roraima': 'RR',
+  'santa catarina': 'SC',
+  'sao paulo': 'SP', 'são paulo': 'SP',
+  'sergipe': 'SE',
+  'tocantins': 'TO',
+};
+
+function nameToUF(raw: string): string | null {
+  if (!raw) return null;
+  // Strip "State of ", lowercase, trim
+  const cleaned = raw.toLowerCase().replace(/^state of /, '').trim();
+  if (BR_STATE_NAME_TO_UF[cleaned]) return BR_STATE_NAME_TO_UF[cleaned];
+  // Talvez já seja UF de 2 letras
+  if (/^[A-Z]{2}$/.test(raw.toUpperCase())) return raw.toUpperCase();
+  return null;
+}
+
+const ALL_UF = [
+  'AC','AL','AP','AM','BA','CE','DF','ES','GO','MA','MT','MS','MG',
+  'PA','PB','PR','PE','PI','RJ','RN','RS','RO','RR','SC','SP','SE','TO',
+];
+
+async function handleGeoBrazil(req: VercelRequest, res: VercelResponse) {
+  const days = Math.min(Math.max(parseInt(String(req.query.range || '28'), 10) || 28, 1), 365);
+
+  // Fontes em paralelo. Cada uma falha de forma independente.
+  const [leadsResult, bookingsResult, sessionsResult, impressionsResult] = await Promise.allSettled([
+    aggregateLeadsByUF(days),
+    aggregateBookingsByUF(),
+    aggregateSessionsByUF(days),
+    aggregateImpressionsByUF(days),
+  ]);
+
+  const states: Record<string, { leads: number; clientes: number; sessions: number; impressions: number }> = {};
+  ALL_UF.forEach(uf => { states[uf] = { leads: 0, clientes: 0, sessions: 0, impressions: 0 }; });
+
+  const leads       = leadsResult.status       === 'fulfilled' ? leadsResult.value       : {};
+  const clientes    = bookingsResult.status    === 'fulfilled' ? bookingsResult.value    : {};
+  const sessions    = sessionsResult.status    === 'fulfilled' ? sessionsResult.value    : {};
+  const impressions = impressionsResult.status === 'fulfilled' ? impressionsResult.value : {};
+
+  Object.entries(leads).forEach(([uf, n])       => { if (states[uf]) states[uf].leads       = n; });
+  Object.entries(clientes).forEach(([uf, n])    => { if (states[uf]) states[uf].clientes    = n; });
+  Object.entries(sessions).forEach(([uf, n])    => { if (states[uf]) states[uf].sessions    = n; });
+  Object.entries(impressions).forEach(([uf, n]) => { if (states[uf]) states[uf].impressions = n; });
+
+  const sources = {
+    leads:       leadsResult.status       === 'fulfilled',
+    clientes:    bookingsResult.status    === 'fulfilled',
+    sessions:    sessionsResult.status    === 'fulfilled',
+    impressions: impressionsResult.status === 'fulfilled',
+  };
+  const errors = {
+    leads:       leadsResult.status       === 'rejected' ? String(leadsResult.reason)       : null,
+    clientes:    bookingsResult.status    === 'rejected' ? String(bookingsResult.reason)    : null,
+    sessions:    sessionsResult.status    === 'rejected' ? String(sessionsResult.reason)    : null,
+    impressions: impressionsResult.status === 'rejected' ? String(impressionsResult.reason) : null,
+  };
+
+  return res.status(200).json({
+    range:        { days },
+    fetched_at:   new Date().toISOString(),
+    next_refresh: new Date(Date.now() + 12 * 3600 * 1000).toISOString(),
+    states,
+    sources,
+    errors,
+  });
+}
+
+async function aggregateLeadsByUF(days: number): Promise<Record<string, number>> {
+  const rows = await fetchSheetRange(LEADS_SHEET_ID, 'A2:F1000');
+  const cutoff = days > 0 ? Date.now() - days * 86400000 : 0;
+  const byState: Record<string, number> = {};
+
+  for (const row of rows) {
+    if (!row[0]) continue;
+    const ts = new Date(row[0]).getTime();
+    if (Number.isNaN(ts)) continue;
+    if (cutoff > 0 && ts < cutoff) continue;
+
+    const ddd = extractDDD(String(row[3] || ''));
+    if (!ddd) continue;
+    const info = DDD_TO_STATE[ddd];
+    if (!info) continue;
+    byState[info.state] = (byState[info.state] || 0) + 1;
+  }
+  return byState;
+}
+
+async function aggregateBookingsByUF(): Promise<Record<string, number>> {
+  const rows = await fetchSheetRange(BOOKINGS_SHEET_ID, 'Agendamentos!A2:U1000');
+  const customersByState: Record<string, Set<string>> = {};
+
+  for (const row of rows) {
+    if (!row[0] || !String(row[0]).trim()) continue;
+    const email     = String(row[8] || '').toLowerCase().trim() || `id-${row[0]}`;
+    const whatsapp  = String(row[9] || '');
+    const statusRaw = String(row[12] || '');
+    const status    = normalizeStatus(statusRaw);
+    if (status !== 'confirmado') continue; // só clientes confirmados (intent real)
+
+    const ddd = extractDDD(whatsapp);
+    if (!ddd) continue;
+    const info = DDD_TO_STATE[ddd];
+    if (!info) continue;
+    if (!customersByState[info.state]) customersByState[info.state] = new Set();
+    customersByState[info.state].add(email);
+  }
+
+  const result: Record<string, number> = {};
+  Object.entries(customersByState).forEach(([uf, set]) => { result[uf] = set.size; });
+  return result;
+}
+
+async function aggregateSessionsByUF(days: number): Promise<Record<string, number>> {
+  if (!process.env.GA4_OAUTH_REFRESH_TOKEN) throw new Error('GA4 OAuth não configurado');
+  const property = `properties/${GA4_PROPERTY_ID}`;
+  const client = buildGa4Client();
+
+  const [report] = await client.runReport({
+    property,
+    dateRanges: [{ startDate: daysAgo(days), endDate: 'today' }],
+    dimensions: [{ name: 'country' }, { name: 'region' }],
+    metrics:    [{ name: 'sessions' }],
+    dimensionFilter: {
+      filter: { fieldName: 'country', stringFilter: { matchType: 'EXACT', value: 'Brazil' } },
+    },
+    limit: 100,
+  });
+
+  const byState: Record<string, number> = {};
+  (report.rows || []).forEach(r => {
+    const regionName = r.dimensionValues?.[1]?.value || '';
+    const sessions   = Number(r.metricValues?.[0]?.value || 0);
+    const uf = nameToUF(regionName);
+    if (uf) byState[uf] = (byState[uf] || 0) + sessions;
+  });
+  return byState;
+}
+
+async function aggregateImpressionsByUF(days: number): Promise<Record<string, number>> {
+  const token     = process.env.META_ADS_TOKEN;
+  const accountId = process.env.META_ADS_ACCOUNT_ID;
+  if (!token || !accountId) throw new Error('META_ADS_TOKEN ou META_ADS_ACCOUNT_ID ausentes');
+
+  const until = new Date().toISOString().slice(0, 10);
+  const since = new Date(Date.now() - days * 86400000).toISOString().slice(0, 10);
+  const timeRange = encodeURIComponent(JSON.stringify({ since, until }));
+  const acctPath = accountId.startsWith('act_') ? accountId : `act_${accountId}`;
+  const url = `https://graph.facebook.com/v19.0/${acctPath}/insights?fields=impressions&breakdowns=region&time_range=${timeRange}&access_token=${token}`;
+
+  const r = await fetch(url);
+  if (!r.ok) {
+    const body = await r.text();
+    throw new Error(`Meta API ${r.status}: ${body.slice(0, 200)}`);
+  }
+  const json = await r.json() as { data?: Array<{ region?: string; impressions?: string }> };
+
+  const byState: Record<string, number> = {};
+  (json.data || []).forEach(row => {
+    const uf = nameToUF(row.region || '');
+    if (!uf) return;
+    byState[uf] = (byState[uf] || 0) + (Number(row.impressions) || 0);
+  });
+  return byState;
+}
+
 /* ───────── Action handlers (POST body { action: '...', ... }) ───────── */
 
 async function handleCancel(req: VercelRequest, res: VercelResponse, auth: { user: string }) {
@@ -2316,6 +2511,15 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       console.error('[admin-bookings/clarity-insights]', msg);
+      return res.status(500).json({ error: msg });
+    }
+  }
+  if (endpoint === 'geo-brazil') {
+    try {
+      return await handleGeoBrazil(req, res);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      console.error('[admin-bookings/geo-brazil]', msg);
       return res.status(500).json({ error: msg });
     }
   }
