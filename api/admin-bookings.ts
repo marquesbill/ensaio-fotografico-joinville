@@ -872,20 +872,6 @@ async function handleGa4Acquisition(req: VercelRequest, res: VercelResponse) {
     limit:      10,
   });
 
-  // Landing pages
-  const [landingReport] = await client.runReport({
-    property,
-    dateRanges: [periodCurrent],
-    dimensions: [{ name: 'landingPage' }],
-    metrics:    [
-      { name: 'sessions' },
-      { name: 'engagementRate' },
-      { name: 'averageSessionDuration' },
-    ],
-    orderBys:   [{ metric: { metricName: 'sessions' }, desc: true }],
-    limit:      10,
-  });
-
   // Computa share de tráfego pago a partir dos canais
   const sumPaid = (rows: NonNullable<typeof channelCur[0]['rows']>) => {
     let total = 0, paid = 0;
@@ -943,18 +929,11 @@ async function handleGa4Acquisition(req: VercelRequest, res: VercelResponse) {
       engagementRate: Number(r.metricValues?.[2]?.value || 0),
     }));
 
-  const landingPages = (landingReport.rows || []).map(r => ({
-    page:                r.dimensionValues?.[0]?.value || '/',
-    sessions:            Number(r.metricValues?.[0]?.value || 0),
-    engagementRate:      Number(r.metricValues?.[1]?.value || 0),
-    avgSessionDuration:  Number(r.metricValues?.[2]?.value || 0),
-  }));
-
   return res.status(200).json({
     range:        { start: periodCurrent.startDate, end: 'today', days },
     fetched_at:   new Date().toISOString(),
     next_refresh: new Date(Date.now() + 12 * 3600 * 1000).toISOString(),
-    kpis, channels, sources, campaigns, landingPages,
+    kpis, channels, sources, campaigns,
   });
 }
 

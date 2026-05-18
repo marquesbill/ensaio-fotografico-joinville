@@ -6,7 +6,6 @@
  *  - Canais (channel groups com share visual)
  *  - Fontes (source/medium pairs)
  *  - Campanhas UTM (vazio enquanto não tiver campanha rodando)
- *  - Landing pages (com tempo médio + engagement)
  *
  * Dados via /api/admin-bookings?endpoint=ga4-acquisition&range=N.
  */
@@ -43,10 +42,6 @@ interface AcquisitionData {
     campaign: string;
     sessions: number; users: number; engagementRate: number;
   }>;
-  landingPages: Array<{
-    page: string;
-    sessions: number; engagementRate: number; avgSessionDuration: number;
-  }>;
 }
 
 interface LeadsData {
@@ -80,19 +75,6 @@ const RANGE_OPTIONS = [
   { key: '28d', label: '28 dias', days: 28 },
   { key: '90d', label: '90 dias', days: 90 },
 ] as const;
-
-function fmtDuration(sec: number) {
-  if (sec < 1) return '—';
-  const m = Math.floor(sec / 60);
-  const s = Math.floor(sec % 60);
-  if (m === 0) return `${s}s`;
-  return `${m}m ${String(s).padStart(2, '0')}s`;
-}
-
-function shortenPath(path: string, max = 38) {
-  if (path.length <= max) return path;
-  return path.slice(0, max - 1) + '…';
-}
 
 export function Acquisition({ token }: { token: string }) {
   const [data, setData] = useState<AcquisitionData | null>(null);
@@ -419,29 +401,6 @@ export function Acquisition({ token }: { token: string }) {
             { key: 'campaign',   label: 'Campanha', align: 'left'  },
             { key: 'sessions',   label: 'Sessões',  align: 'right' },
             { key: 'engagement', label: 'Engaj.',   align: 'right' },
-          ]}
-          barColumn="sessions"
-          maxRows={10}
-        />
-      </div>
-
-      {/* Landing pages */}
-      <div className="grid grid-cols-1 gap-3">
-        <DataTable
-          title="Páginas de entrada (landing pages)"
-          source="GA4"
-          loading={loading}
-          rows={(data?.landingPages || []).map((p) => ({
-            page:       shortenPath(p.page),
-            sessions:   p.sessions,
-            engagement: `${(p.engagementRate * 100).toFixed(0)}%`,
-            duration:   fmtDuration(p.avgSessionDuration),
-          }))}
-          columns={[
-            { key: 'page',       label: 'Página',       align: 'left'  },
-            { key: 'sessions',   label: 'Sessões',      align: 'right' },
-            { key: 'engagement', label: 'Engaj.',       align: 'right' },
-            { key: 'duration',   label: 'Tempo médio',  align: 'right' },
           ]}
           barColumn="sessions"
           maxRows={10}
