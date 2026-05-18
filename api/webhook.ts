@@ -1,5 +1,6 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { Resend } from 'resend';
+import { decodeAsaasRef } from './_asaas';
 
 
 
@@ -83,64 +84,132 @@ function buildBookingEmailHtml(data: {
 </table></td></tr></table></body></html>`;
 }
 
-const MP_TOKEN      = process.env.MERCADOPAGO_ACCESS_TOKEN!;
-const SCRIPT_URL    = process.env.SHEETS_SCRIPT_URL!;
+const MP_TOKEN          = process.env.MERCADOPAGO_ACCESS_TOKEN!;
+const SCRIPT_URL        = process.env.SHEETS_SCRIPT_URL!;
+const ASAAS_WEBHOOK_TOK = process.env.ASAAS_WEBHOOK_TOKEN || '';
 const ANDRE_EMAIL   = 'andreffotografia@gmail.com';
 const MARIANE_EMAIL = 'mariane.sslourenco@gmail.com';
 const FROM_EMAIL    = 'Ensaio Joinville <confirmacao@ensaiofotograficoemjoinville.com>';
 
 const resend = new Resend(process.env.RESEND_API_KEY!);
 
+// ─── Tipo unificado pós-normalização ───────────────────────────
+// Independente do gateway, mapeamos para essa forma antes de continuar.
+type NormalizedPayment = {
+  gateway:        'mp' | 'asaas';
+  externalSlotId: string;          // pareia com o `stripeSession` no Sheets
+  paymentId:      string;          // ID interno do gateway (pra log)
+  externalRef:    string;          // JSON com meta do booking
+  installments:   number;
+  billingType?:   string;          // PIX | CREDIT_CARD | BOLETO | UNDEFINED (ASAAS); ausente em MP
+};
+
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   const PACKAGES = getPackages();
   if (req.method !== 'POST') return res.status(405).end();
 
-  const body = req.body as {
-    type?: string;
-    action?: string;
-    data?: { id?: string | number };
-  };
+  // Detecta o gateway pelo formato do payload:
+  //  - ASAAS envia `{ event, payment }`
+  //  - MP    envia `{ type: 'payment', data: { id } }`
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const body = req.body as any;
+  const isAsaas = typeof body?.event === 'string' && body?.payment;
+  const isMp    = body?.type === 'payment';
 
-  if (body.type !== 'payment') {
-    return res.status(200).json({ received: true });
-  }
+  let normalized: NormalizedPayment;
 
-  const paymentId = body.data?.id;
-  if (!paymentId) return res.status(400).json({ error: 'Missing payment id' });
+  if (isAsaas) {
+    // Autenticação opcional via header asaas-access-token (definido no painel ASAAS)
+    if (ASAAS_WEBHOOK_TOK) {
+      const got = (req.headers['asaas-access-token'] || req.headers['Asaas-Access-Token'] || '') as string;
+      if (got !== ASAAS_WEBHOOK_TOK) {
+        console.warn('[webhook] ASAAS token mismatch');
+        return res.status(401).json({ error: 'Invalid webhook token' });
+      }
+    }
 
-  // Fetch full payment details from MP
-  let payment: {
-    status: string;
-    preference_id: string;
-    id: number;
-    external_reference?: string;
-    installments?: number;
-  };
-  try {
-    const r = await fetch(`https://api.mercadopago.com/v1/payments/${paymentId}`, {
-      headers: { Authorization: `Bearer ${MP_TOKEN}` },
-    });
-    payment = await r.json();
-  } catch (err) {
-    console.error('[webhook] failed to fetch MP payment', err);
-    return res.status(500).json({ error: 'Failed to fetch payment' });
-  }
+    const evt = body.event as string;
+    const pay = body.payment as {
+      id: string; status: string; paymentLink?: string;
+      externalReference?: string; installmentCount?: number; billingType?: string;
+    };
 
-  if (payment.status !== 'approved') {
-    return res.status(200).json({ received: true, status: payment.status });
+    // Apenas eventos definitivos de confirmação avançam o fluxo:
+    //  - PAYMENT_CONFIRMED → cartão capturado
+    //  - PAYMENT_RECEIVED  → boleto/PIX recebido
+    // Outros eventos (CREATED, AUTHORIZED, PENDING…) são apenas reconhecidos.
+    if (evt !== 'PAYMENT_CONFIRMED' && evt !== 'PAYMENT_RECEIVED') {
+      return res.status(200).json({ received: true, event: evt, status: pay?.status });
+    }
+    if (!pay?.paymentLink || !pay?.externalReference) {
+      console.error('[webhook] ASAAS payment without paymentLink or externalReference', pay);
+      return res.status(400).json({ error: 'Missing paymentLink or externalReference' });
+    }
+
+    normalized = {
+      gateway:        'asaas',
+      externalSlotId: pay.paymentLink,            // ID do Link no Sheets
+      paymentId:      pay.id,
+      externalRef:    pay.externalReference,
+      installments:   pay.installmentCount || 1,
+      billingType:    pay.billingType,
+    };
+  } else if (isMp) {
+    const paymentId = body.data?.id;
+    if (!paymentId) return res.status(400).json({ error: 'Missing payment id' });
+
+    let payment: {
+      status: string; preference_id: string; id: number;
+      external_reference?: string; installments?: number;
+    };
+    try {
+      const r = await fetch(`https://api.mercadopago.com/v1/payments/${paymentId}`, {
+        headers: { Authorization: `Bearer ${MP_TOKEN}` },
+      });
+      payment = await r.json();
+    } catch (err) {
+      console.error('[webhook] failed to fetch MP payment', err);
+      return res.status(500).json({ error: 'Failed to fetch payment' });
+    }
+
+    if (payment.status !== 'approved') {
+      return res.status(200).json({ received: true, status: payment.status });
+    }
+
+    normalized = {
+      gateway:        'mp',
+      externalSlotId: payment.preference_id,
+      paymentId:      String(payment.id),
+      externalRef:    payment.external_reference || '',
+      installments:   payment.installments || 1,
+    };
+  } else {
+    // payload desconhecido — ack pra evitar retries infinitos do gateway
+    return res.status(200).json({ received: true, ignored: true });
   }
 
   // Parse booking data from external_reference
-  let meta: { date: string; time: string; packageKey: string; name: string; email: string; whatsapp: string; numBailarinas?: number };
-  try {
-    meta = JSON.parse(payment.external_reference || '{}');
-  } catch {
-    console.error('[webhook] invalid external_reference');
-    return res.status(400).json({ error: 'Invalid external_reference' });
+  // - MP usa formato JSON canon: {date,time,packageKey,name,email,whatsapp,numBailarinas}
+  // - ASAAS usa formato compacto (chaves de 1 letra) por causa do limite de 100 chars
+  let meta: { date: string; time: string; packageKey: string; name: string; email: string; whatsapp: string; numBailarinas: number };
+  if (normalized.gateway === 'asaas') {
+    const d = decodeAsaasRef(normalized.externalRef);
+    meta = { ...d, numBailarinas: d.numBailarinas };
+  } else {
+    try {
+      const j = JSON.parse(normalized.externalRef || '{}') as Partial<typeof meta>;
+      meta = {
+        date: j.date || '', time: j.time || '', packageKey: j.packageKey || '',
+        name: j.name || '', email: j.email || '', whatsapp: j.whatsapp || '',
+        numBailarinas: Number(j.numBailarinas) || 1,
+      };
+    } catch {
+      console.error('[webhook] invalid external_reference');
+      return res.status(400).json({ error: 'Invalid external_reference' });
+    }
   }
 
-  const { date, time, packageKey, name, email, whatsapp } = meta;
-  const numBailarinas = Number(meta.numBailarinas) || 1;
+  const { date, time, packageKey, name, email, whatsapp, numBailarinas } = meta;
   const pkg = PACKAGES[packageKey] || { name: packageKey, duration: 0, price: 0 };
 
   const [sh, sm] = time.split(':').map(Number);
@@ -155,8 +224,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       headers: { 'Content-Type': 'text/plain' },
       body: JSON.stringify({
         action:        'confirmBooking',
-        stripeSession: payment.preference_id,
-        stripePayment: String(payment.id),
+        stripeSession: normalized.externalSlotId,
+        stripePayment: normalized.paymentId,
+        gateway:       normalized.gateway,
       }),
     });
     const json = await r.json();
@@ -194,8 +264,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 Cliente: ${name}<br>E-mail: ${email}<br>WhatsApp: ${whatsapp}<br>
 Data: ${fmtDate(date)}<br>Horário: ${time}–${endTime}<br>
 Pacote: ${pkg.name}<br>Nº Bailarinas: ${numBailarinas}<br>Valor: R$ ${pkg.price}<br>
-Parcelas: ${payment.installments || 1}x<br>
-Booking ID: ${bookingId}<br>MP Payment: ${payment.id}</p>`,
+Parcelas: ${normalized.installments}x<br>
+${normalized.billingType ? `Método: ${normalized.billingType}<br>` : ''}
+Booking ID: ${bookingId}<br>Gateway: ${normalized.gateway.toUpperCase()} · Payment: ${normalized.paymentId}</p>`,
     });
   } catch (e) {
     console.error('[webhook] Resend andre error', e);
@@ -225,7 +296,7 @@ Booking ID: ${bookingId}<br>MP Payment: ${payment.id}</p>`,
       <tr><td style="color:#6b7280;padding:6px 0;font-size:13px;">Data</td>
           <td style="font-size:13px;">${fmtDate(date)} às ${time} – ${endTime}</td></tr>
       <tr><td style="color:#6b7280;padding:6px 0;font-size:13px;border-top:1px solid #e5e7eb;">Valor pago</td>
-          <td style="font-weight:700;font-size:14px;color:#7a3f8f;border-top:1px solid #e5e7eb;">R$ ${pkg.price.toFixed(2).replace('.', ',')}${payment.installments && payment.installments > 1 ? ` em ${payment.installments}x` : ''}</td></tr>
+          <td style="font-weight:700;font-size:14px;color:#7a3f8f;border-top:1px solid #e5e7eb;">R$ ${pkg.price.toFixed(2).replace('.', ',')}${normalized.installments > 1 ? ` em ${normalized.installments}x` : ''}</td></tr>
     </table>
     <p style="font-size:12px;color:#9ca3af;margin-top:16px;border-top:1px solid #f0f0f0;padding-top:12px;">
       Booking ID: ${bookingId}

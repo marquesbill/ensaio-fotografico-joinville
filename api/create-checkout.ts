@@ -1,4 +1,5 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
+import { createAsaasPaymentLink, asaasEnabled, encodeAsaasRef } from './_asaas';
 
 
 const LOTE1_START_MS = new Date('2026-05-16T00:00:00-03:00').getTime();
@@ -31,6 +32,11 @@ const SCRIPT_URL = process.env.SHEETS_SCRIPT_URL!;
 const SITE_URL   = process.env.SITE_URL || 'https://www.ensaiofotograficoemjoinville.com';
 const MP_TOKEN   = process.env.MERCADOPAGO_ACCESS_TOKEN!;
 
+// Feature flag: 'mp' (default) ou 'asaas'. Permite alternar sem deploy.
+// Quando 'asaas': cria Link de Pagamento ASAAS e retorna { paymentLinkUrl }.
+// Quando 'mp':    cria Preference MP e retorna { preferenceId } (Brick).
+const GATEWAY = (process.env.PAYMENT_GATEWAY || 'mp').toLowerCase();
+
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   const PACKAGES = getPackages();
@@ -39,7 +45,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method === 'OPTIONS') return res.status(200).end();
   if (req.method !== 'POST')    return res.status(405).json({ error: 'Method not allowed' });
 
-  if (!MP_TOKEN) {
+  if (GATEWAY === 'asaas' && !asaasEnabled()) {
+    return res.status(500).json({ error: 'PAYMENT_GATEWAY=asaas mas ASAAS_API_KEY não configurada' });
+  }
+  if (GATEWAY === 'mp' && !MP_TOKEN) {
     return res.status(500).json({ error: 'MERCADOPAGO_ACCESS_TOKEN não configurada' });
   }
 
@@ -80,41 +89,66 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       // ainda revalida lá no Apps Script e barra a duplicação.
     }
 
-    // 1. Create Mercado Pago preference
-    const prefRes = await fetch('https://api.mercadopago.com/checkout/preferences', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${MP_TOKEN}`,
-      },
-      body: JSON.stringify({
-        items: [{
-          title:       `Ensaio Fotográfico em Joinville — Pacote ${pkg.name}`,
-          description: `${date.split('-').reverse().join('/')} às ${time} · ${pkg.duration} min`,
-          quantity:    1,
-          unit_price:  pkg.price,
-          currency_id: 'BRL',
-        }],
-        payer: { email },
-        back_urls: {
-          success: `${SITE_URL}/agendamento/sucesso`,
-          failure: `${SITE_URL}/agendamento?cancelado=1`,
-          pending: `${SITE_URL}/agendamento/sucesso`,
-        },
-        auto_return: 'approved',
-        payment_methods: {
-          installments: 6,
-        },
-        external_reference: JSON.stringify({ date, time, packageKey, name, email, whatsapp, numBailarinas: nb }),
-        notification_url: `${SITE_URL}/api/webhook`,
-        expires: true,
-        expiration_date_to: new Date(Date.now() + 30 * 60 * 1000).toISOString(),
-      }),
-    });
+    // 1. Cria a ordem de pagamento — branch pelo gateway ativo.
+    //    Em ambos os casos guardamos um identificador na coluna `stripeSession`
+    //    do Sheets (campo legado reusado). Para MP é o preferenceId; para ASAAS
+    //    é o paymentLink.id (que o webhook usa pra parear o pagamento).
+    let externalId: string;          // ID que vai pro Sheets (preferenceId | paymentLinkId)
+    let mpPreferenceId: string | null = null;
+    let asaasPaymentLinkUrl: string | null = null;
 
-    const pref = await prefRes.json() as { id?: string; init_point?: string; message?: string };
-    if (!pref.id || !pref.init_point) {
-      throw new Error(pref.message || 'Erro ao criar preferência Mercado Pago');
+    // MP aceita externalReference grande; ASAAS limita a 100 chars (encoded compact).
+    const mpExternalReference    = JSON.stringify({ date, time, packageKey, name, email, whatsapp, numBailarinas: nb });
+    const asaasExternalReference = encodeAsaasRef({ date, time, packageKey, numBailarinas: nb, name, email, whatsapp });
+
+    if (GATEWAY === 'asaas') {
+      const link = await createAsaasPaymentLink({
+        name:              `Ensaio Fotográfico em Joinville — Pacote ${pkg.name}`,
+        description:       `${date.split('-').reverse().join('/')} às ${time} · ${pkg.duration} min · ${nb} ${nb === 1 ? 'bailarina' : 'bailarinas'}`,
+        value:             pkg.price,
+        externalReference: asaasExternalReference,
+        successUrl:        `${SITE_URL}/agendamento/sucesso`,
+      });
+      externalId           = link.id;
+      asaasPaymentLinkUrl  = link.url;
+    } else {
+      const prefRes = await fetch('https://api.mercadopago.com/checkout/preferences', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${MP_TOKEN}`,
+        },
+        body: JSON.stringify({
+          items: [{
+            title:       `Ensaio Fotográfico em Joinville — Pacote ${pkg.name}`,
+            description: `${date.split('-').reverse().join('/')} às ${time} · ${pkg.duration} min`,
+            quantity:    1,
+            unit_price:  pkg.price,
+            currency_id: 'BRL',
+          }],
+          payer: { email },
+          back_urls: {
+            success: `${SITE_URL}/agendamento/sucesso`,
+            failure: `${SITE_URL}/agendamento?cancelado=1`,
+            pending: `${SITE_URL}/agendamento/sucesso`,
+          },
+          auto_return: 'approved',
+          payment_methods: {
+            installments: 6,
+          },
+          external_reference: mpExternalReference,
+          notification_url: `${SITE_URL}/api/webhook`,
+          expires: true,
+          expiration_date_to: new Date(Date.now() + 30 * 60 * 1000).toISOString(),
+        }),
+      });
+
+      const pref = await prefRes.json() as { id?: string; init_point?: string; message?: string };
+      if (!pref.id || !pref.init_point) {
+        throw new Error(pref.message || 'Erro ao criar preferência Mercado Pago');
+      }
+      externalId      = pref.id;
+      mpPreferenceId  = pref.id;
     }
 
     // 2. Mark slot as Pending in Sheets
@@ -128,12 +162,17 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         instagramBailarina: instagramBailarina || '',
         nomeBailarina: nomeBailarina || '',
         numBailarinas: nb,
-        stripeSession: pref.id,   // reusing field — stores MP preference ID
+        stripeSession: externalId,   // legacy field — MP preferenceId OR ASAAS paymentLinkId
+        gateway: GATEWAY,            // novo: indica qual gateway gerou esse pending
         source: 'site',
       }),
     });
 
-    return res.status(200).json({ preferenceId: pref.id });
+    // 3. Resposta: shape depende do gateway.
+    if (GATEWAY === 'asaas') {
+      return res.status(200).json({ paymentLinkUrl: asaasPaymentLinkUrl, gateway: 'asaas' });
+    }
+    return res.status(200).json({ preferenceId: mpPreferenceId, gateway: 'mp' });
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : String(err);
     console.error('[create-checkout]', msg);

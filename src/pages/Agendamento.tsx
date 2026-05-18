@@ -321,6 +321,16 @@ export default function Agendamento() {
       track.event('agendamento_checkout_preference_created');
       track.upgrade('checkout_reached');
       track.tag('reached_checkout', 'true');
+
+      // Gateway-specific routing:
+      //  - ASAAS: backend retorna { paymentLinkUrl } → redireciona pra página hospedada
+      //  - MP:    backend retorna { preferenceId }   → renderiza Brick no step 5
+      if (data.paymentLinkUrl) {
+        track.tag('payment_gateway', 'asaas');
+        window.location.href = data.paymentLinkUrl;
+        return;
+      }
+      track.tag('payment_gateway', 'mp');
       setPreferenceId(data.preferenceId);
       setStep(5);
     } catch (e: unknown) {
