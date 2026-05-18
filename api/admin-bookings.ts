@@ -1476,9 +1476,12 @@ async function handleClarityInsights(req: VercelRequest, res: VercelResponse) {
     });
   }
 
-  const url = `https://www.clarity.ms/export-data/api/v1-beta/project-live-insights?numOfDays=${numOfDays}`;
+  const url = `https://www.clarity.ms/export-data/api/v1/project-live-insights?numOfDays=${numOfDays}`;
   const r = await fetch(url, {
-    headers: { Authorization: `Bearer ${token}` },
+    headers: {
+      Authorization:  `Bearer ${token}`,
+      'Content-Type': 'application/json',
+    },
   });
 
   if (!r.ok) {
@@ -1499,6 +1502,11 @@ async function handleClarityInsights(req: VercelRequest, res: VercelResponse) {
       if (m.metricName) byMetric[norm(m.metricName)] = m.information || [];
     });
   }
+
+  // Log defensivo — primeira chamada após deploy expõe a estrutura real
+  // dos metricName/information no log da Vercel, pra ajustar parser se preciso.
+  console.log('[clarity] metricNames:', Object.keys(byMetric));
+  console.log('[clarity] sample row (rageclickcount):', JSON.stringify(byMetric['rageclickcount']?.[0]));
 
   // Extrai counts de fricção. Clarity retorna sessionsWithMetricCount + sessionsWithoutMetricCount;
   // % = with / (with + without).
