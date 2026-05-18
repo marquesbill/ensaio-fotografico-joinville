@@ -255,23 +255,58 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   const endMin   = sh * 60 + sm + pkg.duration;
   const endTime  = String(Math.floor(endMin / 60)).padStart(2, '0') + ':' + String(endMin % 60).padStart(2, '0');
 
-  // 1. Confirm booking in Sheets
+  // 1. Confirm booking in Sheets — retry 3x + alerta crítico se falhar.
+  // Cenário evitado: cliente paga, Apps Script timeout, webhook segue
+  // sem confirmar → cliente recebe email "confirmado" mas Sheets fica
+  // pending → cliente chega no dia sem reserva.
   let bookingId = '';
-  try {
-    const r = await fetch(SCRIPT_URL, {
-      method: 'POST',
-      headers: { 'Content-Type': 'text/plain' },
-      body: JSON.stringify({
-        action:        'confirmBooking',
-        stripeSession: normalized.externalSlotId,
-        stripePayment: normalized.paymentId,
-        gateway:       normalized.gateway,
-      }),
-    });
-    const json = await r.json();
-    bookingId = json.bookingId || '';
-  } catch (e) {
-    console.error('[webhook] confirmBooking error', e);
+  let confirmFailed: string | null = null;
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    try {
+      const r = await fetch(SCRIPT_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'text/plain' },
+        body: JSON.stringify({
+          action:        'confirmBooking',
+          stripeSession: normalized.externalSlotId,
+          stripePayment: normalized.paymentId,
+          gateway:       normalized.gateway,
+        }),
+      });
+      if (!r.ok) throw new Error(`HTTP ${r.status}`);
+      const json = await r.json();
+      bookingId = json.bookingId || '';
+      confirmFailed = null;
+      break;
+    } catch (e) {
+      confirmFailed = e instanceof Error ? e.message : String(e);
+      console.error(`[webhook] confirmBooking attempt ${attempt}/3 failed:`, confirmFailed);
+      if (attempt < 3) await new Promise(r => setTimeout(r, 500 * attempt));
+    }
+  }
+  if (confirmFailed) {
+    // 3 tentativas falharam — alerta urgente pro admin investigar manual.
+    // Continua o fluxo de emails pra não confundir cliente que JÁ PAGOU.
+    try {
+      await resend.emails.send({
+        from:    FROM_EMAIL,
+        to:      ANDRE_EMAIL,
+        subject: `🚨 URGENTE: pagamento OK mas Sheets não confirmou — ${name} ${date} ${time}`,
+        html: `<p><strong>O cliente já pagou mas o confirmBooking falhou 3x.</strong> Confirme manualmente no Sheets pra evitar duplo agendamento.</p>
+<p><strong>Cliente:</strong> ${name}<br>
+<strong>Email:</strong> ${email}<br>
+<strong>WhatsApp:</strong> ${whatsapp}<br>
+<strong>Data:</strong> ${date} ${time}<br>
+<strong>Pacote:</strong> ${pkg.name} (R$ ${pkg.price})<br>
+<strong>Gateway:</strong> ${normalized.gateway.toUpperCase()}<br>
+<strong>Payment ID:</strong> ${normalized.paymentId}<br>
+<strong>External Slot ID:</strong> ${normalized.externalSlotId}<br>
+<strong>Último erro:</strong> ${confirmFailed}</p>
+<p>Ação: abre o Sheets de Agendamentos, busca a linha com stripeSession = <code>${normalized.externalSlotId}</code>, muda status pra Confirmado e preenche stripePayment.</p>`,
+      });
+    } catch (e) {
+      console.error('[webhook] CRITICAL: confirmBooking failed AND admin alert failed', e);
+    }
   }
 
   // 2. Send confirmation email to client
