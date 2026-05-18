@@ -1,5 +1,94 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
-import { createAsaasPaymentLink, asaasEnabled, encodeAsaasRef } from './_asaas';
+
+// ─── ASAAS helpers (inlined) ───────────────────────────────────
+// Inlined em vez de import './_asaas' porque o Vercel serverless bundler
+// não inclui módulos prefixados com `_` no output da function (mesmo padrão
+// que `_adminAuth.ts` orfão e admin-bookings.ts re-implementa inline).
+const ASAAS_API_KEY = process.env.ASAAS_API_KEY || '';
+const ASAAS_ENV     = (process.env.ASAAS_ENV || 'production').toLowerCase();
+const ASAAS_BASE    = ASAAS_ENV === 'sandbox'
+  ? 'https://api-sandbox.asaas.com/v3'
+  : 'https://api.asaas.com/v3';
+
+function asaasEnabled() { return Boolean(ASAAS_API_KEY); }
+
+async function asaas<T = unknown>(
+  path: string,
+  init: { method?: 'GET' | 'POST' | 'PUT' | 'DELETE'; body?: unknown } = {},
+): Promise<T> {
+  if (!ASAAS_API_KEY) throw new Error('ASAAS_API_KEY não configurada');
+  const url = `${ASAAS_BASE}${path.startsWith('/') ? path : `/${path}`}`;
+  const res = await fetch(url, {
+    method: init.method || 'GET',
+    headers: {
+      'Content-Type': 'application/json',
+      access_token:   ASAAS_API_KEY,
+      'User-Agent':   'J26-EnsaioJoinville/1.0',
+    },
+    body: init.body ? JSON.stringify(init.body) : undefined,
+  });
+  const text = await res.text();
+  let json: unknown = null;
+  try { json = text ? JSON.parse(text) : null; } catch { /* response não-JSON */ }
+  if (!res.ok) {
+    const body = json as { errors?: Array<{ description?: string; code?: string }>; message?: string } | null;
+    const apiMsg = body?.errors?.map(e => `${e.code ? `[${e.code}] ` : ''}${e.description || ''}`).filter(Boolean).join('; ')
+      || body?.message
+      || (typeof text === 'string' && text.length < 500 ? text : '')
+      || `HTTP ${res.status}`;
+    throw new Error(`[ASAAS ${res.status}] ${apiMsg}`);
+  }
+  return json as T;
+}
+
+type AsaasPaymentLink = { id: string; url: string };
+
+// Encode booking metadata em string compacta pipe-delimited (limite ASAAS = 100 chars).
+function encodeAsaasRef(o: {
+  date: string; time: string; packageKey: string; numBailarinas: number;
+  name: string; email: string; whatsapp: string;
+}): string {
+  const pkg = o.packageKey.charAt(0);
+  const safeName  = String(o.name || '').replace(/\|/g, ' ');
+  const safeEmail = String(o.email || '').replace(/\|/g, '_');
+  const build = (n: string, e: string) =>
+    `v1|${o.date}|${o.time}|${pkg}|${o.numBailarinas}|${o.whatsapp}|${n}|${e}`;
+  let ref = build(safeName, safeEmail);
+  if (ref.length <= 100) return ref;
+  const overhead = build('', '').length + safeEmail.length;
+  const nameBudget = Math.max(0, 100 - overhead);
+  ref = build(safeName.slice(0, nameBudget), safeEmail);
+  if (ref.length <= 100) return ref;
+  return build('', safeEmail.slice(0, Math.max(0, 100 - build('', '').length)));
+}
+
+async function createAsaasPaymentLink(opts: {
+  name: string; description?: string; value: number;
+  externalReference: string; successUrl: string;
+}): Promise<AsaasPaymentLink> {
+  const endDate = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+  const useCallback = (process.env.ASAAS_USE_CALLBACK || 'false').toLowerCase() === 'true';
+  type Body = {
+    name: string; description: string; billingType: string; chargeType: string;
+    value: number; dueDateLimitDays: number; endDate: string;
+    externalReference: string; notificationDisabled: boolean;
+    callback?: { successUrl: string; autoRedirect: boolean };
+  };
+  const body: Body = {
+    name:                opts.name,
+    description:         opts.description || '',
+    billingType:         'UNDEFINED',
+    chargeType:          'DETACHED',
+    value:               opts.value,
+    dueDateLimitDays:    1,
+    endDate,
+    externalReference:   opts.externalReference,
+    notificationDisabled: true,
+  };
+  if (useCallback) body.callback = { successUrl: opts.successUrl, autoRedirect: true };
+  return asaas<AsaasPaymentLink>('/paymentLinks', { method: 'POST', body });
+}
+// ─── fim ASAAS helpers ─────────────────────────────────────────
 
 
 const LOTE1_START_MS = new Date('2026-05-16T00:00:00-03:00').getTime();

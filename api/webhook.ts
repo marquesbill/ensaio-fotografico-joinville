@@ -1,6 +1,41 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { Resend } from 'resend';
-import { decodeAsaasRef } from './_asaas';
+
+// ─── ASAAS decoder (inlined) ───────────────────────────────────
+// Decodifica o externalReference compacto (formato `v1|...`) que veio do
+// paymentLink criado em create-checkout. Inlined porque o Vercel serverless
+// bundler não inclui módulos `_*.ts` (mesmo padrão do _adminAuth.ts órfão).
+function decodeAsaasRef(raw: string): {
+  date: string; time: string; packageKey: string; numBailarinas: number;
+  name: string; email: string; whatsapp: string;
+} {
+  const packageMap: Record<string, string> = { l: 'lembranca', e: 'economico', c: 'completo' };
+  if (raw.startsWith('v1|')) {
+    const parts = raw.split('|'); // ['v1', date, time, p, b, w, n, e]
+    return {
+      date:          parts[1] || '',
+      time:          parts[2] || '',
+      packageKey:    packageMap[parts[3] || ''] || parts[3] || '',
+      numBailarinas: Number(parts[4]) || 1,
+      whatsapp:      parts[5] || '',
+      name:          parts[6] || '',
+      email:         parts[7] || '',
+    };
+  }
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let p: any = {};
+  try { p = JSON.parse(raw || '{}'); } catch { /* corrupto */ }
+  return {
+    date:          p.date || p.d || '',
+    time:          p.time || p.t || '',
+    packageKey:    p.packageKey || packageMap[p.p || ''] || p.p || '',
+    numBailarinas: Number(p.numBailarinas ?? p.b) || 1,
+    name:          p.name || p.n || '',
+    email:         p.email || p.e || '',
+    whatsapp:      p.whatsapp || p.w || '',
+  };
+}
+// ─── fim ASAAS decoder ─────────────────────────────────────────
 
 
 
