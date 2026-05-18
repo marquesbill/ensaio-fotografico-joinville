@@ -1440,6 +1440,124 @@ async function handleGa4Engagement(req: VercelRequest, res: VercelResponse) {
   });
 }
 
+/* ───────── Clarity Insights (sinais de fricção — complementa GA4 Engagement) ───────── */
+
+// Cache em memória — Clarity tem limite duro de 10 req/dia por projeto.
+// 6h TTL = no máx 4 req/dia, deixa margem. Compartilhado entre invocações
+// da mesma instância warm; instâncias frias re-fetcham (raro com tráfego baixo).
+type ClarityCacheEntry = { data: unknown; expiresAt: number };
+const clarityCache = new Map<string, ClarityCacheEntry>();
+const CLARITY_CACHE_TTL_MS = 6 * 3600 * 1000;
+
+interface ClarityMetricRow {
+  metricName?: string;
+  information?: Array<Record<string, string | number>>;
+}
+
+async function handleClarityInsights(req: VercelRequest, res: VercelResponse) {
+  const token = process.env.CLARITY_API_TOKEN;
+  if (!token) {
+    return res.status(503).json({
+      error:   'Clarity API não configurado',
+      details: 'Adicione CLARITY_API_TOKEN nas env vars da Vercel (gere em clarity.microsoft.com → Settings → Data Export)',
+    });
+  }
+
+  // Clarity Data Export API aceita só 1/2/3 dias. Default 3 (janela máxima).
+  const numOfDays = Math.min(Math.max(parseInt(String(req.query.days || '3'), 10) || 3, 1), 3);
+  const forceRefresh = req.query.refresh === '1';
+  const cacheKey = `clarity:${numOfDays}`;
+
+  const cached = clarityCache.get(cacheKey);
+  if (cached && !forceRefresh && cached.expiresAt > Date.now()) {
+    return res.status(200).json({
+      ...(cached.data as Record<string, unknown>),
+      cache_hit: true,
+    });
+  }
+
+  const url = `https://www.clarity.ms/export-data/api/v1-beta/project-live-insights?numOfDays=${numOfDays}`;
+  const r = await fetch(url, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+
+  if (!r.ok) {
+    const body = await r.text();
+    const msg = r.status === 429
+      ? 'Clarity rate limit excedido (10 req/dia). Volte amanhã ou aguarde o cache renovar.'
+      : `Clarity API ${r.status}: ${body.slice(0, 400)}`;
+    throw new Error(msg);
+  }
+
+  const raw = await r.json() as ClarityMetricRow[];
+
+  // Normaliza metricName (case-insensitive, sem espaço/underscore) pra lookup robusto
+  const norm = (s: string) => s.toLowerCase().replace(/[\s_-]/g, '');
+  const byMetric: Record<string, ClarityMetricRow['information']> = {};
+  if (Array.isArray(raw)) {
+    raw.forEach(m => {
+      if (m.metricName) byMetric[norm(m.metricName)] = m.information || [];
+    });
+  }
+
+  // Extrai counts de fricção. Clarity retorna sessionsWithMetricCount + sessionsWithoutMetricCount;
+  // % = with / (with + without).
+  const frictionPct = (metricKey: string) => {
+    const info = byMetric[metricKey]?.[0];
+    if (!info) return { pct: 0, sessions: 0, total: 0 };
+    const withCount    = Number(info.sessionsWithMetricCount)    || 0;
+    const withoutCount = Number(info.sessionsWithoutMetricCount) || 0;
+    const total        = withCount + withoutCount;
+    return {
+      pct:      total > 0 ? withCount / total : 0,
+      sessions: withCount,
+      total,
+    };
+  };
+
+  const rageClicks      = frictionPct('rageclickcount');
+  const deadClicks      = frictionPct('deadclickcount');
+  const excessiveScroll = frictionPct('excessivescroll');
+  const quickBacks      = frictionPct('quickbackclick');
+  const scriptErrors    = frictionPct('scripterrorcount');
+  const errorClicks     = frictionPct('errorclickcount');
+
+  // Scroll depth médio (Clarity tem nativo)
+  const scrollInfo = byMetric['scrolldepth']?.[0];
+  const averageScrollDepth = Number(scrollInfo?.averageScrollDepth) || 0;
+
+  // Engagement time (active vs total — Clarity diferencia)
+  const engageInfo = byMetric['engagementtime']?.[0];
+  const totalTime  = Number(engageInfo?.totalTime)  || 0;
+  const activeTime = Number(engageInfo?.activeTime) || 0;
+
+  const payload = {
+    range:        { days: numOfDays, note: 'Clarity API limita a janela máxima a 3 dias' },
+    fetched_at:   new Date().toISOString(),
+    next_refresh: new Date(Date.now() + CLARITY_CACHE_TTL_MS).toISOString(),
+    friction: {
+      rageClicks,
+      deadClicks,
+      excessiveScroll,
+      quickBacks,
+      scriptErrors,
+      errorClicks,
+    },
+    engagement: {
+      averageScrollDepth, // 0..100
+      totalTime,          // ms ou s, depende da resposta — frontend formata
+      activeTime,
+    },
+  };
+
+  clarityCache.set(cacheKey, {
+    data:      payload,
+    expiresAt: Date.now() + CLARITY_CACHE_TTL_MS,
+  });
+
+  return res.status(200).json({ ...payload, cache_hit: false });
+}
+
 /* ───────── Action handlers (POST body { action: '...', ... }) ───────── */
 
 async function handleCancel(req: VercelRequest, res: VercelResponse, auth: { user: string }) {
@@ -2071,6 +2189,15 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       console.error('[admin-bookings/meta-ads]', msg);
+      return res.status(500).json({ error: msg });
+    }
+  }
+  if (endpoint === 'clarity-insights') {
+    try {
+      return await handleClarityInsights(req, res);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      console.error('[admin-bookings/clarity-insights]', msg);
       return res.status(500).json({ error: msg });
     }
   }

@@ -8,7 +8,7 @@
  */
 
 import { useEffect, useState } from 'react';
-import { Clock, Sparkles, Layers, LogOut as Bounce } from 'lucide-react';
+import { Clock, Sparkles, Layers, LogOut as Bounce, Zap, MousePointerClick, MoveVertical, Undo2, AlertTriangle, AlertCircle } from 'lucide-react';
 
 import { KpiCard } from '../components/KpiCard';
 import { DataTable } from '../components/DataTable';
@@ -31,6 +31,32 @@ interface EngagementData {
   };
   faq: Array<{ idx: number; opens: number }>;
   topEvents: Array<{ event_name: string; count: number }>;
+}
+
+interface ClarityFrictionMetric {
+  pct:      number; // 0..1
+  sessions: number;
+  total:    number;
+}
+
+interface ClarityData {
+  range:        { days: number; note: string };
+  fetched_at:   string;
+  next_refresh: string;
+  friction: {
+    rageClicks:      ClarityFrictionMetric;
+    deadClicks:      ClarityFrictionMetric;
+    excessiveScroll: ClarityFrictionMetric;
+    quickBacks:      ClarityFrictionMetric;
+    scriptErrors:    ClarityFrictionMetric;
+    errorClicks:     ClarityFrictionMetric;
+  };
+  engagement: {
+    averageScrollDepth: number; // 0..100
+    totalTime:          number;
+    activeTime:         number;
+  };
+  cache_hit?: boolean;
 }
 
 const RANGE_OPTIONS = [
@@ -104,6 +130,8 @@ function FormFunnel({ title, data }: { title: string; data: { started: number; a
 
 export function Engagement({ token }: { token: string }) {
   const [data, setData] = useState<EngagementData | null>(null);
+  const [clarity, setClarity] = useState<ClarityData | null>(null);
+  const [clarityError, setClarityError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [range, setRange] = useState<typeof RANGE_OPTIONS[number]['key']>('28d');
@@ -113,9 +141,13 @@ export function Engagement({ token }: { token: string }) {
     setLoading(!data);
     if (forceRefresh) setRefreshing(true);
     setError(null);
+    setClarityError(null);
+    const days = RANGE_OPTIONS.find((r) => r.key === range)?.days || 28;
+    const refreshQs = forceRefresh ? '&refresh=1' : '';
+
+    // GA4 (principal) — falha bloqueia a página
     try {
-      const days = RANGE_OPTIONS.find((r) => r.key === range)?.days || 28;
-      const r = await fetch(`/api/admin-bookings?endpoint=ga4-engagement&range=${days}${forceRefresh ? '&refresh=1' : ''}`, {
+      const r = await fetch(`/api/admin-bookings?endpoint=ga4-engagement&range=${days}${refreshQs}`, {
         headers: { Authorization: `Bearer ${token}` },
       });
       const json = await r.json();
@@ -126,6 +158,20 @@ export function Engagement({ token }: { token: string }) {
     } finally {
       setLoading(false);
       setRefreshing(false);
+    }
+
+    // Clarity (complementar) — falha só esconde a seção, não bloqueia GA4.
+    // Janela fixa em 3d (limite da API), independe do seletor 7d/28d/90d.
+    try {
+      const r = await fetch(`/api/admin-bookings?endpoint=clarity-insights&days=3${refreshQs}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const json = await r.json();
+      if (!r.ok) throw new Error(json.error || `HTTP ${r.status}`);
+      setClarity(json);
+    } catch (e: unknown) {
+      setClarityError(e instanceof Error ? e.message : 'Erro ao carregar Clarity');
+      setClarity(null);
     }
   };
 
@@ -161,7 +207,10 @@ export function Engagement({ token }: { token: string }) {
 
       <div className="mb-6">
         <DataSourceBadge
-          sources={[{ label: 'GA4', detail: 'property 494185724', status: error ? 'error' : 'live' }]}
+          sources={[
+            { label: 'GA4',     detail: 'property 494185724', status: error        ? 'error' : 'live' },
+            { label: 'Clarity', detail: 'project ws5wo65fne · janela 3d', status: clarityError ? 'error' : clarity ? 'live' : 'stale' },
+          ]}
           lastFetched={data?.fetched_at}
           nextRefresh={data?.next_refresh}
           onRefresh={() => load(true)}
@@ -326,8 +375,94 @@ export function Engagement({ token }: { token: string }) {
         />
       </div>
 
+      {/* ───────── Sinais de fricção (Clarity) ───────── */}
+      <div className="mt-8">
+        <div className="flex items-baseline justify-between mb-3">
+          <div>
+            <h2 className="font-headline text-xl font-black text-white">Sinais de fricção</h2>
+            <p className="text-[#d4baeb]/60 text-xs mt-0.5">
+              Onde o usuário tem dificuldade — clicks frustrados, scroll excessivo, errors. Via Microsoft Clarity.
+            </p>
+          </div>
+          <p className="text-[10px] uppercase tracking-wider text-[#c5a3d4]/40 whitespace-nowrap ml-4">
+            últimos 3 dias · limite da API
+          </p>
+        </div>
+
+        {clarityError && (
+          <div className="mb-4 p-4 rounded-xl border border-amber-500/30 bg-amber-500/5 text-amber-200 text-sm">
+            <p className="font-bold">Clarity indisponível</p>
+            <p className="text-amber-200/70 mt-1">{clarityError}</p>
+            <p className="text-amber-200/50 text-xs mt-2">
+              Verifique se <code className="px-1 bg-amber-500/10 rounded">CLARITY_API_TOKEN</code> está configurado nas env vars da Vercel.
+            </p>
+          </div>
+        )}
+
+        {!clarityError && (
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+            <KpiCard
+              label="Rage clicks"
+              value={clarity ? `${(clarity.friction.rageClicks.pct * 100).toFixed(1)}%` : '—'}
+              icon={Zap} source="Clarity"
+              hint={clarity ? `${clarity.friction.rageClicks.sessions.toLocaleString('pt-BR')} de ${clarity.friction.rageClicks.total.toLocaleString('pt-BR')} sessões — clicks rápidos repetidos (frustração)` : 'Clicks rápidos repetidos no mesmo lugar — indica frustração'}
+              loading={!clarity && !clarityError}
+            />
+            <KpiCard
+              label="Dead clicks"
+              value={clarity ? `${(clarity.friction.deadClicks.pct * 100).toFixed(1)}%` : '—'}
+              icon={MousePointerClick} source="Clarity"
+              hint={clarity ? `${clarity.friction.deadClicks.sessions.toLocaleString('pt-BR')} de ${clarity.friction.deadClicks.total.toLocaleString('pt-BR')} sessões — clicaram em algo que não respondeu` : 'Clicks em elementos que não respondem — UX quebrada'}
+              loading={!clarity && !clarityError}
+            />
+            <KpiCard
+              label="Excessive scroll"
+              value={clarity ? `${(clarity.friction.excessiveScroll.pct * 100).toFixed(1)}%` : '—'}
+              icon={MoveVertical} source="Clarity"
+              hint={clarity ? `${clarity.friction.excessiveScroll.sessions.toLocaleString('pt-BR')} de ${clarity.friction.excessiveScroll.total.toLocaleString('pt-BR')} sessões — não acharam o que procuravam` : 'Sessões com scroll demais — não acharam o que procuravam'}
+              loading={!clarity && !clarityError}
+            />
+            <KpiCard
+              label="Quick backs"
+              value={clarity ? `${(clarity.friction.quickBacks.pct * 100).toFixed(1)}%` : '—'}
+              icon={Undo2} source="Clarity"
+              hint={clarity ? `${clarity.friction.quickBacks.sessions.toLocaleString('pt-BR')} de ${clarity.friction.quickBacks.total.toLocaleString('pt-BR')} sessões — voltaram rápido (página decepcionou)` : 'Voltaram pra trás em <5s — página decepcionou'}
+              loading={!clarity && !clarityError}
+            />
+            <KpiCard
+              label="Script errors"
+              value={clarity ? `${(clarity.friction.scriptErrors.pct * 100).toFixed(1)}%` : '—'}
+              icon={AlertTriangle} source="Clarity"
+              hint={clarity ? `${clarity.friction.scriptErrors.sessions.toLocaleString('pt-BR')} de ${clarity.friction.scriptErrors.total.toLocaleString('pt-BR')} sessões com JS error` : 'Sessões com erro de JavaScript — bug em produção'}
+              loading={!clarity && !clarityError}
+            />
+            <KpiCard
+              label="Error clicks"
+              value={clarity ? `${(clarity.friction.errorClicks.pct * 100).toFixed(1)}%` : '—'}
+              icon={AlertCircle} source="Clarity"
+              hint={clarity ? `${clarity.friction.errorClicks.sessions.toLocaleString('pt-BR')} de ${clarity.friction.errorClicks.total.toLocaleString('pt-BR')} sessões — click que disparou erro` : 'Click que disparou erro visível na tela'}
+              loading={!clarity && !clarityError}
+            />
+          </div>
+        )}
+
+        <div className="mt-4 flex items-center justify-between text-[10px] text-[#c5a3d4]/40">
+          <p>
+            Para ver session recordings + heatmaps:{' '}
+            <a
+              href="https://clarity.microsoft.com/projects/view/ws5wo65fne/dashboard"
+              target="_blank" rel="noopener noreferrer"
+              className="text-[#c5a3d4]/70 hover:text-white underline"
+            >
+              abrir Clarity ↗
+            </a>
+          </p>
+          {clarity?.cache_hit && <p>cache hit · próx. fetch em ~6h</p>}
+        </div>
+      </div>
+
       <p className="text-center text-[10px] text-[#c5a3d4]/30 mt-8 pb-4">
-        Dados via Google Analytics Data API · refresh automático a cada 12h
+        GA4 Data API (12h) · Clarity Live Insights (6h, máx 3 dias · 10 req/dia)
       </p>
     </div>
   );
