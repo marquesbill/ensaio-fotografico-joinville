@@ -2063,21 +2063,44 @@ async function handleCreate(req: VercelRequest, res: VercelResponse, auth: { use
         externalId = pref.id;
       }
 
-      const pendingRes = await fetch(SCRIPT_URL, {
-        method: 'POST', headers: { 'Content-Type': 'text/plain' },
-        body: JSON.stringify({
-          action: 'createPending',
-          date, start: time, packageKey, name, email, whatsapp,
-          instagram:          instagram || '',
-          instagramBailarina: instagramBailarina || '',
-          nomeBailarina:      nomeBailarina || '',
-          numBailarinas:      nb,
-          stripeSession:      externalId,
-          gateway:            GATEWAY,
-          source:             'admin',
-        }),
-      });
-      const pendingJson = await pendingRes.json() as { bookingId?: string };
+      // Tenta criar pending — se falhar, rollback do paymentLink/preference no gateway
+      // pra evitar link órfão que cliente possa pagar sem reserva.
+      let pendingJson: { bookingId?: string };
+      try {
+        const pendingRes = await fetch(SCRIPT_URL, {
+          method: 'POST', headers: { 'Content-Type': 'text/plain' },
+          body: JSON.stringify({
+            action: 'createPending',
+            date, start: time, packageKey, name, email, whatsapp,
+            instagram:          instagram || '',
+            instagramBailarina: instagramBailarina || '',
+            nomeBailarina:      nomeBailarina || '',
+            numBailarinas:      nb,
+            stripeSession:      externalId,
+            gateway:            GATEWAY,
+            source:             'admin',
+          }),
+        });
+        if (!pendingRes.ok) throw new Error(`Sheets HTTP ${pendingRes.status}`);
+        pendingJson = await pendingRes.json() as { bookingId?: string };
+      } catch (pendingErr) {
+        const errMsg = pendingErr instanceof Error ? pendingErr.message : String(pendingErr);
+        console.error(`[admin-bookings/create] createPending FAILED após paymentLink criado: ${errMsg} — rollback...`);
+        if (GATEWAY === 'asaas' && externalId) {
+          await asaasApi(`/paymentLinks/${externalId}`, { method: 'DELETE' })
+            .catch(e => console.error('[admin-bookings/create] rollback ASAAS falhou:', e instanceof Error ? e.message : e));
+        } else if (GATEWAY === 'mp' && externalId) {
+          await fetch(`https://api.mercadopago.com/checkout/preferences/${externalId}`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${MP_TOKEN}` },
+            body: JSON.stringify({
+              expires:            true,
+              expiration_date_to: new Date(Date.now() - 60 * 1000).toISOString(),
+            }),
+          }).catch(e => console.error('[admin-bookings/create] rollback MP falhou:', e instanceof Error ? e.message : e));
+        }
+        throw new Error('Erro ao criar pending. Link foi cancelado — tente novamente.');
+      }
       const bookingId   = pendingJson.bookingId || '';
 
       await fetch(SCRIPT_URL, {
@@ -2339,22 +2362,43 @@ async function handlePaymentLink(req: VercelRequest, res: VercelResponse, auth: 
       }),
     }).catch(e => console.error('[admin-bookings/paymentLink] cancel error', e));
 
-    // 3. Cria novo pending com nova preference/paymentLink (webhook confirma via esse ID)
-    await fetch(SCRIPT_URL, {
-      method: 'POST', headers: { 'Content-Type': 'text/plain' },
-      body: JSON.stringify({
-        action: 'createPending',
-        date, start: time, packageKey,
-        name, email, whatsapp,
-        instagram:          instagram || '',
-        instagramBailarina: instagramBailarina || '',
-        nomeBailarina:      nomeBailarina || '',
-        numBailarinas:      nb,
-        stripeSession:      externalId,    // MP preferenceId OR ASAAS paymentLinkId
-        gateway:            GATEWAY,
-        source:             'admin',
-      }),
-    }).catch(e => console.error('[admin-bookings/paymentLink] createPending error', e));
+    // 3. Cria novo pending com nova preference/paymentLink (webhook confirma via esse ID).
+    //    Se falhar, rollback do link novo pra evitar pagamento órfão.
+    try {
+      const pendingRes = await fetch(SCRIPT_URL, {
+        method: 'POST', headers: { 'Content-Type': 'text/plain' },
+        body: JSON.stringify({
+          action: 'createPending',
+          date, start: time, packageKey,
+          name, email, whatsapp,
+          instagram:          instagram || '',
+          instagramBailarina: instagramBailarina || '',
+          nomeBailarina:      nomeBailarina || '',
+          numBailarinas:      nb,
+          stripeSession:      externalId,    // MP preferenceId OR ASAAS paymentLinkId
+          gateway:            GATEWAY,
+          source:             'admin',
+        }),
+      });
+      if (!pendingRes.ok) throw new Error(`Sheets HTTP ${pendingRes.status}`);
+    } catch (pendingErr) {
+      const errMsg = pendingErr instanceof Error ? pendingErr.message : String(pendingErr);
+      console.error(`[admin-bookings/paymentLink] createPending FAILED — rollback novo link: ${errMsg}`);
+      if (GATEWAY === 'asaas' && externalId) {
+        await asaasApi(`/paymentLinks/${externalId}`, { method: 'DELETE' })
+          .catch(e => console.error('[admin-bookings/paymentLink] rollback ASAAS falhou:', e instanceof Error ? e.message : e));
+      } else if (GATEWAY === 'mp' && externalId) {
+        await fetch(`https://api.mercadopago.com/checkout/preferences/${externalId}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${MP_TOKEN}` },
+          body: JSON.stringify({
+            expires:            true,
+            expiration_date_to: new Date(Date.now() - 60 * 1000).toISOString(),
+          }),
+        }).catch(e => console.error('[admin-bookings/paymentLink] rollback MP falhou:', e instanceof Error ? e.message : e));
+      }
+      throw new Error('Erro ao recriar pending. Novo link foi cancelado — tente novamente.');
+    }
 
     // 4. Log
     await fetch(SCRIPT_URL, {

@@ -240,22 +240,47 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       mpPreferenceId  = pref.id;
     }
 
-    // 2. Mark slot as Pending in Sheets
-    await fetch(SCRIPT_URL, {
-      method: 'POST',
-      headers: { 'Content-Type': 'text/plain' },
-      body: JSON.stringify({
-        action: 'createPending',
-        date, start: time, packageKey, name, email, whatsapp,
-        instagram: instagram || '',
-        instagramBailarina: instagramBailarina || '',
-        nomeBailarina: nomeBailarina || '',
-        numBailarinas: nb,
-        stripeSession: externalId,   // legacy field — MP preferenceId OR ASAAS paymentLinkId
-        gateway: GATEWAY,            // novo: indica qual gateway gerou esse pending
-        source: 'site',
-      }),
-    });
+    // 2. Mark slot as Pending in Sheets — se falhar, rollback do paymentLink.
+    // Cenário evitado: link de pagamento válido fica órfão (sem pending no Sheets).
+    // Cliente paga → webhook não acha pending → confirmBooking falha → cliente
+    // pagou sem reserva. Aqui invalidamos o link se o Sheets não confirmar criação.
+    try {
+      const pendingRes = await fetch(SCRIPT_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'text/plain' },
+        body: JSON.stringify({
+          action: 'createPending',
+          date, start: time, packageKey, name, email, whatsapp,
+          instagram: instagram || '',
+          instagramBailarina: instagramBailarina || '',
+          nomeBailarina: nomeBailarina || '',
+          numBailarinas: nb,
+          stripeSession: externalId,   // legacy field — MP preferenceId OR ASAAS paymentLinkId
+          gateway: GATEWAY,            // novo: indica qual gateway gerou esse pending
+          source: 'site',
+        }),
+      });
+      if (!pendingRes.ok) throw new Error(`Sheets HTTP ${pendingRes.status}`);
+    } catch (pendingErr) {
+      // Rollback: tenta invalidar o link no gateway pra evitar pagamento órfão.
+      const errMsg = pendingErr instanceof Error ? pendingErr.message : String(pendingErr);
+      console.error(`[create-checkout] createPending FAILED após paymentLink criado: ${errMsg} — rollback...`);
+      if (GATEWAY === 'asaas' && externalId) {
+        await asaas(`/paymentLinks/${externalId}`, { method: 'DELETE' })
+          .catch(e => console.error('[create-checkout] rollback ASAAS falhou:', e instanceof Error ? e.message : e));
+      } else if (GATEWAY === 'mp' && externalId) {
+        await fetch(`https://api.mercadopago.com/checkout/preferences/${externalId}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${MP_TOKEN}` },
+          body: JSON.stringify({
+            expires:            true,
+            expiration_date_to: new Date(Date.now() - 60 * 1000).toISOString(),
+          }),
+        }).catch(e => console.error('[create-checkout] rollback MP falhou:', e instanceof Error ? e.message : e));
+      }
+      // Re-throw — frontend mostra erro pro cliente, que pode tentar de novo
+      throw new Error('Erro ao reservar slot. Tente novamente.');
+    }
 
     // 3. Resposta: shape depende do gateway.
     if (GATEWAY === 'asaas') {
