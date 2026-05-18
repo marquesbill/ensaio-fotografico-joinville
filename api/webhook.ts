@@ -154,13 +154,17 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   let normalized: NormalizedPayment;
 
   if (isAsaas) {
-    // Autenticação opcional via header asaas-access-token (definido no painel ASAAS)
-    if (ASAAS_WEBHOOK_TOK) {
-      const got = (req.headers['asaas-access-token'] || req.headers['Asaas-Access-Token'] || '') as string;
-      if (got !== ASAAS_WEBHOOK_TOK) {
-        console.warn('[webhook] ASAAS token mismatch');
-        return res.status(401).json({ error: 'Invalid webhook token' });
-      }
+    // Autenticação OBRIGATÓRIA via header asaas-access-token.
+    // Sem token configurado no servidor, qualquer um pode confirmar
+    // pagamentos forjando o payload — não dá pra deixar opcional.
+    if (!ASAAS_WEBHOOK_TOK) {
+      console.error('[webhook] ASAAS_WEBHOOK_TOKEN ausente no servidor — rejeitando');
+      return res.status(503).json({ error: 'Webhook não autorizado: token não configurado no servidor' });
+    }
+    const got = (req.headers['asaas-access-token'] || req.headers['Asaas-Access-Token'] || '') as string;
+    if (got !== ASAAS_WEBHOOK_TOK) {
+      console.warn('[webhook] ASAAS token mismatch');
+      return res.status(401).json({ error: 'Invalid webhook token' });
     }
 
     const evt = body.event as string;
