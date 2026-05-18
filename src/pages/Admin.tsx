@@ -1388,15 +1388,16 @@ function Dashboard({
       const r = await fetch(`${API}/api/admin-bookings`, {
         method: 'POST', headers,
         body: JSON.stringify({
-          action:        'paymentLink',
-          bookingId:     booking.id,
-          name:          booking.name,
-          email:         booking.email ?? '',
-          whatsapp:      booking.whatsapp ?? '',
-          date:          booking.date,
-          time:          booking.start,
-          packageKey:    PKG_KEY[booking.package] ?? 'lembranca',
-          numBailarinas: booking.numBailarinas ?? 1,
+          action:           'paymentLink',
+          bookingId:        booking.id,
+          name:             booking.name,
+          email:            booking.email ?? '',
+          whatsapp:         booking.whatsapp ?? '',
+          date:             booking.date,
+          time:             booking.start,
+          packageKey:       PKG_KEY[booking.package] ?? 'lembranca',
+          numBailarinas:    booking.numBailarinas ?? 1,
+          oldStripeSession: booking.stripeSession ?? '', // pra backend cancelar link antigo no gateway
         }),
       });
       const json = await r.json();

@@ -2218,10 +2218,11 @@ async function handleEdit(req: VercelRequest, res: VercelResponse, auth: { user:
 async function handlePaymentLink(req: VercelRequest, res: VercelResponse, auth: { user: string }) {
   const PACKAGES = getPackages();
   const { bookingId, name, email, whatsapp, instagram, instagramBailarina, nomeBailarina, numBailarinas,
-          date, time, packageKey } = req.body as {
+          date, time, packageKey, oldStripeSession } = req.body as {
     bookingId: string; name: string; email: string; whatsapp: string;
     instagram?: string; instagramBailarina?: string; nomeBailarina?: string; numBailarinas?: number;
     date: string; time: string; packageKey: PkgKey;
+    oldStripeSession?: string; // ID do link antigo (pra cancelar via API)
   };
 
   if (!bookingId || !date || !time || !packageKey || !name || !email) {
@@ -2241,6 +2242,40 @@ async function handlePaymentLink(req: VercelRequest, res: VercelResponse, auth: 
   }
 
   try {
+    // 0. Cancela link de pagamento ANTIGO no gateway antes de criar o novo.
+    //    Evita cenário: Mariane gera link novo, mas cliente paga pelo link
+    //    antigo (que ele já tinha no email) → webhook não acha pending →
+    //    cliente paga e não confirma → Mariane gera mais um → cliente paga 2x.
+    //
+    //    Best-effort: erro não bloqueia (link antigo já pode estar expirado/inválido).
+    //    "admin-{tipo}-{ts}" não vai pra gateway (são confirmações manuais).
+    if (oldStripeSession && !oldStripeSession.startsWith('admin-')) {
+      if (GATEWAY === 'asaas') {
+        try {
+          await asaasApi(`/paymentLinks/${oldStripeSession}`, { method: 'DELETE' });
+          console.log(`[handlePaymentLink] cancelled old ASAAS paymentLink ${oldStripeSession}`);
+        } catch (e) {
+          console.warn(`[handlePaymentLink] failed to cancel old ASAAS link (best-effort): ${e instanceof Error ? e.message : e}`);
+        }
+      } else if (GATEWAY === 'mp') {
+        // MP preference não é deletável, só pode ter expiration alterada.
+        // Força expiration retroativa (1 min atrás) — efetivamente invalida.
+        try {
+          await fetch(`https://api.mercadopago.com/checkout/preferences/${oldStripeSession}`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${MP_TOKEN}` },
+            body: JSON.stringify({
+              expires:            true,
+              expiration_date_to: new Date(Date.now() - 60 * 1000).toISOString(),
+            }),
+          });
+          console.log(`[handlePaymentLink] expired old MP preference ${oldStripeSession}`);
+        } catch (e) {
+          console.warn(`[handlePaymentLink] failed to expire old MP preference (best-effort): ${e instanceof Error ? e.message : e}`);
+        }
+      }
+    }
+
     // 1. Cria link de pagamento — branch pelo gateway ativo (mesma feature flag
     //    PAYMENT_GATEWAY usada em api/create-checkout.ts).
     //    Em ambos os casos guardamos `externalId` no Sheets (campo legado
