@@ -355,7 +355,7 @@ function EconomicsBlock({
           loading={false}
         />
         <KpiCard
-          label="Custo total"
+          label="Custo equipe + ads"
           value={fmtBRL(costs.total)}
           icon={Wallet} source="Meta + Sheets"
           loading={false}
