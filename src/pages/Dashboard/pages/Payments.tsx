@@ -153,41 +153,6 @@ export function Payments({ token }: { token: string }) {
       {/* ───────── Economia da campanha (ROAS + CPA real) ───────── */}
       <EconomicsBlock economics={economics} error={economicsError} loading={loading} />
 
-      {/* Lifetime banner — destaca total de ensaios fechados */}
-      <div className="mb-6 rounded-2xl border border-[#7a3f8f]/30 bg-gradient-to-r from-[#7a3f8f]/15 via-[#7a3f8f]/5 to-[#e87060]/10 p-5">
-        <div className="flex flex-wrap items-baseline justify-between gap-4">
-          <div>
-            <p className="text-[10px] uppercase tracking-widest text-[#c5a3d4]/70 font-bold">
-              Total de ensaios fechados · histórico completo
-            </p>
-            <p className="font-black text-4xl md:text-5xl text-white tabular-nums mt-1">
-              {loading ? '—' : (data?.total_ensaios ?? 0).toLocaleString('pt-BR')}
-            </p>
-            <p className="text-[11px] text-[#d4baeb]/50 mt-1">
-              de {loading ? '—' : (data?.total_customers ?? 0).toLocaleString('pt-BR')} clientes únicos
-            </p>
-          </div>
-          <div className="flex items-baseline gap-8 text-sm">
-            <div>
-              <p className="text-[10px] uppercase tracking-wider text-white/40 font-semibold">Pendentes</p>
-              <p className="text-[#e87060] font-black tabular-nums text-2xl mt-0.5">
-                {loading ? '—' : (data?.by_status.pendente.customers ?? 0).toLocaleString('pt-BR')}
-              </p>
-              <p className="text-[9px] text-[#e87060]/60 mt-0.5">
-                {loading ? '—' : (data?.by_status.pendente.ensaios ?? 0)} ensaios em aberto
-              </p>
-            </div>
-            <div>
-              <p className="text-[10px] uppercase tracking-wider text-white/40 font-semibold">Taxa fechamento</p>
-              <p className="text-white font-black tabular-nums text-2xl mt-0.5">
-                {loading ? '—' : `${(closingRate * 100).toFixed(1)}%`}
-              </p>
-              <p className="text-[9px] text-white/30 mt-0.5">confirmados / ativos</p>
-            </div>
-          </div>
-        </div>
-      </div>
-
       {/* KPIs */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 mb-6">
         <KpiCard
