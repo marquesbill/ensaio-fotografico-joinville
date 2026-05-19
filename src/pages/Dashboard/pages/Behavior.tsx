@@ -356,26 +356,31 @@ export function Behavior({ token }: { token: string }) {
           <div className="w-full h-32 bg-white/[0.02] rounded animate-pulse" />
         ) : (
           <div>
-            {/* Linha das barras — todas alinham pelo mesmo baseline */}
+            {/* Linha das barras — gradiente roxo (menor) → salmão (maior) por intensidade */}
             <div className="flex items-end gap-1 h-32">
-              {(ga4?.hours || []).map(h => {
-                const heightPct = (h.sessions / hoursMax) * 100;
-                const isPeak = h.hour === ga4?.peak_hour.hour;
-                return (
-                  <div key={h.hour} className="flex-1 h-full flex items-end group relative">
-                    <div
-                      className="w-full rounded-t transition-all duration-300"
-                      style={{
-                        height:     `${Math.max(heightPct, h.sessions > 0 ? 4 : 0)}%`,
-                        background: isPeak ? '#e87060' : '#7a3f8f',
-                      }}
-                    />
-                    <div className="absolute -top-8 left-1/2 -translate-x-1/2 px-2 py-1 rounded bg-black/80 text-[10px] text-white tabular-nums opacity-0 group-hover:opacity-100 pointer-events-none whitespace-nowrap z-10">
-                      {fmtHour(h.hour)}: {h.sessions}
+              {(() => {
+                const hours = ga4?.hours || [];
+                const hMin  = Math.min(...hours.map(h => h.sessions), 0);
+                const hMax  = Math.max(...hours.map(h => h.sessions), 1);
+                return hours.map(h => {
+                  const heightPct = (h.sessions / hoursMax) * 100;
+                  const color     = colorForIntensity(h.sessions, hMin, hMax);
+                  return (
+                    <div key={h.hour} className="flex-1 h-full flex items-end group relative">
+                      <div
+                        className="w-full rounded-t transition-all duration-300"
+                        style={{
+                          height:     `${Math.max(heightPct, h.sessions > 0 ? 4 : 0)}%`,
+                          background: color,
+                        }}
+                      />
+                      <div className="absolute -top-8 left-1/2 -translate-x-1/2 px-2 py-1 rounded bg-black/80 text-[10px] text-white tabular-nums opacity-0 group-hover:opacity-100 pointer-events-none whitespace-nowrap z-10">
+                        {fmtHour(h.hour)}: {h.sessions}
+                      </div>
                     </div>
-                  </div>
-                );
-              })}
+                  );
+                });
+              })()}
             </div>
             {/* Linha dos labels — separada das barras pra evitar desalinhamento */}
             <div className="flex gap-1 mt-2 border-t border-white/[0.06] pt-1">
@@ -460,20 +465,34 @@ function LeadsGrowthChart({
   const max = Math.max(...counts, 1);
   const min = Math.min(...counts, 0);
 
-  // Velocidade = primeira derivada suavizada (média móvel de 7 dias dos
-  // leads diários). Mostra como anda o RITMO de captura — acelerando ou
-  // desacelerando — sem o ruído dos dias individuais. Janela 7 escolhida
-  // pra suavizar variação por dia da semana (fim de semana cai, dia
-  // útil sobe). Pra ranges curtos (<14d), ajusta pra ~half do range.
+  // Acumulado pra a curva monotônica que mostra o "volume total ao longo do tempo"
+  let running = 0;
+  const cumulative = counts.map(c => (running += c));
+  const cumMax = Math.max(...cumulative, 1);
+
+  // Velocidade = primeira derivada suavizada (média móvel dos leads diários).
+  // Mostra como anda o RITMO de captura — acelerando ou desacelerando — sem
+  // o ruído dos dias individuais. Janela 7 default; pra ranges curtos
+  // (<14d), ajusta pra ~half do range. Janela 7 suaviza variação semanal.
   const window = Math.max(3, Math.min(7, Math.floor(daily.length / 2)));
   const velocity = movingAverage(counts, window);
   const velMax = Math.max(...velocity, 1);
 
-  // Velocidade no último ponto + tendência (compara últimos 3 com 3 anteriores)
+  // Velocidade no último ponto + tendência (compara fim com início da janela)
   const lastVel = velocity[velocity.length - 1] || 0;
   const prevVel = velocity[Math.max(0, velocity.length - Math.ceil(window / 2)) - 1] || lastVel;
   const velDeltaPct = prevVel > 0 ? ((lastVel - prevVel) / prevVel) * 100 : 0;
-  const accelerating = lastVel >= prevVel;
+
+  // Indicador tricolor pro delta de velocidade.
+  // Threshold 1% define a zona "neutra" — variação menor que isso é ruído.
+  const NEUTRAL_THRESHOLD = 1; // %
+  const deltaState = !Number.isFinite(velDeltaPct) || Math.abs(velDeltaPct) <= NEUTRAL_THRESHOLD
+    ? 'neutral'
+    : velDeltaPct > 0 ? 'up' : 'down';
+  const deltaColor = deltaState === 'up'   ? '#4ade80'  // verde claro
+                   : deltaState === 'down' ? '#f87171'  // vermelho claro
+                   :                          '#fbbf24'; // dourado neutro
+  const deltaArrow = deltaState === 'up' ? '↑' : deltaState === 'down' ? '↓' : '≈';
 
   // Mostra label de data a cada N dias pra não poluir
   const labelEvery = Math.max(1, Math.ceil(daily.length / 8));
@@ -506,9 +525,9 @@ function LeadsGrowthChart({
               {loading ? '—' : (
                 <>
                   {lastVel.toFixed(1)}
-                  {Number.isFinite(velDeltaPct) && Math.abs(velDeltaPct) > 0.5 && (
-                    <span className={`text-[10px] ml-1 ${accelerating ? 'text-green-300' : 'text-red-300'}`}>
-                      {accelerating ? '↑' : '↓'} {Math.abs(velDeltaPct).toFixed(0)}%
+                  {Number.isFinite(velDeltaPct) && (
+                    <span className="text-[10px] ml-1 font-bold" style={{ color: deltaColor }}>
+                      {deltaArrow} {Math.abs(velDeltaPct).toFixed(0)}%
                     </span>
                   )}
                 </>
@@ -548,12 +567,25 @@ function LeadsGrowthChart({
               })}
             </div>
 
-            {/* Curva de velocidade (média móvel) — amarelo dourado, 2.5px */}
+            {/* Curvas: Acumulado (salmão) + Velocidade (dourado) — ambas 2.5px.
+                Cada uma com sua própria escala Y (forma > valor exato — KPIs no
+                header dão os valores reais). */}
             <svg
               className="absolute inset-0 w-full h-full pointer-events-none"
               preserveAspectRatio="none"
-              viewBox={`0 0 ${Math.max(velocity.length - 1, 1)} 100`}
+              viewBox={`0 0 ${Math.max(daily.length - 1, 1)} 100`}
             >
+              {/* Acumulado — monotônico crescente, normalizado pra 0..100 */}
+              <polyline
+                fill="none"
+                stroke="#e87060"
+                strokeWidth="2.5"
+                strokeLinejoin="round"
+                strokeLinecap="round"
+                vectorEffect="non-scaling-stroke"
+                points={cumulative.map((c, i) => `${i},${100 - (c / cumMax) * 100}`).join(' ')}
+              />
+              {/* Velocidade — média móvel, oscilante */}
               <polyline
                 fill="none"
                 stroke="#fbbf24"
@@ -563,7 +595,16 @@ function LeadsGrowthChart({
                 vectorEffect="non-scaling-stroke"
                 points={velocity.map((v, i) => `${i},${100 - (v / velMax) * 100}`).join(' ')}
               />
-              {/* Ponto final destacado */}
+              {/* Pontos finais destacados em ambas as curvas */}
+              {cumulative.length > 0 && (
+                <circle
+                  cx={cumulative.length - 1}
+                  cy={100 - (cumulative[cumulative.length - 1] / cumMax) * 100}
+                  r="2.5"
+                  fill="#e87060"
+                  vectorEffect="non-scaling-stroke"
+                />
+              )}
               {velocity.length > 0 && (
                 <circle
                   cx={velocity.length - 1}
@@ -585,15 +626,17 @@ function LeadsGrowthChart({
             ))}
           </div>
 
-          {/* Legenda */}
+          {/* Legenda — só marcadores das barras e do Acumulado. Velocidade
+              não tem marcador horizontal aqui; o KPI no header já identifica
+              a curva dourada. */}
           <div className="flex items-center gap-4 mt-3 text-[10px] text-[#c5a3d4]/60">
             <span className="flex items-center gap-1.5">
               <span className="inline-block w-3 h-2 rounded-sm bg-gradient-to-r from-[#7a3f8f] to-[#e87060]" />
               Leads/dia (gradiente por intensidade)
             </span>
             <span className="flex items-center gap-1.5">
-              <span className="inline-block w-3" style={{ borderTop: '2.5px solid #fbbf24' }} />
-              Velocidade (média móvel {window}d)
+              <span className="inline-block w-3 h-0.5 rounded-full" style={{ background: '#e87060' }} />
+              Acumulado (até {cumulative[cumulative.length - 1]?.toLocaleString('pt-BR') || 0})
             </span>
           </div>
         </div>
