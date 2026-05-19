@@ -1606,11 +1606,16 @@ async function handleGa4Engagement(req: VercelRequest, res: VercelResponse) {
 /* ───────── Clarity Insights (sinais de fricção — complementa GA4 Engagement) ───────── */
 
 // Cache em memória — Clarity tem limite duro de 10 req/dia por projeto.
-// 6h TTL = no máx 4 req/dia, deixa margem. Compartilhado entre invocações
-// da mesma instância warm; instâncias frias re-fetcham (raro com tráfego baixo).
+// Estratégia anti-rate-limit em 3 camadas:
+//   1. TTL longo de 12h → no máx 2 req/dia em condições normais (margem 80%)
+//   2. lastGood map → sobrevive expiração; serve dados velhos se a próxima
+//      tentativa de refresh bater 429, em vez de quebrar o card no front
+//   3. cold-start re-fetcha (sem persistência externa); tolerável porque
+//      eventos de cold start em dia normal são raros (~1-2x)
 type ClarityCacheEntry = { data: unknown; expiresAt: number };
-const clarityCache = new Map<string, ClarityCacheEntry>();
-const CLARITY_CACHE_TTL_MS = 6 * 3600 * 1000;
+const clarityCache    = new Map<string, ClarityCacheEntry>();
+const clarityLastGood = new Map<string, { data: unknown; fetchedAt: number }>();
+const CLARITY_CACHE_TTL_MS = 12 * 3600 * 1000;
 
 interface ClarityMetricRow {
   metricName?: string;
@@ -1648,6 +1653,21 @@ async function handleClarityInsights(req: VercelRequest, res: VercelResponse) {
   });
 
   if (!r.ok) {
+    // Stale-while-error: rate limit (429) ou outro erro temporário?
+    // Se temos último resultado bom em memória, retorna ele com flag stale.
+    // Card no front continua aparecendo (não quebra com banner amarelo).
+    const lastGood = clarityLastGood.get(cacheKey);
+    if (lastGood) {
+      console.warn(`[clarity] API ${r.status} — servindo cache stale de ${new Date(lastGood.fetchedAt).toISOString()}`);
+      return res.status(200).json({
+        ...(lastGood.data as Record<string, unknown>),
+        cache_hit:     true,
+        stale:         true,
+        stale_reason:  r.status === 429 ? 'rate_limit' : `http_${r.status}`,
+        stale_since:   new Date(lastGood.fetchedAt).toISOString(),
+      });
+    }
+    // Sem fallback — erro real
     const body = await r.text();
     const msg = r.status === 429
       ? 'Clarity rate limit excedido (10 req/dia). Volte amanhã ou aguarde o cache renovar.'
@@ -1734,10 +1754,12 @@ async function handleClarityInsights(req: VercelRequest, res: VercelResponse) {
     },
   };
 
+  const now = Date.now();
   clarityCache.set(cacheKey, {
     data:      payload,
-    expiresAt: Date.now() + CLARITY_CACHE_TTL_MS,
+    expiresAt: now + CLARITY_CACHE_TTL_MS,
   });
+  clarityLastGood.set(cacheKey, { data: payload, fetchedAt: now });  // pra stale-while-error
 
   return res.status(200).json({ ...payload, cache_hit: false });
 }
