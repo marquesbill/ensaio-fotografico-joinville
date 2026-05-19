@@ -1135,16 +1135,32 @@ async function handleMetaAds(req: VercelRequest, res: VercelResponse) {
     'ctr', 'cpc', 'cpm', 'reach', 'frequency',
   ].join(',');
 
-  // Parser de actions array — extrai lead count e purchase count
+  // Parser de actions array.
+  //
+  // IMPORTANTE: o Meta retorna leads/purchases em múltiplas categorias que se
+  // sobrepõem — `lead` é o agregado TOTAL; `offsite_conversion.fb_pixel_lead`
+  // e `onsite_conversion.lead_grouped` são subsets do mesmo evento. Somar os
+  // 3 dobra ou triplica a contagem real (caso do bug 136 = 82 + 54).
+  //
+  // Solução: pegar o MAX entre o agregado e a soma dos subsets. Cobre os 3
+  // cenários:
+  //   - Só `lead` preenchido → usa lead (acontece com Lead Ads + Pixel ok)
+  //   - Só subsets preenchidos → usa soma (raro, atribuição parcial)
+  //   - Ambos preenchidos → usa o maior (lead deveria ser ~= soma; pequenas
+  //     divergências são esperadas por causa de janelas de atribuição)
   const extractActionCount = (actions: unknown, types: string[]): number => {
     if (!Array.isArray(actions)) return 0;
-    let total = 0;
+    const counts: Record<string, number> = {};
     for (const a of actions as Array<{ action_type?: string; value?: string }>) {
       if (a.action_type && types.includes(a.action_type)) {
-        total += Number(a.value) || 0;
+        counts[a.action_type] = (counts[a.action_type] || 0) + (Number(a.value) || 0);
       }
     }
-    return total;
+    // Primeiro tipo da lista = agregado (`lead` ou `purchase`); resto = subsets
+    const [aggregateType, ...subsetTypes] = types;
+    const aggregate = counts[aggregateType] || 0;
+    const subsetsSum = subsetTypes.reduce((s, t) => s + (counts[t] || 0), 0);
+    return Math.max(aggregate, subsetsSum);
   };
 
   const fetchMeta = async (url: string) => {
