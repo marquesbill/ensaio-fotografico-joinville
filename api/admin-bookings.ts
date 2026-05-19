@@ -1122,19 +1122,14 @@ async function handleMetaAds(req: VercelRequest, res: VercelResponse) {
   const acctPath = accountId.startsWith('act_') ? accountId : `act_${accountId}`;
   const baseUrl  = `https://graph.facebook.com/v19.0/${acctPath}/insights`;
 
-  // URLs do Meta Ads Manager pro drill-down. Funciona pra quem tem acesso à
-  // conta de anúncios — vai abrir o painel já filtrado pelo objeto.
+  // Pra ads, usamos o `preview_shareable_link` que a Meta API expõe
+  // nativamente — é o link público de prévia (fb.me/adspreview/...) que
+  // funciona pra quem tem permissão. Tentar deep link pro Ads Manager
+  // (adsmanager.facebook.com/...?selected_*_ids=) dava "Invalid request #1"
+  // por causa do contexto business_id que o FB injeta no login flow.
   //
-  // Subdomínio: `adsmanager.facebook.com` é o canônico moderno. O caminho
-  // legado `www.facebook.com/adsmanager/manage/<level>?selected_*_ids=...`
-  // retornava "Invalid request. (#1)" — o login flow perdia os params.
-  const acctNumeric = acctPath.replace(/^act_/, '');
-  const mgrBase = `https://adsmanager.facebook.com/adsmanager/manage`;
-  const mgrUrl = (level: 'campaigns' | 'adsets' | 'ads', id: string) => {
-    if (!id) return '';
-    const singular = level.slice(0, -1);
-    return `${mgrBase}/${level}?act=${acctNumeric}&selected_${singular}_ids=${id}`;
-  };
+  // Pra campaigns e adsets não há preview shareable equivalente, então só
+  // o nome do ad vira link clicável.
   const fields   = [
     'spend', 'impressions', 'clicks', 'actions',
     'ctr', 'cpc', 'cpm', 'reach', 'frequency',
@@ -1207,11 +1202,9 @@ async function handleMetaAds(req: VercelRequest, res: VercelResponse) {
       const cLeads     = extractActionCount(c.actions, LEAD_TYPES);
       const cPurchases = extractActionCount(c.actions, PURCHASE_TYPES);
       const cSpend     = Number(c.spend) || 0;
-      const cId        = String(c.campaign_id || '');
       return {
-        id:          cId,
+        id:          String(c.campaign_id || ''),
         name:        String(c.campaign_name || '(unknown)'),
-        url:         mgrUrl('campaigns', cId),
         spend:       cSpend,
         impressions: Number(c.impressions) || 0,
         clicks:      Number(c.clicks)      || 0,
@@ -1231,15 +1224,11 @@ async function handleMetaAds(req: VercelRequest, res: VercelResponse) {
       const aLeads     = extractActionCount(a.actions, LEAD_TYPES);
       const aPurchases = extractActionCount(a.actions, PURCHASE_TYPES);
       const aSpend     = Number(a.spend) || 0;
-      const aId        = String(a.adset_id || '');
-      const cId        = String(a.campaign_id || '');
       return {
-        id:           aId,
+        id:           String(a.adset_id || ''),
         name:         String(a.adset_name || '(unknown)'),
-        url:          mgrUrl('adsets', aId),
-        campaign_id:  cId,
+        campaign_id:  String(a.campaign_id || ''),
         campaign:     String(a.campaign_name || '(unknown)'),
-        campaign_url: mgrUrl('campaigns', cId),
         spend:        aSpend,
         impressions:  Number(a.impressions) || 0,
         clicks:       Number(a.clicks)      || 0,
@@ -1254,24 +1243,42 @@ async function handleMetaAds(req: VercelRequest, res: VercelResponse) {
     })
     .sort((a, b) => b.spend - a.spend);
 
-  const ads = (adJson.data || [])
+  // Pré-extrai os ad_ids pra buscar preview_shareable_link em batch.
+  // Meta Graph API aceita `?ids=<csv>` com até 50 IDs por requisição.
+  const adRows = adJson.data || [];
+  const adIds  = adRows.map(a => String(a.ad_id || '')).filter(Boolean);
+  const previewLinks: Record<string, string> = {};
+  for (let i = 0; i < adIds.length; i += 50) {
+    const chunk = adIds.slice(i, i + 50);
+    try {
+      const previewUrl = `https://graph.facebook.com/v19.0/?ids=${chunk.join(',')}&fields=preview_shareable_link&access_token=${token}`;
+      const r = await fetch(previewUrl);
+      if (r.ok) {
+        const j = await r.json() as Record<string, { preview_shareable_link?: string }>;
+        for (const [id, data] of Object.entries(j)) {
+          if (data?.preview_shareable_link) previewLinks[id] = data.preview_shareable_link;
+        }
+      }
+    } catch (e) {
+      console.warn('[meta-ads] preview links batch failed', e);
+      // Não bloqueia o handler — só perde os links nesse chunk
+    }
+  }
+
+  const ads = adRows
     .map(a => {
       const adLeads     = extractActionCount(a.actions, LEAD_TYPES);
       const adPurchases = extractActionCount(a.actions, PURCHASE_TYPES);
       const adSpend     = Number(a.spend) || 0;
       const adId        = String(a.ad_id || '');
-      const asId        = String(a.adset_id || '');
-      const cId         = String(a.campaign_id || '');
       return {
         id:           adId,
         name:         String(a.ad_name || '(unknown)'),
-        url:          mgrUrl('ads', adId),
-        adset_id:     asId,
+        url:          previewLinks[adId] || '',  // fb.me/adspreview/...
+        adset_id:     String(a.adset_id || ''),
         adset:        String(a.adset_name || '(unknown)'),
-        adset_url:    mgrUrl('adsets', asId),
-        campaign_id:  cId,
+        campaign_id:  String(a.campaign_id || ''),
         campaign:     String(a.campaign_name || '(unknown)'),
-        campaign_url: mgrUrl('campaigns', cId),
         spend:        adSpend,
         impressions:  Number(a.impressions) || 0,
         clicks:       Number(a.clicks)      || 0,
