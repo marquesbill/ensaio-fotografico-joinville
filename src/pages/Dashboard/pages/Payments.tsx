@@ -278,9 +278,6 @@ export function Payments({ token }: { token: string }) {
 function fmtBRL(v: number) {
   return v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL', maximumFractionDigits: 0 });
 }
-function fmtBRLPrecise(v: number) {
-  return v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
-}
 
 function EconomicsBlock({
   economics, error, loading,
@@ -315,8 +312,6 @@ function EconomicsBlock({
                   : roasState === 'ok'    ? '#fbbf24'
                   :                          '#f87171';
 
-  const taxPct = (costs.meta_ads.tax_rate * 100).toFixed(1);
-
   return (
     <div className="mb-6 rounded-2xl border border-[#7a3f8f]/30 bg-gradient-to-br from-[#7a3f8f]/15 via-[#0a0a14]/20 to-[#e87060]/10 p-5">
       <div className="flex items-baseline justify-between mb-4 flex-wrap gap-2">
@@ -332,8 +327,8 @@ function EconomicsBlock({
       </div>
 
       {/* Topo: ROAS gigante + 3 KPIs auxiliares */}
-      <div className="grid grid-cols-1 lg:grid-cols-4 gap-4 mb-5">
-        {/* ROAS — KPI principal */}
+      <div className="grid grid-cols-1 lg:grid-cols-4 gap-4">
+        {/* ROAS — KPI principal (só número + barra de progresso pra break-even) */}
         <div className="lg:col-span-1 rounded-xl border border-white/10 bg-white/[0.03] p-4">
           <p className="text-[10px] uppercase tracking-widest text-[#c5a3d4]/60 font-bold flex items-center gap-1.5">
             <Target className="w-3 h-3" /> ROAS
@@ -341,15 +336,8 @@ function EconomicsBlock({
           <p className="font-black tabular-nums text-4xl mt-1" style={{ color: roasColor }}>
             {kpis.roas.toFixed(2)}x
           </p>
-          <p className="text-[11px] text-[#d4baeb]/60 mt-1.5 leading-tight">
-            {kpis.roas >= 1 ? (
-              <>Cada R$ 1 investido<br/>retorna <strong>{fmtBRLPrecise(kpis.roas)}</strong></>
-            ) : (
-              <>Faltam <strong className="text-white">{kpis.breakeven.ensaios_needed} ensaios</strong> a ticket médio<br/>pra se pagar ({fmtBRL(revenue.avg_ticket)}/ensaio)</>
-            )}
-          </p>
-          {/* Barra de progresso pra break-even */}
-          <div className="h-1.5 bg-white/5 rounded-full overflow-hidden mt-2">
+          {/* Barra de progresso pra break-even — visual auxiliar, mantém */}
+          <div className="h-1.5 bg-white/5 rounded-full overflow-hidden mt-3">
             <div className="h-full rounded-full transition-all duration-500"
               style={{
                 width: `${kpis.breakeven.progress_pct}%`,
@@ -359,103 +347,25 @@ function EconomicsBlock({
           </div>
         </div>
 
-        {/* 3 KPIs */}
+        {/* 3 KPIs — sem hint (só dado limpo) */}
         <KpiCard
           label="Receita realizada"
           value={fmtBRL(revenue.total)}
           icon={TrendingUp} source="Sheets"
-          hint={`${revenue.ensaios} ensaios · ticket médio ${fmtBRL(revenue.avg_ticket)}`}
           loading={false}
         />
         <KpiCard
           label="Custo total"
           value={fmtBRL(costs.total)}
           icon={Wallet} source="Meta + Sheets"
-          hint={`Meta ${fmtBRL(costs.meta_ads.gross)} + Elisa ${fmtBRL(costs.elisa.total)} + Mari ${fmtBRL(costs.mari.total)}`}
           loading={false}
         />
         <KpiCard
           label="CPA real"
           value={revenue.ensaios > 0 ? fmtBRL(kpis.cpa_real) : '—'}
           icon={Target} source="Calculado"
-          hint={`Custo total / ${revenue.ensaios} ensaios. Versão só Meta: ${fmtBRL(kpis.cpa_meta)}`}
           loading={false}
         />
-      </div>
-
-      {/* Breakdown dos custos — barra empilhada visual + tabela */}
-      <div className="rounded-xl border border-white/[0.08] bg-white/[0.02] p-4">
-        <div className="flex items-baseline justify-between mb-3">
-          <p className="text-[11px] font-bold uppercase tracking-widest text-[#c5a3d4]/70">Breakdown de custos</p>
-          <p className="text-[10px] text-[#c5a3d4]/40 tabular-nums">{fmtBRL(costs.total)} total</p>
-        </div>
-
-        {/* Barra empilhada */}
-        <div className="flex h-2 rounded-full overflow-hidden bg-white/5 mb-3">
-          {[
-            { label: 'Meta',  value: costs.meta_ads.gross, color: '#7a3f8f' },
-            { label: 'Elisa', value: costs.elisa.total,    color: '#a578bb' },
-            { label: 'Mari',  value: costs.mari.total,     color: '#e87060' },
-          ].map(seg => {
-            const pct = costs.total > 0 ? (seg.value / costs.total) * 100 : 0;
-            return (
-              <div key={seg.label}
-                className="h-full transition-all duration-500"
-                style={{ width: `${pct}%`, background: seg.color }}
-                title={`${seg.label}: ${fmtBRL(seg.value)} (${pct.toFixed(0)}%)`}
-              />
-            );
-          })}
-        </div>
-
-        {/* 3 colunas: Meta · Elisa · Mari */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-xs">
-          <div>
-            <p className="flex items-center gap-1.5 mb-1">
-              <span className="inline-block w-2 h-2 rounded-full" style={{ background: '#7a3f8f' }} />
-              <span className="text-white font-bold">Meta Ads</span>
-              <span className="ml-auto tabular-nums text-white">{fmtBRL(costs.meta_ads.gross)}</span>
-            </p>
-            <p className="text-[10px] text-[#c5a3d4]/50 leading-relaxed pl-4">
-              {fmtBRL(costs.meta_ads.net)} no gerenciador + {taxPct}% imposto.<br/>
-              CPA só Meta: <span className="text-white">{fmtBRL(kpis.cpa_meta)}</span>
-            </p>
-          </div>
-          <div>
-            <p className="flex items-center gap-1.5 mb-1">
-              <span className="inline-block w-2 h-2 rounded-full" style={{ background: '#a578bb' }} />
-              <span className="text-white font-bold">Elisa</span>
-              <span className="ml-auto tabular-nums text-white">{fmtBRL(costs.elisa.total)}</span>
-            </p>
-            <p className="text-[10px] text-[#c5a3d4]/50 leading-relaxed pl-4">
-              Fixo do projeto.<br/>
-              Por ensaio: <span className="text-white">{fmtBRL(costs.elisa.per_ensaio)}</span>
-            </p>
-          </div>
-          <div>
-            <p className="flex items-center gap-1.5 mb-1">
-              <span className="inline-block w-2 h-2 rounded-full" style={{ background: '#e87060' }} />
-              <span className="text-white font-bold">Mari</span>
-              <span className="ml-auto tabular-nums text-white">{fmtBRL(costs.mari.total)}</span>
-            </p>
-            <p className="text-[10px] text-[#c5a3d4]/50 leading-relaxed pl-4">
-              {fmtBRL(costs.mari.fixed)} fixo + {fmtBRL(costs.mari.commission)} comissão escalonada.<br/>
-              <span className="text-[#c5a3d4]/40">5% até 15 · 8% até 30 · 10% 31+</span>
-            </p>
-          </div>
-        </div>
-      </div>
-
-      {/* Resultado final */}
-      <div className="mt-3 pt-3 border-t border-white/[0.06] flex items-baseline justify-between flex-wrap gap-2">
-        <span className="text-[11px] text-[#d4baeb]/60">
-          Lucro / prejuízo acumulado:
-        </span>
-        <span className="font-black tabular-nums text-lg" style={{
-          color: kpis.profit >= 0 ? '#4ade80' : '#f87171',
-        }}>
-          {kpis.profit >= 0 ? '+' : ''}{fmtBRL(kpis.profit)}
-        </span>
       </div>
     </div>
   );
