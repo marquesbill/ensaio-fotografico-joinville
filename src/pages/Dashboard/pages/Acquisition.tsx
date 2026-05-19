@@ -82,7 +82,8 @@ interface MetaAdsData {
   range: { since: string; until: string; days: number };
   fetched_at: string;
   account: {
-    spend: number; impressions: number; clicks: number; reach: number;
+    spend: number; spend_net: number; tax_rate: number;
+    impressions: number; clicks: number; reach: number;
     ctr: number; cpc: number; cpm: number; frequency: number;
     leads: number; purchases: number; cpl: number; cpa: number;
   };
@@ -264,16 +265,22 @@ export function Acquisition({ token }: { token: string }) {
         />
       </div>
 
-      {/* Leads no período — métrica de captura crítica pra avaliar campanha */}
+      {/* Leads no período — banner agora SEPARA visualmente "leads totais site"
+          (Sheets, todos os caminhos) de "leads via anúncio" (Meta Pixel).
+          São 2 fontes diferentes — leads totais ≥ leads Meta porque inclui
+          orgânico/direto/Instagram-bio. */}
       <div className="rounded-2xl border border-[#7a3f8f]/30 bg-gradient-to-r from-[#7a3f8f]/10 via-transparent to-[#e87060]/10 p-5 mb-6">
-        <div className="flex items-baseline justify-between mb-4">
+        <div className="flex items-baseline justify-between mb-4 flex-wrap gap-4">
           <div>
-            <p className="text-[10px] uppercase tracking-widest text-[#c5a3d4]/70 font-bold">Leads capturados no período</p>
+            <p className="text-[10px] uppercase tracking-widest text-[#c5a3d4]/70 font-bold flex items-center gap-2">
+              Leads totais capturados
+              <span className="text-[8px] uppercase tracking-wider px-1.5 py-0.5 rounded bg-[#7a3f8f]/30 text-[#d4baeb] not-italic">Sheets · qualquer caminho</span>
+            </p>
             <p className="font-black text-4xl text-white tabular-nums mt-1">
               {loading ? '—' : (leads?.total ?? 0).toLocaleString('pt-BR')}
             </p>
             <p className="text-[11px] text-[#d4baeb]/50 mt-1">
-              {leads ? `~${(leads.total / Math.max(RANGE_OPTIONS.find(r => r.key === range)?.days || 28, 1)).toFixed(1)} leads/dia em média` : ''}
+              {leads ? `~${(leads.total / Math.max(RANGE_OPTIONS.find(r => r.key === range)?.days || 28, 1)).toFixed(1)} leads/dia · inclui orgânico, direto, link da bio` : ''}
             </p>
           </div>
           <div className="flex items-baseline gap-6 text-sm">
@@ -298,6 +305,18 @@ export function Acquisition({ token }: { token: string }) {
               </p>
               <p className="text-[9px] text-[#e87060]/60 mt-0.5">"Vai pra Joinville: Sim"</p>
             </div>
+            {/* Mini-comparativo: quantos vieram especificamente via Meta */}
+            {meta && (
+              <div className="border-l border-white/[0.08] pl-6">
+                <p className="text-[10px] uppercase tracking-wider text-blue-300/70 font-semibold">Leads via Meta</p>
+                <p className="text-blue-300 font-black tabular-nums text-2xl mt-0.5">
+                  {meta.account.leads}
+                </p>
+                <p className="text-[9px] text-blue-300/40 mt-0.5">
+                  Pixel · {leads && meta.account.leads > 0 ? `${((meta.account.leads / leads.total) * 100).toFixed(0)}% do total` : 'só anúncios'}
+                </p>
+              </div>
+            )}
           </div>
         </div>
         {/* Daily leads trend (compact sparkline) */}
@@ -319,17 +338,25 @@ export function Acquisition({ token }: { token: string }) {
         )}
       </div>
 
-      {/* Meta Ads — spend, CPL, campaigns */}
+      {/* Meta Ads — spend gross (com imposto), CPL, campaigns */}
       {meta && (
         <div className="mb-6 rounded-2xl border border-blue-500/20 bg-gradient-to-r from-blue-500/5 via-transparent to-[#7a3f8f]/5 p-5">
-          <div className="flex items-baseline justify-between mb-4">
+          <div className="flex items-baseline justify-between mb-4 flex-wrap gap-4">
             <div>
-              <p className="text-[10px] uppercase tracking-widest text-blue-300/70 font-bold">Meta Ads · gasto e CPL no período</p>
+              <p className="text-[10px] uppercase tracking-widest text-blue-300/70 font-bold">
+                Meta Ads · gasto real (com imposto) e CPL no período
+              </p>
               <p className="font-black text-3xl text-white tabular-nums mt-1">
                 R$ {meta.account.spend.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
               </p>
               <p className="text-[11px] text-[#d4baeb]/50 mt-1">
-                Gasto total · {meta.account.impressions.toLocaleString('pt-BR')} impressões · alcance {meta.account.reach.toLocaleString('pt-BR')}
+                <span title={`Sem imposto: R$ ${meta.account.spend_net.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`}>
+                  R$ {meta.account.spend_net.toLocaleString('pt-BR', { minimumFractionDigits: 2 })} no gerenciador
+                  {' + '}
+                  {(meta.account.tax_rate * 100).toFixed(1)}% imposto
+                </span>
+                {' · '}
+                {meta.account.impressions.toLocaleString('pt-BR')} impressões · alcance {meta.account.reach.toLocaleString('pt-BR')}
               </p>
             </div>
             <div className="flex items-baseline gap-6 text-sm">
@@ -343,7 +370,7 @@ export function Acquisition({ token }: { token: string }) {
                 <p className="text-white font-black tabular-nums text-2xl mt-0.5">
                   {meta.account.cpl > 0 ? `R$ ${meta.account.cpl.toFixed(2)}` : '—'}
                 </p>
-                <p className="text-[9px] text-white/30 mt-0.5">custo por lead</p>
+                <p className="text-[9px] text-white/30 mt-0.5">gross / leads Meta</p>
               </div>
               <div>
                 <p className="text-[10px] uppercase tracking-wider text-white/40 font-semibold">CPM · CTR</p>

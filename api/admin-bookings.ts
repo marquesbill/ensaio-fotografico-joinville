@@ -1177,44 +1177,56 @@ async function handleMetaAds(req: VercelRequest, res: VercelResponse) {
     'onsite_web_purchase',
   ];
 
+  // Imposto sobre o spend da Meta — desde 2026 (info da Elisa). O valor que
+  // a Meta cobra é GROSS = net (faturado pelo gerenciador) × (1 + tax_rate).
+  // Default 12,5% (configurável via env var). CPL/CPA/CPC etc usam GROSS pra
+  // refletir o custo real desembolsado.
+  const TAX_RATE = parseFloat(process.env.META_ADS_TAX_RATE || '0.125');
+
   const acct = accountJson.data?.[0] || {};
   const acctLeads     = extractActionCount(acct.actions, LEAD_TYPES);
   const acctPurchases = extractActionCount(acct.actions, PURCHASE_TYPES);
-  const acctSpend     = Number(acct.spend) || 0;
+  const acctSpendNet   = Number(acct.spend) || 0;
+  const acctSpendGross = acctSpendNet * (1 + TAX_RATE);
+  const taxMultiplier  = 1 + TAX_RATE;
 
   const accountSummary = {
-    spend:       acctSpend,
+    spend:       acctSpendGross,                        // gross = principal
+    spend_net:   acctSpendNet,                          // sem imposto (Meta gerenciador)
+    tax_rate:    TAX_RATE,                              // 0..1
     impressions: Number(acct.impressions) || 0,
     clicks:      Number(acct.clicks)      || 0,
-    ctr:         Number(acct.ctr)         || 0,    // %
-    cpc:         Number(acct.cpc)         || 0,    // R$ por clique
-    cpm:         Number(acct.cpm)         || 0,    // R$ por mil impressões
+    ctr:         Number(acct.ctr)         || 0,         // %
+    cpc:         (Number(acct.cpc) || 0) * taxMultiplier, // ajustado com tax
+    cpm:         (Number(acct.cpm) || 0) * taxMultiplier,
     reach:       Number(acct.reach)       || 0,
     frequency:   Number(acct.frequency)   || 0,
     leads:       acctLeads,
     purchases:   acctPurchases,
-    cpl:         acctLeads     > 0 ? acctSpend / acctLeads     : 0,
-    cpa:         acctPurchases > 0 ? acctSpend / acctPurchases : 0,
+    cpl:         acctLeads     > 0 ? acctSpendGross / acctLeads     : 0,
+    cpa:         acctPurchases > 0 ? acctSpendGross / acctPurchases : 0,
   };
 
   const campaigns = (campaignJson.data || [])
     .map(c => {
       const cLeads     = extractActionCount(c.actions, LEAD_TYPES);
       const cPurchases = extractActionCount(c.actions, PURCHASE_TYPES);
-      const cSpend     = Number(c.spend) || 0;
+      const cSpendNet   = Number(c.spend) || 0;
+      const cSpendGross = cSpendNet * taxMultiplier;
       return {
         id:          String(c.campaign_id || ''),
         name:        String(c.campaign_name || '(unknown)'),
-        spend:       cSpend,
+        spend:       cSpendGross,                              // gross (com imposto)
+        spend_net:   cSpendNet,
         impressions: Number(c.impressions) || 0,
         clicks:      Number(c.clicks)      || 0,
         ctr:         Number(c.ctr)         || 0,
-        cpc:         Number(c.cpc)         || 0,
-        cpm:         Number(c.cpm)         || 0,
+        cpc:         (Number(c.cpc) || 0) * taxMultiplier,
+        cpm:         (Number(c.cpm) || 0) * taxMultiplier,
         leads:       cLeads,
         purchases:   cPurchases,
-        cpl:         cLeads     > 0 ? cSpend / cLeads     : 0,
-        cpa:         cPurchases > 0 ? cSpend / cPurchases : 0,
+        cpl:         cLeads     > 0 ? cSpendGross / cLeads     : 0,
+        cpa:         cPurchases > 0 ? cSpendGross / cPurchases : 0,
       };
     })
     .sort((a, b) => b.spend - a.spend);
@@ -1223,22 +1235,24 @@ async function handleMetaAds(req: VercelRequest, res: VercelResponse) {
     .map(a => {
       const aLeads     = extractActionCount(a.actions, LEAD_TYPES);
       const aPurchases = extractActionCount(a.actions, PURCHASE_TYPES);
-      const aSpend     = Number(a.spend) || 0;
+      const aSpendNet   = Number(a.spend) || 0;
+      const aSpendGross = aSpendNet * taxMultiplier;
       return {
         id:           String(a.adset_id || ''),
         name:         String(a.adset_name || '(unknown)'),
         campaign_id:  String(a.campaign_id || ''),
         campaign:     String(a.campaign_name || '(unknown)'),
-        spend:        aSpend,
+        spend:        aSpendGross,
+        spend_net:    aSpendNet,
         impressions:  Number(a.impressions) || 0,
         clicks:       Number(a.clicks)      || 0,
         ctr:          Number(a.ctr)         || 0,
-        cpc:          Number(a.cpc)         || 0,
-        cpm:          Number(a.cpm)         || 0,
+        cpc:          (Number(a.cpc) || 0) * taxMultiplier,
+        cpm:          (Number(a.cpm) || 0) * taxMultiplier,
         leads:        aLeads,
         purchases:    aPurchases,
-        cpl:          aLeads     > 0 ? aSpend / aLeads     : 0,
-        cpa:          aPurchases > 0 ? aSpend / aPurchases : 0,
+        cpl:          aLeads     > 0 ? aSpendGross / aLeads     : 0,
+        cpa:          aPurchases > 0 ? aSpendGross / aPurchases : 0,
       };
     })
     .sort((a, b) => b.spend - a.spend);
@@ -1269,8 +1283,9 @@ async function handleMetaAds(req: VercelRequest, res: VercelResponse) {
     .map(a => {
       const adLeads     = extractActionCount(a.actions, LEAD_TYPES);
       const adPurchases = extractActionCount(a.actions, PURCHASE_TYPES);
-      const adSpend     = Number(a.spend) || 0;
-      const adId        = String(a.ad_id || '');
+      const adSpendNet   = Number(a.spend) || 0;
+      const adSpendGross = adSpendNet * taxMultiplier;
+      const adId         = String(a.ad_id || '');
       return {
         id:           adId,
         name:         String(a.ad_name || '(unknown)'),
@@ -1279,16 +1294,17 @@ async function handleMetaAds(req: VercelRequest, res: VercelResponse) {
         adset:        String(a.adset_name || '(unknown)'),
         campaign_id:  String(a.campaign_id || ''),
         campaign:     String(a.campaign_name || '(unknown)'),
-        spend:        adSpend,
+        spend:        adSpendGross,
+        spend_net:    adSpendNet,
         impressions:  Number(a.impressions) || 0,
         clicks:       Number(a.clicks)      || 0,
         ctr:          Number(a.ctr)         || 0,
-        cpc:          Number(a.cpc)         || 0,
-        cpm:          Number(a.cpm)         || 0,
+        cpc:          (Number(a.cpc) || 0) * taxMultiplier,
+        cpm:          (Number(a.cpm) || 0) * taxMultiplier,
         leads:        adLeads,
         purchases:    adPurchases,
-        cpl:          adLeads     > 0 ? adSpend / adLeads     : 0,
-        cpa:          adPurchases > 0 ? adSpend / adPurchases : 0,
+        cpl:          adLeads     > 0 ? adSpendGross / adLeads     : 0,
+        cpa:          adPurchases > 0 ? adSpendGross / adPurchases : 0,
       };
     })
     .sort((a, b) => b.spend - a.spend);
@@ -1301,6 +1317,174 @@ async function handleMetaAds(req: VercelRequest, res: VercelResponse) {
     campaigns,
     adsets,
     ads,
+  });
+}
+
+/* ───────── Economics (ROAS + CPA real em Pagamentos) ─────────
+ *
+ * Combina spend gross do Meta + custos fixos da equipe + comissão escalonada
+ * da Mari pra calcular:
+ *   - receita realizada (ensaios confirmados, soma dos valores efetivos)
+ *   - custo total
+ *   - ROAS (receita / custo)
+ *   - CPA real (custo / ensaios)
+ *   - break-even (quantos ensaios faltam pra ROAS = 1)
+ *
+ * Custos da equipe vêm de env vars:
+ *   ELISA_TOTAL_COST=7500
+ *   MARI_FIXED_COST=4200
+ * Imposto Meta vem de META_ADS_TAX_RATE (default 0.125).
+ *
+ * Comissão da Mari (hardcoded no código porque é regra de negócio específica,
+ * pode virar env JSON se mudar): 5% nos primeiros 15, 8% nos próximos 15
+ * (até o 30º), 10% do 31º em diante. Aplicada sobre o preço efetivo pago
+ * (coluna G da aba Agendamentos). Ordem cronológica por `criado_em`.
+ */
+
+// Custos fixos default (override via env). Hardcoded como fallback porque
+// são os valores combinados em maio/2026 — facilita testes locais sem .env.
+const ELISA_TOTAL_DEFAULT = 7500;
+const MARI_FIXED_DEFAULT  = 4200;
+
+interface ConfirmedBooking { id: string; createdAt: number; price: number; package: string }
+
+function calcMariCommission(bookings: ConfirmedBooking[]): { total: number; perBooking: Array<{ id: string; rate: number; commission: number }> } {
+  // Comissão escalonada — taxa cresce conforme volume acumulado da Mari.
+  // Pos 1..15 → 5% · 16..30 → 8% · 31+ → 10%. Aplica sobre o valor pago
+  // (coluna G), não sobre o preço de catálogo — assim já considera descontos
+  // que ela eventualmente faça no fechamento.
+  const tiers = [
+    { upTo: 15,       rate: 0.05 },
+    { upTo: 30,       rate: 0.08 },
+    { upTo: Infinity, rate: 0.10 },
+  ];
+  const sorted = [...bookings].sort((a, b) => a.createdAt - b.createdAt);
+  let total = 0;
+  const perBooking = sorted.map((b, idx) => {
+    const pos = idx + 1;
+    const tier = tiers.find(t => pos <= t.upTo) || tiers[tiers.length - 1];
+    const commission = b.price * tier.rate;
+    total += commission;
+    return { id: b.id, rate: tier.rate, commission };
+  });
+  return { total, perBooking };
+}
+
+async function handleEconomics(req: VercelRequest, res: VercelResponse) {
+  // 1. Bookings confirmados (Sheets) — fonte da verdade pra receita e nº ensaios.
+  //    Lê a aba Agendamentos direto (mesmo padrão de handleSheetsBookings).
+  const rows = await fetchSheetRange(BOOKINGS_SHEET_ID, 'Agendamentos!A2:U1000');
+  const confirmed: ConfirmedBooking[] = [];
+  for (const row of rows) {
+    if (!row[0] || !String(row[0]).trim()) continue;
+    if (normalizeStatus(String(row[12] || '')) !== 'confirmado') continue;
+    const valor = parseFloat(String(row[6] || '').replace(/[^\d,.-]/g, '').replace(',', '.')) || 0;
+    if (valor <= 0) continue; // ignora rows sem valor (provavelmente teste/admin manual)
+    const createdAt = new Date(String(row[13] || '')).getTime() || 0;
+    confirmed.push({
+      id:        String(row[0]),
+      createdAt,
+      price:     valor,
+      package:   normalizePackage(row[4]),
+    });
+  }
+
+  const revenue = confirmed.reduce((s, b) => s + b.price, 0);
+  const nEnsaios = confirmed.length;
+
+  // 2. Meta spend gross (com imposto). Reusa lógica de handleMetaAds mas com
+  //    range customizável (default ano cheio pra lifetime do festival 2026).
+  const days = Math.min(Math.max(parseInt(String(req.query.range || '365'), 10) || 365, 1), 365);
+  const until = new Date().toISOString().slice(0, 10);
+  const since = new Date(Date.now() - days * 86400000).toISOString().slice(0, 10);
+  const taxRate = parseFloat(process.env.META_ADS_TAX_RATE || '0.125');
+
+  let metaSpendNet = 0;
+  let metaSpendGross = 0;
+  let metaError: string | null = null;
+  const metaToken     = process.env.META_ADS_TOKEN;
+  const metaAccountId = process.env.META_ADS_ACCOUNT_ID;
+  if (metaToken && metaAccountId) {
+    const acctPath = metaAccountId.startsWith('act_') ? metaAccountId : `act_${metaAccountId}`;
+    const tr = encodeURIComponent(JSON.stringify({ since, until }));
+    const url = `https://graph.facebook.com/v19.0/${acctPath}/insights?fields=spend&time_range=${tr}&access_token=${metaToken}`;
+    try {
+      const r = await fetch(url);
+      if (r.ok) {
+        const j = await r.json() as { data?: Array<{ spend?: string }> };
+        metaSpendNet = Number(j.data?.[0]?.spend) || 0;
+        metaSpendGross = metaSpendNet * (1 + taxRate);
+      } else {
+        metaError = `Meta API ${r.status}`;
+      }
+    } catch (e) {
+      metaError = e instanceof Error ? e.message : 'Erro Meta API';
+    }
+  } else {
+    metaError = 'META_ADS_TOKEN ou META_ADS_ACCOUNT_ID ausentes';
+  }
+
+  // 3. Custos da equipe.
+  const elisaTotal = parseFloat(process.env.ELISA_TOTAL_COST || String(ELISA_TOTAL_DEFAULT));
+  const mariFixed  = parseFloat(process.env.MARI_FIXED_COST  || String(MARI_FIXED_DEFAULT));
+  const { total: mariCommission, perBooking: mariPerBooking } = calcMariCommission(confirmed);
+  const mariTotal = mariFixed + mariCommission;
+
+  const totalCost = metaSpendGross + elisaTotal + mariTotal;
+
+  // 4. KPIs derivados.
+  const roas       = totalCost > 0 ? revenue / totalCost : 0;
+  const cpaReal    = nEnsaios > 0 ? totalCost / nEnsaios : 0;
+  const cpaMeta    = nEnsaios > 0 ? metaSpendGross / nEnsaios : 0;
+  const avgTicket  = nEnsaios > 0 ? revenue / nEnsaios : 0;
+
+  // Break-even: se ROAS < 1, quantos ensaios faltam (em ticket médio atual)
+  //   pra zerar o saldo. Se ROAS >= 1, já passou — mostra lucro acumulado.
+  const deficit = Math.max(0, totalCost - revenue);
+  const ensaiosToBreakeven = avgTicket > 0 && deficit > 0
+    ? Math.ceil(deficit / avgTicket)
+    : 0;
+
+  return res.status(200).json({
+    fetched_at:   new Date().toISOString(),
+    next_refresh: new Date(Date.now() + 12 * 3600 * 1000).toISOString(),
+    range:        { since, until, days, note: 'Lifetime do festival 2026 por default' },
+    revenue: {
+      total:    revenue,
+      ensaios:  nEnsaios,
+      avg_ticket: avgTicket,
+    },
+    costs: {
+      meta_ads: {
+        gross:    metaSpendGross,
+        net:      metaSpendNet,
+        tax_rate: taxRate,
+        error:    metaError,
+      },
+      elisa: {
+        total: elisaTotal,
+        per_ensaio: nEnsaios > 0 ? elisaTotal / nEnsaios : 0,
+      },
+      mari: {
+        fixed:        mariFixed,
+        commission:   mariCommission,
+        total:        mariTotal,
+        per_ensaio:   nEnsaios > 0 ? mariTotal / nEnsaios : 0,
+        breakdown:    mariPerBooking.slice(0, 50), // até 50 pra payload não inflar
+      },
+      total: totalCost,
+    },
+    kpis: {
+      roas,                                // > 1 = lucro
+      cpa_real: cpaReal,                   // custo total / ensaios
+      cpa_meta: cpaMeta,                   // só Meta / ensaios
+      profit:   revenue - totalCost,       // pode ser negativo
+      breakeven: {
+        deficit,                            // R$ que falta pra zerar
+        ensaios_needed: ensaiosToBreakeven, // a ticket médio atual
+        progress_pct:   totalCost > 0 ? Math.min(100, (revenue / totalCost) * 100) : 0,
+      },
+    },
   });
 }
 
@@ -2709,6 +2893,15 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       console.error('[admin-bookings/meta-ads]', msg);
+      return res.status(500).json({ error: msg });
+    }
+  }
+  if (endpoint === 'economics') {
+    try {
+      return await handleEconomics(req, res);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      console.error('[admin-bookings/economics]', msg);
       return res.status(500).json({ error: msg });
     }
   }
