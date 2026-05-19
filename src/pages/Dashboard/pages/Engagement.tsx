@@ -273,6 +273,109 @@ export function Engagement({ token }: { token: string }) {
         </div>
       )}
 
+      {/* ───────── Geografia (Brasil) — visão geográfica antes dos KPIs ───────── */}
+      <div className="mb-6 rounded-2xl border border-white/10 bg-white/[0.03] backdrop-blur-sm p-5">
+        <div className="flex items-baseline justify-between mb-4 flex-wrap gap-2">
+          <div>
+            <h2 className="font-headline text-xl font-black text-white">Geografia (Brasil)</h2>
+            <p className="text-[#d4baeb]/60 text-xs mt-0.5">
+              Distribuição por estado · escolha a métrica abaixo
+            </p>
+          </div>
+          <p className="text-[10px] uppercase tracking-wider text-[#c5a3d4]/40 whitespace-nowrap">
+            Leads/Clientes via DDD · Sessões GA4 · Impressões Meta Ads
+          </p>
+        </div>
+
+        {/* Radio buttons de métrica */}
+        <div className="flex flex-wrap gap-2 mb-5">
+          {GEO_METRICS.map(m => {
+            const available = geo?.sources?.[m.key] !== false;
+            const isSelected = geoMetric === m.key;
+            return (
+              <button
+                key={m.key}
+                onClick={() => available && setGeoMetric(m.key)}
+                disabled={!available}
+                className={`px-3 py-2 rounded-lg text-xs font-bold transition-all border
+                  ${isSelected
+                    ? 'bg-[#7a3f8f]/30 border-[#7a3f8f]/60 text-white'
+                    : available
+                      ? 'bg-white/[0.02] border-white/10 text-[#d4baeb]/70 hover:bg-white/[0.05] hover:text-white'
+                      : 'bg-white/[0.01] border-white/[0.05] text-[#d4baeb]/30 cursor-not-allowed'
+                  }`}
+              >
+                <span className={`inline-block w-2 h-2 rounded-full mr-2 ${isSelected ? 'bg-[#e87060]' : 'bg-white/20'}`} />
+                {m.label}
+                {!available && <span className="ml-1.5 text-[9px] opacity-60">indisponível</span>}
+              </button>
+            );
+          })}
+        </div>
+
+        {geoError && (
+          <div className="mb-4 p-4 rounded-xl border border-amber-500/30 bg-amber-500/5 text-amber-200 text-sm">
+            <p className="font-bold">Mapa indisponível</p>
+            <p className="text-amber-200/70 mt-1">{geoError}</p>
+          </div>
+        )}
+
+        {!geoError && (
+          <div className="grid grid-cols-1 lg:grid-cols-[2fr_1fr] gap-5">
+            <BrazilMap
+              data={Object.fromEntries(
+                Object.entries(geo?.states || {}).map(([uf, v]) => [uf, v[geoMetric]])
+              )}
+              metricLabel={GEO_METRICS.find(m => m.key === geoMetric)?.tooltipLabel}
+            />
+
+            {/* Top 8 estados */}
+            <div>
+              <p className="text-[11px] font-bold uppercase tracking-widest text-[#c5a3d4]/70 mb-3">
+                Top estados · {GEO_METRICS.find(m => m.key === geoMetric)?.label.toLowerCase()}
+              </p>
+              <div className="space-y-1.5">
+                {Object.entries(geo?.states || {})
+                  .map(([uf, v]) => ({ uf, value: v[geoMetric] }))
+                  .filter(e => e.value > 0)
+                  .sort((a, b) => b.value - a.value)
+                  .slice(0, 8)
+                  .map(({ uf, value }, i, arr) => {
+                    const max = arr[0]?.value || 1;
+                    return (
+                      <div key={uf}>
+                        <div className="flex items-baseline justify-between text-xs mb-0.5">
+                          <span className="text-white font-semibold tabular-nums">{i + 1}. {uf}</span>
+                          <span className="tabular-nums text-white font-bold">{value.toLocaleString('pt-BR')}</span>
+                        </div>
+                        <div className="h-1 bg-white/5 rounded overflow-hidden">
+                          <div
+                            className="h-full rounded"
+                            style={{
+                              width: `${(value / max) * 100}%`,
+                              background: 'linear-gradient(90deg, #7a3f8f 0%, #e87060 100%)',
+                            }}
+                          />
+                        </div>
+                      </div>
+                    );
+                  })
+                }
+                {Object.values(geo?.states || {}).every(v => v[geoMetric] === 0) && (
+                  <p className="text-[#d4baeb]/40 text-xs italic">Sem dados pra essa métrica no período.</p>
+                )}
+              </div>
+
+              {geo?.errors?.[geoMetric] && (
+                <p className="mt-3 text-[10px] text-amber-300/70 leading-tight">
+                  ⚠ {geo.errors[geoMetric]}
+                </p>
+              )}
+            </div>
+          </div>
+        )}
+      </div>
+
       {/* KPIs */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 mb-6">
         <KpiCard
@@ -539,109 +642,6 @@ export function Engagement({ token }: { token: string }) {
           </p>
           {clarity?.cache_hit && <p>cache hit · próx. fetch em ~6h</p>}
         </div>
-      </div>
-
-      {/* ───────── Geografia (Brasil) ───────── */}
-      <div className="mt-8 rounded-2xl border border-white/10 bg-white/[0.03] backdrop-blur-sm p-5">
-        <div className="flex items-baseline justify-between mb-4 flex-wrap gap-2">
-          <div>
-            <h2 className="font-headline text-xl font-black text-white">Geografia (Brasil)</h2>
-            <p className="text-[#d4baeb]/60 text-xs mt-0.5">
-              Distribuição por estado · escolha a métrica abaixo
-            </p>
-          </div>
-          <p className="text-[10px] uppercase tracking-wider text-[#c5a3d4]/40 whitespace-nowrap">
-            Leads/Clientes via DDD · Sessões GA4 · Impressões Meta Ads
-          </p>
-        </div>
-
-        {/* Radio buttons de métrica */}
-        <div className="flex flex-wrap gap-2 mb-5">
-          {GEO_METRICS.map(m => {
-            const available = geo?.sources?.[m.key] !== false;
-            const isSelected = geoMetric === m.key;
-            return (
-              <button
-                key={m.key}
-                onClick={() => available && setGeoMetric(m.key)}
-                disabled={!available}
-                className={`px-3 py-2 rounded-lg text-xs font-bold transition-all border
-                  ${isSelected
-                    ? 'bg-[#7a3f8f]/30 border-[#7a3f8f]/60 text-white'
-                    : available
-                      ? 'bg-white/[0.02] border-white/10 text-[#d4baeb]/70 hover:bg-white/[0.05] hover:text-white'
-                      : 'bg-white/[0.01] border-white/[0.05] text-[#d4baeb]/30 cursor-not-allowed'
-                  }`}
-              >
-                <span className={`inline-block w-2 h-2 rounded-full mr-2 ${isSelected ? 'bg-[#e87060]' : 'bg-white/20'}`} />
-                {m.label}
-                {!available && <span className="ml-1.5 text-[9px] opacity-60">indisponível</span>}
-              </button>
-            );
-          })}
-        </div>
-
-        {geoError && (
-          <div className="mb-4 p-4 rounded-xl border border-amber-500/30 bg-amber-500/5 text-amber-200 text-sm">
-            <p className="font-bold">Mapa indisponível</p>
-            <p className="text-amber-200/70 mt-1">{geoError}</p>
-          </div>
-        )}
-
-        {!geoError && (
-          <div className="grid grid-cols-1 lg:grid-cols-[2fr_1fr] gap-5">
-            <BrazilMap
-              data={Object.fromEntries(
-                Object.entries(geo?.states || {}).map(([uf, v]) => [uf, v[geoMetric]])
-              )}
-              metricLabel={GEO_METRICS.find(m => m.key === geoMetric)?.tooltipLabel}
-            />
-
-            {/* Top 8 estados */}
-            <div>
-              <p className="text-[11px] font-bold uppercase tracking-widest text-[#c5a3d4]/70 mb-3">
-                Top estados · {GEO_METRICS.find(m => m.key === geoMetric)?.label.toLowerCase()}
-              </p>
-              <div className="space-y-1.5">
-                {Object.entries(geo?.states || {})
-                  .map(([uf, v]) => ({ uf, value: v[geoMetric] }))
-                  .filter(e => e.value > 0)
-                  .sort((a, b) => b.value - a.value)
-                  .slice(0, 8)
-                  .map(({ uf, value }, i, arr) => {
-                    const max = arr[0]?.value || 1;
-                    return (
-                      <div key={uf}>
-                        <div className="flex items-baseline justify-between text-xs mb-0.5">
-                          <span className="text-white font-semibold tabular-nums">{i + 1}. {uf}</span>
-                          <span className="tabular-nums text-white font-bold">{value.toLocaleString('pt-BR')}</span>
-                        </div>
-                        <div className="h-1 bg-white/5 rounded overflow-hidden">
-                          <div
-                            className="h-full rounded"
-                            style={{
-                              width: `${(value / max) * 100}%`,
-                              background: 'linear-gradient(90deg, #7a3f8f 0%, #e87060 100%)',
-                            }}
-                          />
-                        </div>
-                      </div>
-                    );
-                  })
-                }
-                {Object.values(geo?.states || {}).every(v => v[geoMetric] === 0) && (
-                  <p className="text-[#d4baeb]/40 text-xs italic">Sem dados pra essa métrica no período.</p>
-                )}
-              </div>
-
-              {geo?.errors?.[geoMetric] && (
-                <p className="mt-3 text-[10px] text-amber-300/70 leading-tight">
-                  ⚠ {geo.errors[geoMetric]}
-                </p>
-              )}
-            </div>
-          </div>
-        )}
       </div>
 
       <p className="text-center text-[10px] text-[#c5a3d4]/30 mt-8 pb-4">

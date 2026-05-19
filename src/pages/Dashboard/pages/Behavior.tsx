@@ -53,6 +53,7 @@ interface SheetsLeadsData {
   total:    number;
   by_state: StateEntry[];
   by_ddd:   DDDEntry[];
+  daily?:   Array<{ date: string; count: number }>;
 }
 
 const RANGE_OPTIONS = [
@@ -207,6 +208,13 @@ export function Behavior({ token }: { token: string }) {
           loading={loading}
         />
       </div>
+
+      {/* Crescimento de leads ao longo do tempo */}
+      <LeadsGrowthChart
+        daily={leads?.daily || []}
+        rangeLabel={RANGE_OPTIONS.find(r => r.key === range)?.label || ''}
+        loading={loading}
+      />
 
       {/* Device + Recorrência (side-by-side) */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 mb-6">
@@ -390,6 +398,135 @@ export function Behavior({ token }: { token: string }) {
         Geografia inferida do DDD do WhatsApp (~99% precisão pra origem do número).
         Cidades do GA4 são aproximadas via IP.
       </p>
+    </div>
+  );
+}
+
+/* Gráfico de crescimento de leads — barras diárias + linha cumulativa */
+function LeadsGrowthChart({
+  daily, rangeLabel, loading,
+}: {
+  daily: Array<{ date: string; count: number }>;
+  rangeLabel: string;
+  loading: boolean;
+}) {
+  const total = daily.reduce((s, d) => s + d.count, 0);
+  const avgPerDay = daily.length > 0 ? total / daily.length : 0;
+  const max = Math.max(...daily.map(d => d.count), 1);
+
+  // Cumulativo pra desenhar linha de crescimento sobreposta
+  let running = 0;
+  const cumulative = daily.map(d => {
+    running += d.count;
+    return { date: d.date, value: running };
+  });
+  const cumMax = Math.max(...cumulative.map(c => c.value), 1);
+
+  // Mostra label de data a cada N dias pra não poluir
+  const labelEvery = Math.max(1, Math.ceil(daily.length / 8));
+
+  return (
+    <div className="rounded-2xl border border-white/10 bg-white/[0.03] backdrop-blur-sm p-5 mb-6">
+      <div className="flex items-baseline justify-between mb-4 flex-wrap gap-2">
+        <div>
+          <h3 className="text-sm font-bold text-white">Crescimento de leads</h3>
+          <p className="text-[11px] text-[#d4baeb]/50 mt-0.5">
+            Captures por dia ({rangeLabel}) — barras = diário · linha = acumulado
+          </p>
+        </div>
+        <div className="flex items-baseline gap-6 text-xs">
+          <div className="text-right">
+            <p className="text-[10px] uppercase tracking-wider text-[#c5a3d4]/50 font-semibold">Total</p>
+            <p className="text-white font-black tabular-nums text-xl mt-0.5">
+              {loading ? '—' : total.toLocaleString('pt-BR')}
+            </p>
+          </div>
+          <div className="text-right">
+            <p className="text-[10px] uppercase tracking-wider text-[#c5a3d4]/50 font-semibold">Média/dia</p>
+            <p className="text-[#e87060] font-black tabular-nums text-xl mt-0.5">
+              {loading ? '—' : avgPerDay.toFixed(1)}
+            </p>
+          </div>
+        </div>
+      </div>
+
+      {loading ? (
+        <div className="w-full h-32 bg-white/[0.02] rounded animate-pulse" />
+      ) : daily.length === 0 ? (
+        <p className="text-[11px] text-[#c5a3d4]/40 italic py-8 text-center">Sem dados de leads no período</p>
+      ) : (
+        <div>
+          {/* Plot area — relative, contém barras + linha SVG sobreposta */}
+          <div className="relative h-40">
+            {/* Barras */}
+            <div className="absolute inset-0 flex items-end gap-0.5">
+              {daily.map(d => {
+                const heightPct = (d.count / max) * 100;
+                return (
+                  <div key={d.date} className="flex-1 h-full flex items-end group relative">
+                    <div
+                      className="w-full rounded-t transition-all duration-300"
+                      style={{
+                        height:     `${Math.max(heightPct, d.count > 0 ? 3 : 0)}%`,
+                        background: '#7a3f8f',
+                      }}
+                    />
+                    <div className="absolute -top-9 left-1/2 -translate-x-1/2 px-2 py-1 rounded bg-black/85 text-[10px] text-white tabular-nums opacity-0 group-hover:opacity-100 pointer-events-none whitespace-nowrap z-10">
+                      {d.date.slice(5)}: <span className="text-[#c5a3d4]">{d.count}</span>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+
+            {/* Linha cumulativa sobreposta — SVG ocupa 100% do container */}
+            <svg
+              className="absolute inset-0 w-full h-full pointer-events-none"
+              preserveAspectRatio="none"
+              viewBox={`0 0 ${Math.max(cumulative.length - 1, 1)} 100`}
+            >
+              <polyline
+                fill="none"
+                stroke="#e87060"
+                strokeWidth="0.8"
+                vectorEffect="non-scaling-stroke"
+                points={cumulative.map((c, i) => `${i},${100 - (c.value / cumMax) * 100}`).join(' ')}
+              />
+              {/* Ponto final destacado */}
+              {cumulative.length > 0 && (
+                <circle
+                  cx={cumulative.length - 1}
+                  cy={100 - (cumulative[cumulative.length - 1].value / cumMax) * 100}
+                  r="1.5"
+                  fill="#e87060"
+                  vectorEffect="non-scaling-stroke"
+                />
+              )}
+            </svg>
+          </div>
+
+          {/* Labels datas */}
+          <div className="flex gap-0.5 mt-2 border-t border-white/[0.06] pt-1.5">
+            {daily.map((d, i) => (
+              <div key={d.date} className="flex-1 text-center text-[9px] text-[#c5a3d4]/40 tabular-nums">
+                {i % labelEvery === 0 ? d.date.slice(5).replace('-', '/') : ''}
+              </div>
+            ))}
+          </div>
+
+          {/* Legenda */}
+          <div className="flex items-center gap-4 mt-3 text-[10px] text-[#c5a3d4]/60">
+            <span className="flex items-center gap-1.5">
+              <span className="inline-block w-3 h-2 rounded-sm" style={{ background: '#7a3f8f' }} />
+              Leads/dia
+            </span>
+            <span className="flex items-center gap-1.5">
+              <span className="inline-block w-3 h-px" style={{ background: '#e87060' }} />
+              Acumulado (até {cumulative[cumulative.length - 1]?.value.toLocaleString('pt-BR') || 0})
+            </span>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

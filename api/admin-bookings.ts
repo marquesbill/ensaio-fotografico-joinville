@@ -1147,10 +1147,13 @@ async function handleMetaAds(req: VercelRequest, res: VercelResponse) {
     return r.json() as Promise<{ data?: Array<Record<string, unknown>> }>;
   };
 
-  // 1. Account-level + 2. Per-campaign em paralelo
-  const [accountJson, campaignJson] = await Promise.all([
+  // 1. Account-level + 2. Per-campaign + 3. Per-adset + 4. Per-ad em paralelo.
+  // 4 chamadas, ~500ms cada → ~500ms total porque é paralelo. Cache de 6h amortiza.
+  const [accountJson, campaignJson, adsetJson, adJson] = await Promise.all([
     fetchMeta(`${baseUrl}?fields=${fields}&time_range=${timeRange}&access_token=${token}`),
     fetchMeta(`${baseUrl}?fields=campaign_name,campaign_id,${fields}&level=campaign&time_range=${timeRange}&access_token=${token}`),
+    fetchMeta(`${baseUrl}?fields=adset_name,adset_id,campaign_name,campaign_id,${fields}&level=adset&time_range=${timeRange}&access_token=${token}`),
+    fetchMeta(`${baseUrl}?fields=ad_name,ad_id,adset_name,adset_id,campaign_name,campaign_id,${fields}&level=ad&time_range=${timeRange}&access_token=${token}`),
   ]);
 
   // Meta Pixel "Lead" event types — incluindo offsite_conversion (Pixel) e onsite_conversion
@@ -1207,12 +1210,64 @@ async function handleMetaAds(req: VercelRequest, res: VercelResponse) {
     })
     .sort((a, b) => b.spend - a.spend);
 
+  const adsets = (adsetJson.data || [])
+    .map(a => {
+      const aLeads     = extractActionCount(a.actions, LEAD_TYPES);
+      const aPurchases = extractActionCount(a.actions, PURCHASE_TYPES);
+      const aSpend     = Number(a.spend) || 0;
+      return {
+        id:           String(a.adset_id || ''),
+        name:         String(a.adset_name || '(unknown)'),
+        campaign_id:  String(a.campaign_id || ''),
+        campaign:     String(a.campaign_name || '(unknown)'),
+        spend:        aSpend,
+        impressions:  Number(a.impressions) || 0,
+        clicks:       Number(a.clicks)      || 0,
+        ctr:          Number(a.ctr)         || 0,
+        cpc:          Number(a.cpc)         || 0,
+        cpm:          Number(a.cpm)         || 0,
+        leads:        aLeads,
+        purchases:    aPurchases,
+        cpl:          aLeads     > 0 ? aSpend / aLeads     : 0,
+        cpa:          aPurchases > 0 ? aSpend / aPurchases : 0,
+      };
+    })
+    .sort((a, b) => b.spend - a.spend);
+
+  const ads = (adJson.data || [])
+    .map(a => {
+      const adLeads     = extractActionCount(a.actions, LEAD_TYPES);
+      const adPurchases = extractActionCount(a.actions, PURCHASE_TYPES);
+      const adSpend     = Number(a.spend) || 0;
+      return {
+        id:           String(a.ad_id || ''),
+        name:         String(a.ad_name || '(unknown)'),
+        adset_id:     String(a.adset_id || ''),
+        adset:        String(a.adset_name || '(unknown)'),
+        campaign_id:  String(a.campaign_id || ''),
+        campaign:     String(a.campaign_name || '(unknown)'),
+        spend:        adSpend,
+        impressions:  Number(a.impressions) || 0,
+        clicks:       Number(a.clicks)      || 0,
+        ctr:          Number(a.ctr)         || 0,
+        cpc:          Number(a.cpc)         || 0,
+        cpm:          Number(a.cpm)         || 0,
+        leads:        adLeads,
+        purchases:    adPurchases,
+        cpl:          adLeads     > 0 ? adSpend / adLeads     : 0,
+        cpa:          adPurchases > 0 ? adSpend / adPurchases : 0,
+      };
+    })
+    .sort((a, b) => b.spend - a.spend);
+
   return res.status(200).json({
     range:        { since, until, days },
     fetched_at:   new Date().toISOString(),
     next_refresh: new Date(Date.now() + 6 * 3600 * 1000).toISOString(), // Meta atualiza ~hora em hora
     account:      accountSummary,
     campaigns,
+    adsets,
+    ads,
   });
 }
 

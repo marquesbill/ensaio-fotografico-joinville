@@ -66,6 +66,19 @@ interface MetaAdsData {
     ctr: number; cpc: number; cpm: number;
     leads: number; purchases: number; cpl: number; cpa: number;
   }>;
+  adsets: Array<{
+    id: string; name: string; campaign_id: string; campaign: string;
+    spend: number; impressions: number; clicks: number;
+    ctr: number; cpc: number; cpm: number;
+    leads: number; purchases: number; cpl: number; cpa: number;
+  }>;
+  ads: Array<{
+    id: string; name: string;
+    adset_id: string; adset: string; campaign_id: string; campaign: string;
+    spend: number; impressions: number; clicks: number;
+    ctr: number; cpc: number; cpm: number;
+    leads: number; purchases: number; cpl: number; cpa: number;
+  }>;
 }
 
 interface MetaAdsError { error: string; details?: string }
@@ -374,38 +387,130 @@ export function Acquisition({ token }: { token: string }) {
           source="GA4"
           loading={loading}
           rows={(data?.sources || []).map((s) => ({
-            source:     s.source,
-            medium:     s.medium,
-            sessions:   s.sessions,
-            engagement: `${(s.engagementRate * 100).toFixed(0)}%`,
+            source:         s.source,
+            medium:         s.medium,
+            sessions:       s.sessions,
+            engagement:     `${(s.engagementRate * 100).toFixed(0)}%`,
+            engagementRate: s.engagementRate, // numérico p/ sort
           }))}
           columns={[
-            { key: 'source',     label: 'Fonte',   align: 'left'  },
-            { key: 'medium',     label: 'Médio',   align: 'left'  },
-            { key: 'sessions',   label: 'Sessões', align: 'right' },
-            { key: 'engagement', label: 'Engaj.',  align: 'right' },
+            { key: 'source',     label: 'Fonte',   align: 'left',  sortable: true },
+            { key: 'medium',     label: 'Médio',   align: 'left',  sortable: true },
+            { key: 'sessions',   label: 'Sessões', align: 'right', sortable: true },
+            { key: 'engagement', label: 'Engaj.',  align: 'right', sortable: true,
+              sortAccessor: (r) => Number(r.engagementRate) || 0 },
           ]}
           barColumn="sessions"
           maxRows={15}
+          defaultSort={{ key: 'sessions', dir: 'desc' }}
         />
         <DataTable
           title="Campanhas (UTM)"
           source="GA4"
           loading={loading}
           rows={(data?.campaigns || []).map((c) => ({
-            campaign:   c.campaign,
-            sessions:   c.sessions,
-            engagement: `${(c.engagementRate * 100).toFixed(0)}%`,
+            campaign:       c.campaign,
+            sessions:       c.sessions,
+            engagement:     `${(c.engagementRate * 100).toFixed(0)}%`,
+            engagementRate: c.engagementRate,
           }))}
           columns={[
-            { key: 'campaign',   label: 'Campanha', align: 'left'  },
-            { key: 'sessions',   label: 'Sessões',  align: 'right' },
-            { key: 'engagement', label: 'Engaj.',   align: 'right' },
+            { key: 'campaign',   label: 'Campanha', align: 'left',  sortable: true },
+            { key: 'sessions',   label: 'Sessões',  align: 'right', sortable: true },
+            { key: 'engagement', label: 'Engaj.',   align: 'right', sortable: true,
+              sortAccessor: (r) => Number(r.engagementRate) || 0 },
           ]}
           barColumn="sessions"
           maxRows={10}
+          defaultSort={{ key: 'sessions', dir: 'desc' }}
         />
       </div>
+
+      {/* Meta Ads — Conjuntos (adsets) + Anúncios (ads) — última seção da página */}
+      {meta && (meta.adsets?.length > 0 || meta.ads?.length > 0) && (
+        <div className="mt-8 mb-6">
+          <div className="flex items-baseline justify-between mb-3">
+            <div>
+              <h2 className="font-headline text-xl font-black text-white">Meta Ads · drill-down</h2>
+              <p className="text-[#d4baeb]/60 text-xs mt-0.5">
+                Métricas por conjunto de anúncios e por anúncio individual
+              </p>
+            </div>
+            <p className="text-[10px] uppercase tracking-wider text-[#c5a3d4]/40 whitespace-nowrap">Meta Graph API · level adset + ad</p>
+          </div>
+
+          <div className="grid grid-cols-1 gap-3">
+            <DataTable
+              title="Conjuntos de anúncios (adsets)"
+              source="Meta Ads"
+              loading={loading}
+              rows={(meta.adsets || []).map((a) => ({
+                adset:        a.name,
+                campaign:     a.campaign,
+                spend:        a.spend,
+                spendFmt:     `R$ ${a.spend.toFixed(2).replace('.', ',')}`,
+                impressions:  a.impressions,
+                clicks:       a.clicks,
+                ctr:          `${a.ctr.toFixed(2)}%`,
+                ctrNum:       a.ctr,
+                cpc:          `R$ ${a.cpc.toFixed(2).replace('.', ',')}`,
+                cpcNum:       a.cpc,
+                leads:        a.leads,
+                cpl:          a.leads > 0 ? `R$ ${a.cpl.toFixed(2).replace('.', ',')}` : '—',
+                cplNum:       a.cpl,
+              }))}
+              columns={[
+                { key: 'adset',       label: 'Conjunto', align: 'left',  sortable: true },
+                { key: 'campaign',    label: 'Campanha', align: 'left',  sortable: true },
+                { key: 'spendFmt',    label: 'Gasto',    align: 'right', sortable: true, sortAccessor: (r) => Number(r.spend) || 0 },
+                { key: 'impressions', label: 'Impr.',    align: 'right', sortable: true },
+                { key: 'clicks',      label: 'Cliques',  align: 'right', sortable: true },
+                { key: 'ctr',         label: 'CTR',      align: 'right', sortable: true, sortAccessor: (r) => Number(r.ctrNum) || 0 },
+                { key: 'cpc',         label: 'CPC',      align: 'right', sortable: true, sortAccessor: (r) => Number(r.cpcNum) || 0 },
+                { key: 'leads',       label: 'Leads',    align: 'right', sortable: true },
+                { key: 'cpl',         label: 'CPL',      align: 'right', sortable: true, sortAccessor: (r) => Number(r.cplNum) || 0 },
+              ]}
+              maxRows={20}
+              defaultSort={{ key: 'spendFmt', dir: 'desc' }}
+            />
+
+            <DataTable
+              title="Anúncios individuais (ads)"
+              source="Meta Ads"
+              loading={loading}
+              rows={(meta.ads || []).map((a) => ({
+                ad:           a.name,
+                adset:        a.adset,
+                campaign:     a.campaign,
+                spend:        a.spend,
+                spendFmt:     `R$ ${a.spend.toFixed(2).replace('.', ',')}`,
+                impressions:  a.impressions,
+                clicks:       a.clicks,
+                ctr:          `${a.ctr.toFixed(2)}%`,
+                ctrNum:       a.ctr,
+                cpc:          `R$ ${a.cpc.toFixed(2).replace('.', ',')}`,
+                cpcNum:       a.cpc,
+                leads:        a.leads,
+                cpl:          a.leads > 0 ? `R$ ${a.cpl.toFixed(2).replace('.', ',')}` : '—',
+                cplNum:       a.cpl,
+              }))}
+              columns={[
+                { key: 'ad',          label: 'Anúncio',  align: 'left',  sortable: true },
+                { key: 'adset',       label: 'Conjunto', align: 'left',  sortable: true },
+                { key: 'spendFmt',    label: 'Gasto',    align: 'right', sortable: true, sortAccessor: (r) => Number(r.spend) || 0 },
+                { key: 'impressions', label: 'Impr.',    align: 'right', sortable: true },
+                { key: 'clicks',      label: 'Cliques',  align: 'right', sortable: true },
+                { key: 'ctr',         label: 'CTR',      align: 'right', sortable: true, sortAccessor: (r) => Number(r.ctrNum) || 0 },
+                { key: 'cpc',         label: 'CPC',      align: 'right', sortable: true, sortAccessor: (r) => Number(r.cpcNum) || 0 },
+                { key: 'leads',       label: 'Leads',    align: 'right', sortable: true },
+                { key: 'cpl',         label: 'CPL',      align: 'right', sortable: true, sortAccessor: (r) => Number(r.cplNum) || 0 },
+              ]}
+              maxRows={30}
+              defaultSort={{ key: 'spendFmt', dir: 'desc' }}
+            />
+          </div>
+        </div>
+      )}
 
       {/* Footer note */}
       <p className="text-center text-[10px] text-[#c5a3d4]/30 mt-8 pb-4">
