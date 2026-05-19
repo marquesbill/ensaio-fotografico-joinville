@@ -1121,6 +1121,12 @@ async function handleMetaAds(req: VercelRequest, res: VercelResponse) {
 
   const acctPath = accountId.startsWith('act_') ? accountId : `act_${accountId}`;
   const baseUrl  = `https://graph.facebook.com/v19.0/${acctPath}/insights`;
+
+  // URLs do Meta Ads Manager pro drill-down. Funciona pra quem tem acesso à
+  // conta de anúncios — vai abrir o painel já filtrado pelo objeto.
+  const mgrBase = `https://www.facebook.com/adsmanager/manage`;
+  const mgrUrl = (level: 'campaigns' | 'adsets' | 'ads', id: string) =>
+    id ? `${mgrBase}/${level}?act=${acctPath.replace(/^act_/, '')}&selected_${level.slice(0, -1)}_ids=${id}` : '';
   const fields   = [
     'spend', 'impressions', 'clicks', 'actions',
     'ctr', 'cpc', 'cpm', 'reach', 'frequency',
@@ -1193,9 +1199,11 @@ async function handleMetaAds(req: VercelRequest, res: VercelResponse) {
       const cLeads     = extractActionCount(c.actions, LEAD_TYPES);
       const cPurchases = extractActionCount(c.actions, PURCHASE_TYPES);
       const cSpend     = Number(c.spend) || 0;
+      const cId        = String(c.campaign_id || '');
       return {
-        id:          String(c.campaign_id || ''),
+        id:          cId,
         name:        String(c.campaign_name || '(unknown)'),
+        url:         mgrUrl('campaigns', cId),
         spend:       cSpend,
         impressions: Number(c.impressions) || 0,
         clicks:      Number(c.clicks)      || 0,
@@ -1215,11 +1223,15 @@ async function handleMetaAds(req: VercelRequest, res: VercelResponse) {
       const aLeads     = extractActionCount(a.actions, LEAD_TYPES);
       const aPurchases = extractActionCount(a.actions, PURCHASE_TYPES);
       const aSpend     = Number(a.spend) || 0;
+      const aId        = String(a.adset_id || '');
+      const cId        = String(a.campaign_id || '');
       return {
-        id:           String(a.adset_id || ''),
+        id:           aId,
         name:         String(a.adset_name || '(unknown)'),
-        campaign_id:  String(a.campaign_id || ''),
+        url:          mgrUrl('adsets', aId),
+        campaign_id:  cId,
         campaign:     String(a.campaign_name || '(unknown)'),
+        campaign_url: mgrUrl('campaigns', cId),
         spend:        aSpend,
         impressions:  Number(a.impressions) || 0,
         clicks:       Number(a.clicks)      || 0,
@@ -1239,13 +1251,19 @@ async function handleMetaAds(req: VercelRequest, res: VercelResponse) {
       const adLeads     = extractActionCount(a.actions, LEAD_TYPES);
       const adPurchases = extractActionCount(a.actions, PURCHASE_TYPES);
       const adSpend     = Number(a.spend) || 0;
+      const adId        = String(a.ad_id || '');
+      const asId        = String(a.adset_id || '');
+      const cId         = String(a.campaign_id || '');
       return {
-        id:           String(a.ad_id || ''),
+        id:           adId,
         name:         String(a.ad_name || '(unknown)'),
-        adset_id:     String(a.adset_id || ''),
+        url:          mgrUrl('ads', adId),
+        adset_id:     asId,
         adset:        String(a.adset_name || '(unknown)'),
-        campaign_id:  String(a.campaign_id || ''),
+        adset_url:    mgrUrl('adsets', asId),
+        campaign_id:  cId,
         campaign:     String(a.campaign_name || '(unknown)'),
+        campaign_url: mgrUrl('campaigns', cId),
         spend:        adSpend,
         impressions:  Number(a.impressions) || 0,
         clicks:       Number(a.clicks)      || 0,

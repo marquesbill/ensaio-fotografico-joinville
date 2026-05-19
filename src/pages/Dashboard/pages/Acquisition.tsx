@@ -11,12 +11,36 @@
  */
 
 import { useEffect, useState } from 'react';
-import { Users, MousePointer, Megaphone, Sparkles } from 'lucide-react';
+import { Users, MousePointer, Megaphone, Sparkles, ArrowUpRight } from 'lucide-react';
 
 import { KpiCard } from '../components/KpiCard';
 import { ChannelBar } from '../components/ChannelBar';
 import { DataTable } from '../components/DataTable';
 import { DataSourceBadge } from '../components/DataSourceBadge';
+
+/**
+ * Célula com nome clicável que abre o objeto no Meta Ads Manager.
+ * Aparência: mesma cor do texto normal, sem sublinhado por default. Hover
+ * mostra underline pontilhado discreto + cursor pointer. Ícone ↗ minúsculo
+ * no fim indica que é link externo (semi-transparente, só fica nítido no hover).
+ */
+function AdsManagerLink({ label, url }: { label: string; url?: string }) {
+  if (!url) {
+    return <span className="text-[#e5d2ef] truncate">{label}</span>;
+  }
+  return (
+    <a
+      href={url}
+      target="_blank"
+      rel="noopener noreferrer"
+      className="text-[#e5d2ef] hover:text-white inline-flex items-baseline gap-1 group decoration-dotted decoration-[#c5a3d4]/40 underline-offset-2 hover:underline truncate max-w-full"
+      title={`Abrir "${label}" no Meta Ads Manager`}
+    >
+      <span className="truncate">{label}</span>
+      <ArrowUpRight className="w-2.5 h-2.5 shrink-0 self-center text-[#c5a3d4]/30 group-hover:text-[#c5a3d4]/80 transition-colors" />
+    </a>
+  );
+}
 
 type ChannelCategory = 'paid_social' | 'organic_social' | 'direct' | 'referral' | 'organic_search' | 'email' | 'paid_search' | 'other';
 
@@ -61,20 +85,22 @@ interface MetaAdsData {
     leads: number; purchases: number; cpl: number; cpa: number;
   };
   campaigns: Array<{
-    id: string; name: string;
+    id: string; name: string; url?: string;
     spend: number; impressions: number; clicks: number;
     ctr: number; cpc: number; cpm: number;
     leads: number; purchases: number; cpl: number; cpa: number;
   }>;
   adsets: Array<{
-    id: string; name: string; campaign_id: string; campaign: string;
+    id: string; name: string; url?: string;
+    campaign_id: string; campaign: string; campaign_url?: string;
     spend: number; impressions: number; clicks: number;
     ctr: number; cpc: number; cpm: number;
     leads: number; purchases: number; cpl: number; cpa: number;
   }>;
   ads: Array<{
-    id: string; name: string;
-    adset_id: string; adset: string; campaign_id: string; campaign: string;
+    id: string; name: string; url?: string;
+    adset_id: string; adset: string; adset_url?: string;
+    campaign_id: string; campaign: string; campaign_url?: string;
     spend: number; impressions: number; clicks: number;
     ctr: number; cpc: number; cpm: number;
     leads: number; purchases: number; cpl: number; cpa: number;
@@ -337,7 +363,9 @@ export function Acquisition({ token }: { token: string }) {
                   const widthPct = (c.spend / maxSpend) * 100;
                   return (
                     <div key={c.id} className="grid grid-cols-12 gap-2 items-center text-xs">
-                      <span className="col-span-5 text-white truncate" title={c.name}>{c.name}</span>
+                      <div className="col-span-5 truncate">
+                        <AdsManagerLink label={c.name} url={c.url} />
+                      </div>
                       <div className="col-span-3 h-1.5 bg-white/[0.04] rounded overflow-hidden">
                         <div className="h-full" style={{ width: `${widthPct}%`, background: '#7a3f8f' }} />
                       </div>
@@ -446,7 +474,9 @@ export function Acquisition({ token }: { token: string }) {
               loading={loading}
               rows={(meta.adsets || []).map((a) => ({
                 adset:        a.name,
+                adsetUrl:     a.url,
                 campaign:     a.campaign,
+                campaignUrl:  a.campaign_url,
                 spend:        a.spend,
                 spendFmt:     `R$ ${a.spend.toFixed(2).replace('.', ',')}`,
                 impressions:  a.impressions,
@@ -460,8 +490,10 @@ export function Acquisition({ token }: { token: string }) {
                 cplNum:       a.cpl,
               }))}
               columns={[
-                { key: 'adset',       label: 'Conjunto', align: 'left',  sortable: true },
-                { key: 'campaign',    label: 'Campanha', align: 'left',  sortable: true },
+                { key: 'adset', label: 'Conjunto', align: 'left', sortable: true,
+                  render: (r) => <AdsManagerLink label={String(r.adset || '')} url={r.adsetUrl as string | undefined} /> },
+                { key: 'campaign', label: 'Campanha', align: 'left', sortable: true,
+                  render: (r) => <AdsManagerLink label={String(r.campaign || '')} url={r.campaignUrl as string | undefined} /> },
                 { key: 'spendFmt',    label: 'Gasto',    align: 'right', sortable: true, sortAccessor: (r) => Number(r.spend) || 0 },
                 { key: 'impressions', label: 'Impr.',    align: 'right', sortable: true },
                 { key: 'clicks',      label: 'Cliques',  align: 'right', sortable: true },
@@ -480,7 +512,9 @@ export function Acquisition({ token }: { token: string }) {
               loading={loading}
               rows={(meta.ads || []).map((a) => ({
                 ad:           a.name,
+                adUrl:        a.url,
                 adset:        a.adset,
+                adsetUrl:     a.adset_url,
                 campaign:     a.campaign,
                 spend:        a.spend,
                 spendFmt:     `R$ ${a.spend.toFixed(2).replace('.', ',')}`,
@@ -495,8 +529,10 @@ export function Acquisition({ token }: { token: string }) {
                 cplNum:       a.cpl,
               }))}
               columns={[
-                { key: 'ad',          label: 'Anúncio',  align: 'left',  sortable: true },
-                { key: 'adset',       label: 'Conjunto', align: 'left',  sortable: true },
+                { key: 'ad', label: 'Anúncio', align: 'left', sortable: true,
+                  render: (r) => <AdsManagerLink label={String(r.ad || '')} url={r.adUrl as string | undefined} /> },
+                { key: 'adset', label: 'Conjunto', align: 'left', sortable: true,
+                  render: (r) => <AdsManagerLink label={String(r.adset || '')} url={r.adsetUrl as string | undefined} /> },
                 { key: 'spendFmt',    label: 'Gasto',    align: 'right', sortable: true, sortAccessor: (r) => Number(r.spend) || 0 },
                 { key: 'impressions', label: 'Impr.',    align: 'right', sortable: true },
                 { key: 'clicks',      label: 'Cliques',  align: 'right', sortable: true },
