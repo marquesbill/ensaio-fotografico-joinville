@@ -1124,9 +1124,17 @@ async function handleMetaAds(req: VercelRequest, res: VercelResponse) {
 
   // URLs do Meta Ads Manager pro drill-down. Funciona pra quem tem acesso à
   // conta de anúncios — vai abrir o painel já filtrado pelo objeto.
-  const mgrBase = `https://www.facebook.com/adsmanager/manage`;
-  const mgrUrl = (level: 'campaigns' | 'adsets' | 'ads', id: string) =>
-    id ? `${mgrBase}/${level}?act=${acctPath.replace(/^act_/, '')}&selected_${level.slice(0, -1)}_ids=${id}` : '';
+  //
+  // Subdomínio: `adsmanager.facebook.com` é o canônico moderno. O caminho
+  // legado `www.facebook.com/adsmanager/manage/<level>?selected_*_ids=...`
+  // retornava "Invalid request. (#1)" — o login flow perdia os params.
+  const acctNumeric = acctPath.replace(/^act_/, '');
+  const mgrBase = `https://adsmanager.facebook.com/adsmanager/manage`;
+  const mgrUrl = (level: 'campaigns' | 'adsets' | 'ads', id: string) => {
+    if (!id) return '';
+    const singular = level.slice(0, -1);
+    return `${mgrBase}/${level}?act=${acctNumeric}&selected_${singular}_ids=${id}`;
+  };
   const fields   = [
     'spend', 'impressions', 'clicks', 'actions',
     'ctr', 'cpc', 'cpm', 'reach', 'frequency',
