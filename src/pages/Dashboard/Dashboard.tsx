@@ -24,6 +24,8 @@ import {
   Smartphone,
   LogOut,
   Loader2,
+  Menu,
+  X,
 } from 'lucide-react';
 
 import { Overview } from './pages/Overview';
@@ -101,17 +103,72 @@ function LoginScreen({ onLogin }: { onLogin: (token: string, user: string) => vo
 
 function DashboardShell({ token, user, onLogout }: { token: string; user: string; onLogout: () => void }) {
   const [activePage, setActivePage] = useState<DashboardPage>('overview');
+  // Sidebar aberta por default em desktop (≥lg), fechada em mobile.
+  // Lazy init com matchMedia evita render inicial errado.
+  const [sidebarOpen, setSidebarOpen] = useState(() =>
+    typeof window !== 'undefined' && window.matchMedia('(min-width: 1024px)').matches
+  );
+
+  // Em mobile, escolher uma página = fechar a sidebar (UX padrão de drawer).
+  // Em desktop fica aberta (não atrapalha layout).
+  const isMobile = () =>
+    typeof window !== 'undefined' && window.matchMedia('(max-width: 1023px)').matches;
+  const handleNavigate = (key: DashboardPage) => {
+    setActivePage(key);
+    if (isMobile()) setSidebarOpen(false);
+  };
 
   return (
-    <div className="min-h-screen flex" style={{ background: '#0a0a14' }}>
-      {/* Sidebar */}
-      <aside className="w-64 shrink-0 border-r border-white/5 flex flex-col" style={{ background: '#0f0a1f' }}>
-        <div className="px-6 py-6 border-b border-white/5">
-          <p className="text-[#c5a3d4] text-xs font-bold tracking-widest uppercase">J26 · Marketing</p>
-          <h2 className="font-headline text-xl text-white mt-1">Dashboard</h2>
+    <div className="min-h-screen flex relative" style={{ background: '#0a0a14' }}>
+      {/* Botão hambúrguer flutuante — visível quando sidebar fechada (qualquer tamanho) */}
+      {!sidebarOpen && (
+        <button
+          onClick={() => setSidebarOpen(true)}
+          aria-label="Mostrar menu"
+          className="fixed top-3 left-3 z-50 p-2 rounded-lg bg-[#7a3f8f]/30 hover:bg-[#7a3f8f]/50 border border-white/10 backdrop-blur-sm transition-colors"
+        >
+          <Menu className="w-5 h-5 text-white" />
+        </button>
+      )}
+
+      {/* Overlay escuro mobile — clicar fora fecha. Sem efeito em desktop. */}
+      {sidebarOpen && (
+        <button
+          aria-label="Fechar menu (clicar fora)"
+          onClick={() => setSidebarOpen(false)}
+          className="lg:hidden fixed inset-0 bg-black/60 backdrop-blur-sm z-30 cursor-default"
+        />
+      )}
+
+      {/* Sidebar — fixed em mobile (slide), static em desktop (parte do flex).
+          Quando closed: off-screen via translate em mobile, display none em desktop. */}
+      <aside
+        className={`
+          w-64 shrink-0 border-r border-white/5 flex-col
+          transition-transform duration-300 ease-out
+          ${sidebarOpen
+            ? 'fixed lg:static inset-y-0 left-0 z-40 translate-x-0 flex'
+            : 'fixed inset-y-0 left-0 z-40 -translate-x-full lg:hidden flex'
+          }
+        `}
+        style={{ background: '#0f0a1f' }}
+      >
+        {/* Header com botão de fechar */}
+        <div className="px-6 py-6 border-b border-white/5 flex items-start justify-between">
+          <div>
+            <p className="text-[#c5a3d4] text-xs font-bold tracking-widest uppercase">J26 · Marketing</p>
+            <h2 className="font-headline text-xl text-white mt-1">Dashboard</h2>
+          </div>
+          <button
+            onClick={() => setSidebarOpen(false)}
+            aria-label="Esconder menu"
+            className="p-1.5 -mt-1 -mr-1 rounded-md hover:bg-white/5 text-[#d4baeb]/60 hover:text-white transition-colors"
+          >
+            <X className="w-4 h-4" />
+          </button>
         </div>
 
-        <nav className="flex-1 p-3 space-y-1">
+        <nav className="flex-1 p-3 space-y-1 overflow-y-auto">
           {NAV.map(({ key, label, icon: Icon, status }) => {
             const active = activePage === key;
             const disabled = status === 'wip';
@@ -119,7 +176,7 @@ function DashboardShell({ token, user, onLogout }: { token: string; user: string
               <button
                 key={key}
                 disabled={disabled}
-                onClick={() => !disabled && setActivePage(key)}
+                onClick={() => !disabled && handleNavigate(key)}
                 className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-colors text-left
                   ${active ? 'bg-[#7a3f8f]/20 text-white border border-[#e87060]/40' : 'text-[#d4baeb]/70 hover:bg-white/5 hover:text-white'}
                   ${disabled ? 'opacity-40 cursor-not-allowed' : ''}`}
@@ -154,8 +211,8 @@ function DashboardShell({ token, user, onLogout }: { token: string; user: string
         </div>
       </aside>
 
-      {/* Main content */}
-      <main className="flex-1 overflow-x-hidden">
+      {/* Main content — padding extra no topo em mobile pra não ficar atrás do hambúrguer */}
+      <main className="flex-1 overflow-x-hidden pt-12 lg:pt-0">
         {activePage === 'overview'    && <Overview token={token} />}
         {activePage === 'acquisition' && <Acquisition token={token} />}
         {activePage === 'funnel'      && <Funnel token={token} />}
