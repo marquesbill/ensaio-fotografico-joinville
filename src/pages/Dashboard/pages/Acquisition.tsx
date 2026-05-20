@@ -19,6 +19,20 @@ import { DataTable } from '../components/DataTable';
 import { DataSourceBadge } from '../components/DataSourceBadge';
 
 /**
+ * Formata idade do objeto Meta (adset/ad) em formato compacto pra coluna
+ * de tabela. Retorna "1d", "12d", "5sem", "3mes", etc. Null vira "—".
+ */
+function fmtAge(days: number | null): string {
+  if (days === null || days < 0) return '—';
+  if (days === 0)                return 'hoje';
+  if (days === 1)                return '1d';
+  if (days < 14)                 return `${days}d`;
+  if (days < 60)                 return `${Math.floor(days / 7)}sem`;
+  if (days < 365)                return `${Math.floor(days / 30)}mês`;
+  return `${Math.floor(days / 365)}ano${Math.floor(days / 365) === 1 ? '' : 's'}`;
+}
+
+/**
  * Célula com nome opcionalmente clicável. Quando há `url` (só ads tem hoje,
  * via `preview_shareable_link` da Meta API), vira link discreto pra prévia
  * do anúncio. Sem URL, é texto normal.
@@ -62,6 +76,7 @@ interface AcquisitionData {
   }>;
   sources: Array<{
     source: string; medium: string;
+    label: string;                // nomenclatura humanizada (ex: "Instagram (orgânico/bio)")
     sessions: number; users: number; engagementRate: number;
   }>;
   campaigns: Array<{
@@ -95,6 +110,7 @@ interface MetaAdsData {
   }>;
   adsets: Array<{
     id: string; name: string;
+    age_days: number | null;       // dias desde created/start_time (null se metadata indisponível)
     campaign_id: string; campaign: string;
     spend: number; impressions: number; clicks: number;
     ctr: number; cpc: number; cpm: number;
@@ -102,6 +118,7 @@ interface MetaAdsData {
   }>;
   ads: Array<{
     id: string; name: string; url?: string;     // url = preview_shareable_link
+    age_days: number | null;
     adset_id: string; adset: string;
     campaign_id: string; campaign: string;
     spend: number; impressions: number; clicks: number;
@@ -438,19 +455,24 @@ export function Acquisition({ token }: { token: string }) {
       {/* Sources + Campaigns side by side */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 mb-6">
         <DataTable
-          title="Fontes (source / medium)"
+          title="Fontes de tráfego"
           source="GA4"
           loading={loading}
           rows={(data?.sources || []).map((s) => ({
-            source:         s.source,
-            medium:         s.medium,
+            origem:         s.label,                   // nomenclatura humanizada
+            rawSource:      `${s.source} / ${s.medium}`, // detalhe técnico no tooltip
             sessions:       s.sessions,
             engagement:     `${(s.engagementRate * 100).toFixed(0)}%`,
-            engagementRate: s.engagementRate, // numérico p/ sort
+            engagementRate: s.engagementRate,
           }))}
           columns={[
-            { key: 'source',     label: 'Fonte',   align: 'left',  sortable: true },
-            { key: 'medium',     label: 'Médio',   align: 'left',  sortable: true },
+            { key: 'origem', label: 'Origem', align: 'left', sortable: true,
+              render: (r) => (
+                <span className="text-[#e5d2ef]" title={`GA4: ${r.rawSource}`}>
+                  {String(r.origem || '')}
+                </span>
+              ),
+            },
             { key: 'sessions',   label: 'Sessões', align: 'right', sortable: true },
             { key: 'engagement', label: 'Engaj.',  align: 'right', sortable: true,
               sortAccessor: (r) => Number(r.engagementRate) || 0 },
@@ -502,6 +524,8 @@ export function Acquisition({ token }: { token: string }) {
               rows={(meta.adsets || []).map((a) => ({
                 adset:        a.name,
                 campaign:     a.campaign,
+                age:          fmtAge(a.age_days),
+                ageDays:      a.age_days ?? -1,           // -1 pra sort empurrar pro fim
                 spend:        a.spend,
                 spendFmt:     `R$ ${a.spend.toFixed(2).replace('.', ',')}`,
                 impressions:  a.impressions,
@@ -517,6 +541,7 @@ export function Acquisition({ token }: { token: string }) {
               columns={[
                 { key: 'adset',       label: 'Conjunto', align: 'left',  sortable: true },
                 { key: 'campaign',    label: 'Campanha', align: 'left',  sortable: true },
+                { key: 'age',         label: 'Idade',    align: 'right', sortable: true, sortAccessor: (r) => Number(r.ageDays) },
                 { key: 'spendFmt',    label: 'Gasto',    align: 'right', sortable: true, sortAccessor: (r) => Number(r.spend) || 0 },
                 { key: 'impressions', label: 'Impr.',    align: 'right', sortable: true },
                 { key: 'clicks',      label: 'Cliques',  align: 'right', sortable: true },
@@ -537,7 +562,8 @@ export function Acquisition({ token }: { token: string }) {
                 ad:           a.name,
                 adUrl:        a.url,
                 adset:        a.adset,
-                campaign:     a.campaign,
+                age:          fmtAge(a.age_days),
+                ageDays:      a.age_days ?? -1,
                 spend:        a.spend,
                 spendFmt:     `R$ ${a.spend.toFixed(2).replace('.', ',')}`,
                 impressions:  a.impressions,
@@ -554,6 +580,7 @@ export function Acquisition({ token }: { token: string }) {
                 { key: 'ad', label: 'Anúncio', align: 'left', sortable: true,
                   render: (r) => <AdsManagerLink label={String(r.ad || '')} url={r.adUrl as string | undefined} /> },
                 { key: 'adset',       label: 'Conjunto', align: 'left',  sortable: true },
+                { key: 'age',         label: 'Idade',    align: 'right', sortable: true, sortAccessor: (r) => Number(r.ageDays) },
                 { key: 'spendFmt',    label: 'Gasto',    align: 'right', sortable: true, sortAccessor: (r) => Number(r.spend) || 0 },
                 { key: 'impressions', label: 'Impr.',    align: 'right', sortable: true },
                 { key: 'clicks',      label: 'Cliques',  align: 'right', sortable: true },

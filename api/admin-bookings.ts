@@ -268,6 +268,82 @@ function categorizeChannel(channel: string): string {
   return 'other';
 }
 
+/**
+ * Converte par `source/medium` raw do GA4 em label descritivo pra UI.
+ * Vários pares descrevem a MESMA origem do ponto de vista do negócio
+ * (ex: instagram.com referral, l.instagram.com referral, ig referral todos
+ * representam "Instagram orgânico/link na bio"). Esse mapeamento agrupa.
+ *
+ * Categorias canônicas:
+ *  - "Meta Ads (Instagram)" / "Meta Ads (Facebook)" — paid social
+ *  - "Instagram (orgânico/bio)"                    — referral/social não-pago
+ *  - "Facebook (orgânico)"
+ *  - "Google Ads"                                  — paid search
+ *  - "Google (busca orgânica)"                     — organic search
+ *  - "Direto (URL ou link salvo)"                  — (direct)/(none) — inclui
+ *                                                    quem digitou, bookmark
+ *                                                    ou voltou pelo link salvo
+ *  - "WhatsApp"                                    — wa.me/api.whatsapp
+ *  - "Email"
+ *  - "Referência (<dominio>)"                      — outros referrals
+ *  - "Desconhecido"                                — (not set)
+ */
+function humanizeSource(source: string, medium: string): string {
+  const s = String(source || '').toLowerCase().trim();
+  const m = String(medium || '').toLowerCase().trim();
+  const cap = (x: string) => x ? x[0].toUpperCase() + x.slice(1) : '';
+
+  const isPaid = m === 'cpc' || m === 'paid' || m === 'paid_social' || m === 'paidsocial' || m === 'ppc';
+
+  // Meta Ads (Instagram/Facebook pagos)
+  if (isPaid && (s.includes('instagram') || s === 'ig')) return 'Meta Ads (Instagram)';
+  if (isPaid && (s.includes('facebook')  || s === 'fb')) return 'Meta Ads (Facebook)';
+  if (isPaid && (s === 'meta' || s === 'an'))             return 'Meta Ads';
+
+  // Google
+  if (s.includes('google')) {
+    if (m === 'organic')                    return 'Google (busca orgânica)';
+    if (isPaid)                             return 'Google Ads';
+    if (m === 'referral')                   return 'Google (referral)';
+    return `Google (${m})`;
+  }
+
+  // Instagram orgânico (link da bio, stories, posts)
+  if (s.includes('instagram') || s === 'ig' || s === 'l.instagram.com' || s === 'lm.instagram.com') {
+    return 'Instagram (orgânico/bio)';
+  }
+
+  // Facebook orgânico
+  if (s.includes('facebook') || s === 'fb' || s === 'm.facebook.com' || s === 'l.facebook.com') {
+    return 'Facebook (orgânico)';
+  }
+
+  // WhatsApp
+  if (s.includes('whatsapp') || s.includes('wa.me') || s.includes('api.whatsapp')) {
+    return 'WhatsApp';
+  }
+
+  // Direto — URL digitada, bookmark, link salvo, link compartilhado sem referrer
+  if (s === '(direct)' || s === 'direct' || (s === '(none)' && (m === '(none)' || m === 'none'))) {
+    return 'Direto (URL ou link salvo)';
+  }
+
+  // Email
+  if (m === 'email') return s !== '(direct)' && s !== '(none)' ? `Email (${s})` : 'Email';
+
+  // Outras buscas orgânicas (Bing, Yahoo, DuckDuckGo)
+  if (m === 'organic') return `${cap(s)} (busca orgânica)`;
+
+  // Não-set
+  if (s === '(not set)' || s === '' || s === 'unknown') return 'Desconhecido';
+
+  // Outros referrals — boca-a-boca via blog, parceiro, outro site
+  if (m === 'referral') return `Referência (${s})`;
+
+  // Fallback
+  return `${cap(s)} · ${m}`;
+}
+
 function buildGa4Client(): BetaAnalyticsDataClient {
   const clientId     = process.env.GA4_OAUTH_CLIENT_ID;
   const clientSecret = process.env.GA4_OAUTH_CLIENT_SECRET;
@@ -910,13 +986,45 @@ async function handleGa4Acquisition(req: VercelRequest, res: VercelResponse) {
     };
   });
 
-  const sources = (sourcesReport.rows || []).map(r => ({
-    source:         r.dimensionValues?.[0]?.value || '(none)',
-    medium:         r.dimensionValues?.[1]?.value || '(none)',
-    sessions:       Number(r.metricValues?.[0]?.value || 0),
-    users:          Number(r.metricValues?.[1]?.value || 0),
-    engagementRate: Number(r.metricValues?.[2]?.value || 0),
-  }));
+  // Sources com label humanizado — mapeia pairs source/medium do GA4 pra
+  // nomes descritivos ("Meta Ads (Instagram)", "Instagram (bio orgânica)",
+  // "Direto / link salvo", etc) e agrupa entradas que descrevem a MESMA
+  // origem na perspectiva do negócio (ex: instagram.com referral + l.instagram.com
+  // referral viram ambos "Instagram (orgânico/bio)").
+  type SrcEntry = { source: string; medium: string; sessions: number; users: number; engagementRate: number; label: string };
+  const rawSources: SrcEntry[] = (sourcesReport.rows || []).map(r => {
+    const source = r.dimensionValues?.[0]?.value || '(none)';
+    const medium = r.dimensionValues?.[1]?.value || '(none)';
+    return {
+      source, medium,
+      label:          humanizeSource(source, medium),
+      sessions:       Number(r.metricValues?.[0]?.value || 0),
+      users:          Number(r.metricValues?.[1]?.value || 0),
+      engagementRate: Number(r.metricValues?.[2]?.value || 0),
+    };
+  });
+  // Agrupa por label humanizado — soma sessões/users, média ponderada pra engagementRate
+  const sourcesByLabel = new Map<string, SrcEntry>();
+  for (const s of rawSources) {
+    const existing = sourcesByLabel.get(s.label);
+    if (!existing) {
+      sourcesByLabel.set(s.label, { ...s });
+    } else {
+      const totalSessions = existing.sessions + s.sessions;
+      // engagementRate ponderado por sessions (sem isso, source pequena distorce)
+      existing.engagementRate = totalSessions > 0
+        ? (existing.engagementRate * existing.sessions + s.engagementRate * s.sessions) / totalSessions
+        : 0;
+      existing.sessions = totalSessions;
+      existing.users  += s.users;
+      // mantém o source/medium da maior contribuição (info de debug)
+      if (s.sessions > existing.sessions / 2) {
+        existing.source = s.source;
+        existing.medium = s.medium;
+      }
+    }
+  }
+  const sources = Array.from(sourcesByLabel.values()).sort((a, b) => b.sessions - a.sessions);
 
   // Filtra "(not set)" / "(direct)" etc. — só campanhas reais
   const campaigns = (campaignsReport.rows || [])
@@ -971,6 +1079,10 @@ async function handleGa4Funnel(req: VercelRequest, res: VercelResponse) {
     totalCur, totalPrev,
     agendaCur, agendaPrev,
     eventCur, eventPrev,
+    // ── 3 chamadas extras pra quebra POR ORIGEM ──
+    // Cada uma traz o mesmo step quebrado por sessionDefaultChannelGroup —
+    // assim renderizamos 1 funil por canal (Paid Social, Direct, etc).
+    totalByOrigin, agendaByOrigin, eventByOrigin,
   ] = await Promise.all([
     // Sessões totais current
     client.runReport({
@@ -1018,6 +1130,31 @@ async function handleGa4Funnel(req: VercelRequest, res: VercelResponse) {
         filter: { fieldName: 'eventName', inListFilter: { values: EVENT_STEPS } },
       },
     }),
+    // ── Quebras por origem (current only) ──
+    // Total sessions × channel
+    client.runReport({
+      property, dateRanges: [periodCurrent],
+      dimensions: [{ name: 'sessionDefaultChannelGroup' }],
+      metrics:    [{ name: 'sessions' }],
+    }),
+    // /agendamento × channel
+    client.runReport({
+      property, dateRanges: [periodCurrent],
+      dimensions: [{ name: 'sessionDefaultChannelGroup' }, { name: 'pagePath' }],
+      metrics:    [{ name: 'sessions' }],
+      dimensionFilter: {
+        filter: { fieldName: 'pagePath', stringFilter: { value: '/agendamento' } },
+      },
+    }),
+    // begin_checkout + purchase × channel
+    client.runReport({
+      property, dateRanges: [periodCurrent],
+      dimensions: [{ name: 'sessionDefaultChannelGroup' }, { name: 'eventName' }],
+      metrics:    [{ name: 'sessions' }],
+      dimensionFilter: {
+        filter: { fieldName: 'eventName', inListFilter: { values: EVENT_STEPS } },
+      },
+    }),
   ]);
 
   const singleVal = (rows: NonNullable<typeof totalCur[0]['rows']>) =>
@@ -1047,6 +1184,81 @@ async function handleGa4Funnel(req: VercelRequest, res: VercelResponse) {
     { step: 'begin_checkout',       sessions: eventCurMap['begin_checkout'] || 0, deltaPct: pctDelta(eventCurMap['begin_checkout'] || 0, eventPrevMap['begin_checkout'] || 0) },
     { step: 'purchase',             sessions: eventCurMap['purchase']      || 0, deltaPct: pctDelta(eventCurMap['purchase']      || 0, eventPrevMap['purchase']      || 0) },
   ];
+
+  // ── Funil quebrado por origem ────────────────────────────────────────
+  //
+  // Mapeia o `sessionDefaultChannelGroup` do GA4 (que retorna labels tipo
+  // "Paid Social", "Organic Social", "Direct", "Referral", "Organic Search",
+  // "Email", "Unassigned") pra slugs canônicos. Cada origem ganha um funil
+  // próprio com os mesmos 4 steps.
+  const normalizeOrigin = (ch: string): string => {
+    const c = (ch || '').toLowerCase().trim();
+    if (c === 'paid social' || c === 'social paid')        return 'paid_social';      // Meta Ads, etc
+    if (c === 'organic social' || c === 'social')          return 'organic_social';   // Instagram bio, posts
+    if (c === 'direct')                                    return 'direct';           // URL/bookmark/link salvo
+    if (c === 'referral')                                  return 'referral';         // boca-a-boca, parceiros
+    if (c === 'organic search')                            return 'organic_search';   // Google orgânico
+    if (c === 'paid search')                               return 'paid_search';      // Google Ads
+    if (c === 'email')                                     return 'email';
+    return 'other';
+  };
+
+  const ORIGIN_LABELS: Record<string, string> = {
+    paid_social:    'Meta Ads (anúncios)',
+    organic_social: 'Instagram / Facebook (orgânico/bio)',
+    direct:         'Direto (URL ou link salvo)',
+    referral:       'Referência (boca-a-boca, parceiros)',
+    organic_search: 'Google (busca orgânica)',
+    paid_search:    'Google Ads',
+    email:          'Email',
+    other:          'Outros',
+  };
+
+  // 4 buckets por origem: cada step contribui pra origem dele
+  type OriginBucket = { total_sessions: number; visited_agendamento: number; begin_checkout: number; purchase: number };
+  const originBuckets: Record<string, OriginBucket> = {};
+  const getBucket = (slug: string): OriginBucket => {
+    if (!originBuckets[slug]) {
+      originBuckets[slug] = { total_sessions: 0, visited_agendamento: 0, begin_checkout: 0, purchase: 0 };
+    }
+    return originBuckets[slug];
+  };
+
+  // Step 1: total sessions por origem
+  (totalByOrigin[0].rows || []).forEach(r => {
+    const slug = normalizeOrigin(r.dimensionValues?.[0]?.value || '');
+    getBucket(slug).total_sessions += Number(r.metricValues?.[0]?.value || 0);
+  });
+  // Step 2: visited /agendamento por origem (já filtrado por pagePath na query)
+  (agendaByOrigin[0].rows || []).forEach(r => {
+    const slug = normalizeOrigin(r.dimensionValues?.[0]?.value || '');
+    getBucket(slug).visited_agendamento += Number(r.metricValues?.[0]?.value || 0);
+  });
+  // Step 3+4: begin_checkout / purchase por origem
+  (eventByOrigin[0].rows || []).forEach(r => {
+    const slug   = normalizeOrigin(r.dimensionValues?.[0]?.value || '');
+    const event  = r.dimensionValues?.[1]?.value || '';
+    const value  = Number(r.metricValues?.[0]?.value || 0);
+    const bucket = getBucket(slug);
+    if (event === 'begin_checkout') bucket.begin_checkout += value;
+    if (event === 'purchase')       bucket.purchase += value;
+  });
+
+  // Monta array final ordenado por sessions desc, omite origens sem nenhum dado
+  const funnel_by_origin = Object.entries(originBuckets)
+    .filter(([, b]) => b.total_sessions > 0 || b.visited_agendamento > 0 || b.begin_checkout > 0 || b.purchase > 0)
+    .map(([slug, b]) => ({
+      origin: slug,
+      label:  ORIGIN_LABELS[slug] || slug,
+      funnel: [
+        { step: 'total_sessions',      sessions: b.total_sessions },
+        { step: 'visited_agendamento', sessions: b.visited_agendamento },
+        { step: 'begin_checkout',      sessions: b.begin_checkout },
+        { step: 'purchase',            sessions: b.purchase },
+      ],
+      conversion_rate: b.total_sessions > 0 ? b.purchase / b.total_sessions : 0,
+    }))
+    .sort((a, b) => b.funnel[0].sessions - a.funnel[0].sessions);
 
   // 2. Per-package: itemId × selects/purchases/revenue
   // GA4 não permite eventCount (event-scoped) com itemId (item-scoped).
@@ -1097,6 +1309,7 @@ async function handleGa4Funnel(req: VercelRequest, res: VercelResponse) {
     fetched_at:   new Date().toISOString(),
     next_refresh: new Date(Date.now() + 12 * 3600 * 1000).toISOString(),
     funnel,
+    funnel_by_origin,
     packages,
   });
 }
@@ -1174,12 +1387,43 @@ async function handleMetaAds(req: VercelRequest, res: VercelResponse) {
 
   // 1. Account-level + 2. Per-campaign + 3. Per-adset + 4. Per-ad em paralelo.
   // 4 chamadas, ~500ms cada → ~500ms total porque é paralelo. Cache de 6h amortiza.
-  const [accountJson, campaignJson, adsetJson, adJson] = await Promise.all([
+  //
+  // Plus: metadata extra (5/6) com created_time pra calcular idade dos adsets/ads
+  // — Meta API não expõe created_time em /insights, precisa de chamada dedicada.
+  // limit alto (200) cobre conta inteira; se a conta crescer muito, paginar.
+  const metaAdsetsUrl = `https://graph.facebook.com/v19.0/${acctPath}/adsets?fields=id,created_time,start_time&limit=200&access_token=${token}`;
+  const metaAdsUrl    = `https://graph.facebook.com/v19.0/${acctPath}/ads?fields=id,created_time&limit=500&access_token=${token}`;
+  const [accountJson, campaignJson, adsetJson, adJson, adsetMetaJson, adMetaJson] = await Promise.all([
     fetchMeta(`${baseUrl}?fields=${fields}&time_range=${timeRange}&access_token=${token}`),
     fetchMeta(`${baseUrl}?fields=campaign_name,campaign_id,${fields}&level=campaign&time_range=${timeRange}&access_token=${token}`),
     fetchMeta(`${baseUrl}?fields=adset_name,adset_id,campaign_name,campaign_id,${fields}&level=adset&time_range=${timeRange}&access_token=${token}`),
     fetchMeta(`${baseUrl}?fields=ad_name,ad_id,adset_name,adset_id,campaign_name,campaign_id,${fields}&level=ad&time_range=${timeRange}&access_token=${token}`),
+    fetchMeta(metaAdsetsUrl).catch(() => ({ data: [] })),  // metadata é nice-to-have; falha não bloqueia
+    fetchMeta(metaAdsUrl).catch(()    => ({ data: [] })),
   ]);
+
+  // Mapeia metadata id → created_time pra resolver age_days nos loops abaixo
+  const adsetCreatedAt: Record<string, number> = {};
+  for (const m of (adsetMetaJson.data || [])) {
+    const id = String(m.id || '');
+    // Prefere start_time (quando a campanha efetivamente começou a rodar);
+    // fallback pra created_time (quando foi criada no painel). Pra adsets
+    // pausados/agendados, start_time pode estar no futuro — nesse caso
+    // ainda usamos created_time como base de idade real.
+    const start  = m.start_time ? new Date(String(m.start_time)).getTime()  : 0;
+    const create = m.created_time ? new Date(String(m.created_time)).getTime() : 0;
+    const ts = start > 0 && start <= Date.now() ? start : create;
+    if (id && ts > 0) adsetCreatedAt[id] = ts;
+  }
+  const adCreatedAt: Record<string, number> = {};
+  for (const m of (adMetaJson.data || [])) {
+    const id = String(m.id || '');
+    const ts = m.created_time ? new Date(String(m.created_time)).getTime() : 0;
+    if (id && ts > 0) adCreatedAt[id] = ts;
+  }
+  // Helper: dias entre `created` e agora, ou null se não disponível
+  const ageDays = (ts: number | undefined): number | null =>
+    ts && ts > 0 ? Math.floor((Date.now() - ts) / (24 * 60 * 60 * 1000)) : null;
 
   // Meta Pixel "Lead" event types — incluindo offsite_conversion (Pixel) e onsite_conversion
   const LEAD_TYPES = [
@@ -1253,9 +1497,11 @@ async function handleMetaAds(req: VercelRequest, res: VercelResponse) {
       const aPurchases = extractActionCount(a.actions, PURCHASE_TYPES);
       const aSpendNet   = Number(a.spend) || 0;
       const aSpendGross = aSpendNet * taxMultiplier;
+      const aId         = String(a.adset_id || '');
       return {
-        id:           String(a.adset_id || ''),
+        id:           aId,
         name:         String(a.adset_name || '(unknown)'),
+        age_days:     ageDays(adsetCreatedAt[aId]),
         campaign_id:  String(a.campaign_id || ''),
         campaign:     String(a.campaign_name || '(unknown)'),
         spend:        aSpendGross,
@@ -1305,6 +1551,7 @@ async function handleMetaAds(req: VercelRequest, res: VercelResponse) {
       return {
         id:           adId,
         name:         String(a.ad_name || '(unknown)'),
+        age_days:     ageDays(adCreatedAt[adId]),
         url:          previewLinks[adId] || '',  // fb.me/adspreview/...
         adset_id:     String(a.adset_id || ''),
         adset:        String(a.adset_name || '(unknown)'),

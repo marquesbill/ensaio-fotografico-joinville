@@ -32,11 +32,19 @@ interface PackageStats {
   revenue: number;
 }
 
+interface OriginFunnel {
+  origin: string;                   // slug: paid_social | organic_social | direct | referral | ...
+  label:  string;                   // descritivo: "Meta Ads (anúncios)", "Direto (URL ou link salvo)"
+  funnel: Array<{ step: string; sessions: number }>;   // mesmos 4 steps, sem deltaPct (período atual só)
+  conversion_rate: number;          // 0..1, top do funil → purchase
+}
+
 interface FunnelData {
   range: { start: string; end: string; days: number };
   fetched_at: string;
   next_refresh: string;
   funnel: FunnelStep[];
+  funnel_by_origin?: OriginFunnel[];  // opcional pra retro-compat
   packages: PackageStats[];
 }
 
@@ -235,6 +243,11 @@ export function Funnel({ token }: { token: string }) {
         </div>
       </div>
 
+      {/* Funil quebrado por origem — diagnóstico de qual canal converte melhor */}
+      {(data?.funnel_by_origin?.length ?? 0) > 0 && (
+        <FunnelByOriginBlock origins={data?.funnel_by_origin || []} loading={loading} />
+      )}
+
       {/* Per-package breakdown */}
       <div className="rounded-2xl border border-white/10 bg-white/[0.03] backdrop-blur-sm p-5">
         <div className="flex items-baseline justify-between mb-4">
@@ -294,6 +307,130 @@ export function Funnel({ token }: { token: string }) {
       <p className="text-center text-[10px] text-[#c5a3d4]/30 mt-8 pb-4">
         Dados via Google Analytics Data API (Enhanced Ecommerce) · refresh automático a cada 12h
       </p>
+    </div>
+  );
+}
+
+/* ───────── Funil por origem ───────── */
+
+/**
+ * Render do funil quebrado por origem de tráfego. Usuário escolhe uma origem
+ * pelo seletor; vê os mesmos 4 steps (Visitou site → /agendamento → checkout
+ * → compra) apenas pras sessões daquela origem.
+ *
+ * Origens são pré-agrupadas pelo backend usando sessionDefaultChannelGroup
+ * do GA4 (Paid Social, Organic Social, Direct, Referral, etc).
+ */
+function FunnelByOriginBlock({ origins, loading }: { origins: OriginFunnel[]; loading: boolean }) {
+  // Origem selecionada inicia na primeira (mais sessões — backend já ordena desc)
+  const [selected, setSelected] = useState<string>(origins[0]?.origin || '');
+
+  const current = origins.find(o => o.origin === selected) || origins[0];
+  if (!current) return null;
+
+  const topSessions = current.funnel[0]?.sessions || 0;
+  const finalSessions = current.funnel[current.funnel.length - 1]?.sessions || 0;
+  const overallConv = topSessions > 0 ? (finalSessions / topSessions) * 100 : 0;
+
+  return (
+    <div className="rounded-2xl border border-white/10 bg-white/[0.03] backdrop-blur-sm p-5 mb-6">
+      <div className="flex items-baseline justify-between mb-4 flex-wrap gap-2">
+        <div>
+          <h3 className="text-sm font-bold text-white">Funil por origem</h3>
+          <p className="text-[11px] text-[#d4baeb]/50 mt-0.5">
+            Compare como cada canal de origem converte ao longo do funil
+          </p>
+        </div>
+        <p className="text-[9px] uppercase tracking-wider text-[#c5a3d4]/30">GA4 · channel group</p>
+      </div>
+
+      {/* Seletor de origem — pills com sessions count + conversion rate */}
+      <div className="flex flex-wrap gap-2 mb-5">
+        {origins.map(o => {
+          const isSel = o.origin === selected;
+          const sessions = o.funnel[0]?.sessions || 0;
+          return (
+            <button
+              key={o.origin}
+              onClick={() => setSelected(o.origin)}
+              className={`px-3 py-2 rounded-lg text-xs font-bold transition-all border text-left
+                ${isSel
+                  ? 'bg-[#7a3f8f]/30 border-[#7a3f8f]/60 text-white'
+                  : 'bg-white/[0.02] border-white/10 text-[#d4baeb]/70 hover:bg-white/[0.05] hover:text-white'
+                }`}
+            >
+              <div className="flex items-center gap-2">
+                <span className={`inline-block w-2 h-2 rounded-full ${isSel ? 'bg-[#e87060]' : 'bg-white/20'}`} />
+                <span>{o.label}</span>
+              </div>
+              <div className="text-[10px] mt-0.5 tabular-nums opacity-70 pl-4">
+                {sessions.toLocaleString('pt-BR')} sessões ·
+                {' '}
+                <span className={isSel ? 'text-[#e87060]' : ''}>
+                  {(o.conversion_rate * 100).toFixed(2)}% conv.
+                </span>
+              </div>
+            </button>
+          );
+        })}
+      </div>
+
+      {/* Funil da origem selecionada */}
+      <div className="rounded-xl border border-white/[0.06] bg-white/[0.02] p-4">
+        <p className="text-[10px] uppercase tracking-widest text-[#c5a3d4]/60 font-bold mb-3">
+          {current.label}
+          <span className="text-[#d4baeb]/40 normal-case ml-2 tracking-normal font-normal">
+            · {topSessions > 0 ? `${overallConv.toFixed(2)}% das sessões viram compra` : 'sem sessões'}
+          </span>
+        </p>
+
+        <div className="space-y-3">
+          {loading ? (
+            [...Array(4)].map((_, i) => <div key={i} className="h-8 bg-white/[0.02] rounded animate-pulse" />)
+          ) : current.funnel.map((step, idx) => {
+            const meta = STEP_META[step.step] || { label: step.step, hint: '', icon: Users };
+            const widthPct = topSessions > 0 ? (step.sessions / topSessions) * 100 : 0;
+            const prevSessions = idx > 0 ? current.funnel[idx - 1].sessions : null;
+            const dropPct = prevSessions !== null && prevSessions > 0
+              ? ((prevSessions - step.sessions) / prevSessions) * 100
+              : null;
+            const fromTopPct = topSessions > 0 ? (step.sessions / topSessions) * 100 : 0;
+
+            return (
+              <div key={step.step}>
+                <div className="flex items-baseline justify-between text-xs mb-1">
+                  <div className="flex items-center gap-2 min-w-0">
+                    <span className="text-[10px] text-[#c5a3d4]/40 tabular-nums w-5">{idx + 1}.</span>
+                    <span className="text-white font-semibold truncate">{meta.label}</span>
+                  </div>
+                  <div className="flex items-center gap-3 shrink-0">
+                    <span className="tabular-nums text-white font-bold">
+                      {step.sessions.toLocaleString('pt-BR')}
+                    </span>
+                    <span className="text-[10px] text-[#c5a3d4]/60 tabular-nums w-12 text-right">
+                      {fromTopPct.toFixed(1)}%
+                    </span>
+                  </div>
+                </div>
+                <div className="h-4 bg-white/[0.04] rounded overflow-hidden">
+                  <div
+                    className="h-full rounded transition-all duration-500"
+                    style={{
+                      width:      `${Math.max(widthPct, step.sessions > 0 ? 2 : 0)}%`,
+                      background: 'linear-gradient(90deg, #7a3f8f 0%, #e87060 100%)',
+                    }}
+                  />
+                </div>
+                {dropPct !== null && (
+                  <p className="text-[10px] text-amber-300/60 mt-1 ml-7">
+                    ↓ {dropPct.toFixed(1)}% caem fora
+                  </p>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      </div>
     </div>
   );
 }
