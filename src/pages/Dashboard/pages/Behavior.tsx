@@ -31,7 +31,7 @@ interface BehaviorData {
   }>;
   new_vs_returning: {
     new:       { count: number; share: number };
-    returning: { count: number; share: number };
+    returning: { count: number; share: number; deltaPct?: number | null };
   };
   hours: Array<{ hour: number; sessions: number }>;
   peak_hour: { hour: number; sessions: number };
@@ -161,9 +161,12 @@ export function Behavior({ token }: { token: string }) {
 
   useEffect(() => { load(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [range]);
 
-  const mobileShare = ga4?.devices.find(d => d.device === 'mobile')?.share ?? 0;
-  const returningShare = ga4?.new_vs_returning.returning.share ?? 0;
-  const topState = bookings?.by_state[0];
+  const mobileDevice    = ga4?.devices.find(d => d.device === 'mobile');
+  const mobileShare     = mobileDevice?.share ?? 0;
+  const mobileDelta     = mobileDevice?.deltaPct ?? null;
+  const returningShare  = ga4?.new_vs_returning.returning.share ?? 0;
+  const returningDelta  = ga4?.new_vs_returning.returning.deltaPct ?? null;
+  const topState        = bookings?.by_state[0];
 
   const hoursMax = Math.max(...(ga4?.hours.map(h => h.sessions) || [1]), 1);
   const daysMax = Math.max(...(ga4?.days_of_week.map(d => d.sessions) || [1]), 1);
@@ -219,6 +222,8 @@ export function Behavior({ token }: { token: string }) {
         <KpiCard
           label="Mobile"
           value={loading ? '—' : `${(mobileShare * 100).toFixed(0)}%`}
+          deltaPct={mobileDelta}
+          deltaLabel={`vs ${RANGE_OPTIONS.find(r => r.key === range)?.label} anteriores`}
           icon={Smartphone} source="GA4"
           hint="% sessões em celular"
           loading={loading}
@@ -226,6 +231,8 @@ export function Behavior({ token }: { token: string }) {
         <KpiCard
           label="Recorrentes"
           value={loading ? '—' : `${(returningShare * 100).toFixed(0)}%`}
+          deltaPct={returningDelta}
+          deltaLabel={`vs ${RANGE_OPTIONS.find(r => r.key === range)?.label} anteriores`}
           icon={RefreshCcw} source="GA4"
           hint="% sessões de usuários que já visitaram antes"
           loading={loading}

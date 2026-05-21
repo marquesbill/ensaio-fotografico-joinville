@@ -52,22 +52,24 @@ export function KpiCard({ label, value, deltaPct, deltaLabel, invertedDelta, ico
         {Icon && <Icon className="w-4 h-4 text-[#c5a3d4]/40" />}
       </div>
 
-      {/* Valor principal — flex-wrap pra badge cair em nova linha em cards
-          estreitos (evita transbordo lateral em breakpoint 1024-1280px).
-          min-w-0 + overflow-hidden previne overflow horizontal de qualquer
-          forma como fallback defensivo. */}
-      <div className="flex items-baseline gap-2 flex-wrap min-w-0 overflow-hidden">
-        <span className="text-4xl font-black tabular-nums text-white tracking-tight">
+      {/* Valor principal */}
+      <div className="overflow-hidden">
+        <span className="block text-4xl font-black tabular-nums text-white tracking-tight">
           {loading ? <span className="inline-block w-20 h-9 bg-white/5 rounded animate-pulse" /> : value}
         </span>
-        {delta !== null && !loading && (
-          <span className={`inline-flex items-center gap-0.5 text-xs font-bold tabular-nums px-1.5 py-0.5 rounded shrink-0
+      </div>
+
+      {/* Badge percentual em linha própria abaixo do valor — não compete
+          mais por espaço horizontal com valores monetários grandes. */}
+      {delta !== null && !loading && (
+        <div className="mt-1.5">
+          <span className={`inline-flex items-center gap-0.5 text-xs font-bold tabular-nums px-1.5 py-0.5 rounded
             ${isGood ? 'bg-emerald-500/15 text-emerald-300' : isBad ? 'bg-red-500/15 text-red-300' : 'bg-white/5 text-white/50'}`}>
             {trendUp ? <ArrowUp className="w-3 h-3" /> : trendDown ? <ArrowDown className="w-3 h-3" /> : <ArrowRight className="w-3 h-3" />}
             {Math.abs(delta).toFixed(1)}%
           </span>
-        )}
-      </div>
+        </div>
+      )}
 
       {/* Hint + delta label */}
       <div className="mt-2 space-y-1">

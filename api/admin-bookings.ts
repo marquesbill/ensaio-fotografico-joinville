@@ -1916,7 +1916,7 @@ async function handleGa4Behavior(req: VercelRequest, res: VercelResponse) {
 
   const [
     devicesCur, devicesPrev,
-    newReturning,
+    newReturning, newReturningPrev,
     hourReport,
     dayOfWeekReport,
     cityReport,
@@ -1934,9 +1934,15 @@ async function handleGa4Behavior(req: VercelRequest, res: VercelResponse) {
       dimensions: [{ name: 'deviceCategory' }],
       metrics:    [{ name: 'sessions' }],
     }),
-    // New vs Returning
+    // New vs Returning — current
     client.runReport({
       property, dateRanges: [periodCurrent],
+      dimensions: [{ name: 'newVsReturning' }],
+      metrics:    [{ name: 'sessions' }],
+    }),
+    // New vs Returning — previous (pra delta no card "Recorrentes")
+    client.runReport({
+      property, dateRanges: [periodPrevious],
       dimensions: [{ name: 'newVsReturning' }],
       metrics:    [{ name: 'sessions' }],
     }),
@@ -1996,6 +2002,16 @@ async function handleGa4Behavior(req: VercelRequest, res: VercelResponse) {
   const retCount  = nrMap['returning'] || 0;
   const nrTotal   = newCount + retCount;
 
+  // Delta vs período anterior pro share de "returning". Usa share (não count
+  // absoluto) porque o user quer saber se a PROPORÇÃO de recorrentes mudou,
+  // não se o volume total cresceu.
+  const nrMapPrev = parseRows(newReturningPrev[0].rows || []);
+  const retCountPrev = nrMapPrev['returning'] || 0;
+  const nrTotalPrev  = (nrMapPrev['new'] || 0) + retCountPrev;
+  const retSharePrev = nrTotalPrev > 0 ? retCountPrev / nrTotalPrev : 0;
+  const retShareCur  = nrTotal > 0 ? retCount / nrTotal : 0;
+  const returningDelta = pctDelta(retShareCur, retSharePrev);
+
   const hourMap = parseRows(hourReport[0].rows || []);
   const hours = Array.from({ length: 24 }, (_, h) => ({
     hour:     h,
@@ -2024,7 +2040,7 @@ async function handleGa4Behavior(req: VercelRequest, res: VercelResponse) {
     devices,
     new_vs_returning: {
       new:       { count: newCount, share: nrTotal > 0 ? newCount / nrTotal : 0 },
-      returning: { count: retCount, share: nrTotal > 0 ? retCount / nrTotal : 0 },
+      returning: { count: retCount, share: nrTotal > 0 ? retCount / nrTotal : 0, deltaPct: returningDelta },
     },
     hours,
     peak_hour:   peakHour,
