@@ -536,7 +536,7 @@ function LeadsGrowthChart({
     <div className="rounded-2xl border border-white/10 bg-white/[0.03] backdrop-blur-sm p-5 mb-6">
       <div className="flex items-baseline justify-between mb-4 flex-wrap gap-2">
         <div>
-          <h3 className="text-sm font-bold text-white">Crescimento de leads vs pacotes fechados</h3>
+          <h3 className="text-sm font-bold text-white">Crescimento de leads vs fechamentos</h3>
           <p className="text-[11px] text-[#d4baeb]/50 mt-0.5">
             Captures por dia ({rangeLabel}) — barras = diário · curvas = acumulados · velocidade ({window}d)
           </p>
@@ -549,7 +549,7 @@ function LeadsGrowthChart({
             </p>
           </div>
           <div className="text-right">
-            <p className="text-[10px] uppercase tracking-wider text-[#c5a3d4]/50 font-semibold">Pacotes fechados</p>
+            <p className="text-[10px] uppercase tracking-wider text-[#c5a3d4]/50 font-semibold">Fechamentos</p>
             <p className="font-black tabular-nums text-xl mt-0.5" style={{ color: '#4ade80' }}>
               {loading ? '—' : totalBookings.toLocaleString('pt-BR')}
               {!loading && total > 0 && (
@@ -701,7 +701,7 @@ function LeadsGrowthChart({
             </span>
             <span className="flex items-center gap-1.5">
               <span className="inline-block w-3 h-0.5 rounded-full" style={{ background: '#4ade80' }} />
-              Pacotes fechados ({totalBookings.toLocaleString('pt-BR')})
+              Fechamentos acumulados ({totalBookings.toLocaleString('pt-BR')})
             </span>
           </div>
         </div>
