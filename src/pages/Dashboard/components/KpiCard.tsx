@@ -52,13 +52,16 @@ export function KpiCard({ label, value, deltaPct, deltaLabel, invertedDelta, ico
         {Icon && <Icon className="w-4 h-4 text-[#c5a3d4]/40" />}
       </div>
 
-      {/* Valor principal */}
-      <div className="flex items-baseline gap-2">
+      {/* Valor principal — flex-wrap pra badge cair em nova linha em cards
+          estreitos (evita transbordo lateral em breakpoint 1024-1280px).
+          min-w-0 + overflow-hidden previne overflow horizontal de qualquer
+          forma como fallback defensivo. */}
+      <div className="flex items-baseline gap-2 flex-wrap min-w-0 overflow-hidden">
         <span className="text-4xl font-black tabular-nums text-white tracking-tight">
           {loading ? <span className="inline-block w-20 h-9 bg-white/5 rounded animate-pulse" /> : value}
         </span>
         {delta !== null && !loading && (
-          <span className={`inline-flex items-center gap-0.5 text-xs font-bold tabular-nums px-1.5 py-0.5 rounded
+          <span className={`inline-flex items-center gap-0.5 text-xs font-bold tabular-nums px-1.5 py-0.5 rounded shrink-0
             ${isGood ? 'bg-emerald-500/15 text-emerald-300' : isBad ? 'bg-red-500/15 text-red-300' : 'bg-white/5 text-white/50'}`}>
             {trendUp ? <ArrowUp className="w-3 h-3" /> : trendDown ? <ArrowDown className="w-3 h-3" /> : <ArrowRight className="w-3 h-3" />}
             {Math.abs(delta).toFixed(1)}%
