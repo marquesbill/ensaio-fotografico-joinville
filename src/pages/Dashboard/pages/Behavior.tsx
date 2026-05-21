@@ -503,11 +503,14 @@ function LeadsGrowthChart({
   });
   const totalBookings = runningBookings;
 
-  // Escala Y compartilhada entre as 2 curvas acumuladas — leads sempre será
-  // >= clientes (funil), então o max é determinado pelo acumulado de leads.
-  // Compartilhar escala faz a "distância" entre as curvas visualmente
-  // representar a perda do funil (% que não converte).
-  const cumMax = Math.max(...cumulative, ...cumulativeBookings, 1);
+  // Escalas Y SEPARADAS pra cada curva — fechamentos (até ~10) numa escala
+  // compartilhada com leads (até ~86) ficava comprimido em 12% da altura,
+  // parecendo linha horizontal sem informação. Cada curva agora ocupa toda
+  // a altura disponível e mostra a FORMA do crescimento (tendência), que é
+  // o que importa visualmente. Taxa de conversão (11.2%) no header mantém
+  // a comparação numérica entre topo do funil e fechamento.
+  const cumMax         = Math.max(...cumulative, 1);
+  const cumBookingsMax = Math.max(...cumulativeBookings, 1);
 
   // Velocidade = primeira derivada suavizada (média móvel dos leads diários).
   // Mostra como anda o RITMO de captura — acelerando ou desacelerando — sem
@@ -650,7 +653,10 @@ function LeadsGrowthChart({
                 vectorEffect="non-scaling-stroke"
                 points={cumulative.map((c, i) => `${i},${100 - (c / cumMax) * 100}`).join(' ')}
               />
-              {/* Acumulado clientes — mesma escala Y que leads pra visual ser comparável */}
+              {/* Acumulado fechamentos — escala Y própria pra curva ocupar
+                  toda a altura. Distância vertical entre curvas NÃO representa
+                  perda de funil; pra comparar magnitude, ver a taxa de
+                  conversão (X% conv. no período) no header. */}
               <polyline
                 fill="none"
                 stroke="#4ade80"
@@ -658,7 +664,7 @@ function LeadsGrowthChart({
                 strokeLinejoin="round"
                 strokeLinecap="round"
                 vectorEffect="non-scaling-stroke"
-                points={cumulativeBookings.map((c, i) => `${i},${100 - (c / cumMax) * 100}`).join(' ')}
+                points={cumulativeBookings.map((c, i) => `${i},${100 - (c / cumBookingsMax) * 100}`).join(' ')}
               />
               {/* Velocidade — média móvel, oscilante */}
               <polyline
@@ -683,7 +689,7 @@ function LeadsGrowthChart({
               {cumulativeBookings.length > 0 && totalBookings > 0 && (
                 <circle
                   cx={cumulativeBookings.length - 1}
-                  cy={100 - (cumulativeBookings[cumulativeBookings.length - 1] / cumMax) * 100}
+                  cy={100 - (cumulativeBookings[cumulativeBookings.length - 1] / cumBookingsMax) * 100}
                   r="2.5"
                   fill="#4ade80"
                   vectorEffect="non-scaling-stroke"
