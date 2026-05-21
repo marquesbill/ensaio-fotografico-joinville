@@ -41,7 +41,7 @@ async function asaas<T = unknown>(
   return json as T;
 }
 
-type AsaasPaymentLink = { id: string; url: string };
+type AsaasCheckout = { id: string; link: string; status: string };
 
 // Encode booking metadata em string compacta pipe-delimited (limite ASAAS = 100 chars).
 // REGRA: nunca trunca email — email é essencial pro Resend mandar confirmação.
@@ -68,40 +68,47 @@ function encodeAsaasRef(o: {
   throw new Error(`Email muito longo pra checkout ASAAS (${safeEmail.length} chars). Use um email mais curto.`);
 }
 
-async function createAsaasPaymentLink(opts: {
-  name: string; description?: string; value: number;
-  externalReference: string; successUrl: string;
-}): Promise<AsaasPaymentLink> {
-  const endDate = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
-  const useCallback = (process.env.ASAAS_USE_CALLBACK || 'false').toLowerCase() === 'true';
-  // Parcelamento de cartão — até N x (default 6, configurável via env sem deploy).
-  // PIX/boleto seguem à vista; só cartão vê o seletor de parcelas. "Sem juros"
-  // pro cliente — a ASAAS desconta a taxa de parcelamento do líquido do lojista.
+// Cria um Checkout ASAAS (página de cobrança hospedada). Substitui o Payment
+// Link porque SÓ o Checkout combina multi-método (PIX + cartão) COM parcelamento
+// — o Payment Link obriga a escolher um ou outro (não dá pra ter PIX + 6x na
+// mesma página). Com chargeTypes ['DETACHED','INSTALLMENT'] o cliente, ao
+// escolher cartão, vê o seletor de 1x até maxInstallments; PIX segue à vista.
+// "Sem juros pro cliente" — a ASAAS desconta a taxa de parcelamento do líquido
+// do lojista. Obs: o Checkout NÃO suporta boleto (billingTypes só CREDIT_CARD/PIX).
+async function createAsaasCheckout(opts: {
+  itemName: string; itemDescription?: string; value: number;
+  externalReference: string; successUrl: string; cancelUrl: string;
+}): Promise<AsaasCheckout> {
+  // Até N x (default 6, configurável via env ASAAS_MAX_INSTALLMENTS sem deploy).
+  // ASAAS aceita até 21 parcelas; cap defensivo em 12.
   const maxInstallments = Math.min(
     Math.max(parseInt(process.env.ASAAS_MAX_INSTALLMENTS || '6', 10) || 6, 1),
     12,
   );
   type Body = {
-    name: string; description: string; billingType: string; chargeType: string;
-    value: number; dueDateLimitDays: number; endDate: string;
-    maxInstallmentCount: number;
-    externalReference: string; notificationDisabled: boolean;
-    callback?: { successUrl: string; autoRedirect: boolean };
+    billingTypes:      string[];
+    chargeTypes:       string[];
+    minutesToExpire:   number;
+    externalReference: string;
+    callback:          { successUrl: string; cancelUrl: string };
+    items:             Array<{ name: string; description: string; quantity: number; value: number }>;
+    installment:       { maxInstallmentCount: number };
   };
   const body: Body = {
-    name:                opts.name,
-    description:         opts.description || '',
-    billingType:         'UNDEFINED',
-    chargeType:          'DETACHED',
-    value:               opts.value,
-    dueDateLimitDays:    1,
-    endDate,
-    maxInstallmentCount: maxInstallments,
-    externalReference:   opts.externalReference,
-    notificationDisabled: true,
+    billingTypes:      ['CREDIT_CARD', 'PIX'],
+    chargeTypes:       ['DETACHED', 'INSTALLMENT'],
+    minutesToExpire:   1440,   // 24h (máximo do Checkout) — janela pro cliente pagar
+    externalReference: opts.externalReference,
+    callback:          { successUrl: opts.successUrl, cancelUrl: opts.cancelUrl },
+    items: [{
+      name:        opts.itemName,
+      description: opts.itemDescription || '',
+      quantity:    1,
+      value:       opts.value,
+    }],
+    installment:       { maxInstallmentCount: maxInstallments },
   };
-  if (useCallback) body.callback = { successUrl: opts.successUrl, autoRedirect: true };
-  return asaas<AsaasPaymentLink>('/paymentLinks', { method: 'POST', body });
+  return asaas<AsaasCheckout>('/checkouts', { method: 'POST', body });
 }
 // ─── fim ASAAS helpers ─────────────────────────────────────────
 
@@ -196,25 +203,26 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     // 1. Cria a ordem de pagamento — branch pelo gateway ativo.
     //    Em ambos os casos guardamos um identificador na coluna `stripeSession`
     //    do Sheets (campo legado reusado). Para MP é o preferenceId; para ASAAS
-    //    é o paymentLink.id (que o webhook usa pra parear o pagamento).
-    let externalId: string;          // ID que vai pro Sheets (preferenceId | paymentLinkId)
+    //    é o checkout.id (que o webhook pareia via payment.checkoutSession).
+    let externalId: string;          // ID que vai pro Sheets (preferenceId | checkoutId)
     let mpPreferenceId: string | null = null;
-    let asaasPaymentLinkUrl: string | null = null;
+    let asaasPaymentLinkUrl: string | null = null;   // resposta usa a chave `paymentLinkUrl`
 
     // MP aceita externalReference grande; ASAAS limita a 100 chars (encoded compact).
     const mpExternalReference    = JSON.stringify({ date, time, packageKey, name, email, whatsapp, numBailarinas: nb });
     const asaasExternalReference = encodeAsaasRef({ date, time, packageKey, numBailarinas: nb, name, email, whatsapp });
 
     if (GATEWAY === 'asaas') {
-      const link = await createAsaasPaymentLink({
-        name:              `Ensaio Fotográfico em Joinville — Pacote ${pkg.name}`,
-        description:       `${date.split('-').reverse().join('/')} às ${time} · ${pkg.duration} min · ${nb} ${nb === 1 ? 'bailarina' : 'bailarinas'}`,
+      const checkout = await createAsaasCheckout({
+        itemName:          `Pacote ${pkg.name}`,   // ASAAS limita item.name a 30 chars
+        itemDescription:   `${date.split('-').reverse().join('/')} às ${time} · ${pkg.duration} min · ${nb} ${nb === 1 ? 'bailarina' : 'bailarinas'}`,
         value:             pkg.price,
         externalReference: asaasExternalReference,
         successUrl:        `${SITE_URL}/agendamento/sucesso`,
+        cancelUrl:         `${SITE_URL}/agendamento?cancelado=1`,
       });
-      externalId           = link.id;
-      asaasPaymentLinkUrl  = link.url;
+      externalId           = checkout.id;
+      asaasPaymentLinkUrl  = checkout.link;
     } else {
       const prefRes = await fetch('https://api.mercadopago.com/checkout/preferences', {
         method: 'POST',
@@ -270,7 +278,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           instagramBailarina: instagramBailarina || '',
           nomeBailarina: nomeBailarina || '',
           numBailarinas: nb,
-          stripeSession: externalId,   // legacy field — MP preferenceId OR ASAAS paymentLinkId
+          stripeSession: externalId,   // legacy field — MP preferenceId OR ASAAS checkout id
           gateway: GATEWAY,            // novo: indica qual gateway gerou esse pending
           source: 'site',
         }),
@@ -281,7 +289,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       const errMsg = pendingErr instanceof Error ? pendingErr.message : String(pendingErr);
       console.error(`[create-checkout] createPending FAILED após paymentLink criado: ${errMsg} — rollback...`);
       if (GATEWAY === 'asaas' && externalId) {
-        await asaas(`/paymentLinks/${externalId}`, { method: 'DELETE' })
+        await asaas(`/checkouts/${externalId}/cancel`, { method: 'POST' })
           .catch(e => console.error('[create-checkout] rollback ASAAS falhou:', e instanceof Error ? e.message : e));
       } else if (GATEWAY === 'mp' && externalId) {
         await fetch(`https://api.mercadopago.com/checkout/preferences/${externalId}`, {

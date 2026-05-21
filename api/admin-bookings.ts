@@ -52,11 +52,17 @@ function resolveGateway(raw: unknown): 'mp' | 'asaas' {
  * Detecta o gateway de um `externalId` (coluna stripeSession do Sheets) pelo
  * formato do ID. Necessário pra cancelar o link ANTIGO no gateway certo
  * quando a Mari regenera a cobrança trocando de gateway (ex: link velho era
- * ASAAS, novo é MP). MP preference id = "<dígitos>-<uuid>"; ASAAS paymentLink
- * id = alfanumérico curto sem hífen no prefixo.
+ * ASAAS, novo é MP).
+ *  - ASAAS Checkout id  = UUID 8-4-4-4-12
+ *  - MP preference id   = "<dígitos>-<uuid>"
+ *  - ASAAS paymentLink  = alfanumérico curto (legado, ainda em trânsito)
  */
 function detectGatewayFromId(externalId: string): 'mp' | 'asaas' {
-  return /^\d+-/.test(String(externalId || '')) ? 'mp' : 'asaas';
+  const id = String(externalId || '');
+  // Checkout UUID primeiro — senão um UUID com 8 dígitos iniciais cairia no /^\d+-/.
+  if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id)) return 'asaas';
+  if (/^\d+-/.test(id)) return 'mp';
+  return 'asaas';
 }
 
 /* ───────── ASAAS helpers (inlined — Vercel não bundla módulos _*.ts) ───────── */
@@ -118,46 +124,63 @@ function encodeAsaasRefAdmin(o: {
   throw new Error(`Email muito longo pra checkout ASAAS (${safeEmail.length} chars). Use um email mais curto.`);
 }
 
+type AsaasCheckout = { id: string; link: string; status: string };
+
 /**
- * Cria Payment Link ASAAS pra uso administrativo (Mari gera link p/ cliente).
- * Diferenças vs versão do site (create-checkout.ts):
- *  - `endDate` = hoje + 3 dias (Mari quer dar margem maior pra cliente pagar)
- *  - Mesma assinatura: { name, description, value, externalReference, successUrl }
- *  - Retorna { id, url }
+ * Cancela um link de pagamento ASAAS.
+ *  - Checkout (novo)        → POST /checkouts/{id}/cancel
+ *  - Payment Link (legado)  → DELETE /paymentLinks/{id}
+ * Distinção pelo formato do id (UUID = checkout). Durante a migração ainda
+ * podem existir paymentLinks antigos em trânsito.
  */
-async function createAsaasPaymentLinkAdmin(opts: {
-  name: string; description?: string; value: number;
-  externalReference: string; successUrl: string;
-}): Promise<{ id: string; url: string }> {
-  const endDate = new Date(Date.now() + 3 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
-  const useCallback = (process.env.ASAAS_USE_CALLBACK || 'false').toLowerCase() === 'true';
-  // Parcelamento de cartão — até N x (default 6, configurável via env sem deploy).
-  // Mesma config do fluxo do site (createAsaasPaymentLink em create-checkout.ts).
+async function cancelAsaasLink(id: string): Promise<void> {
+  if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id)) {
+    await asaasApi(`/checkouts/${id}/cancel`, { method: 'POST' });
+  } else {
+    await asaasApi(`/paymentLinks/${id}`, { method: 'DELETE' });
+  }
+}
+
+/**
+ * Cria um Checkout ASAAS pra uso administrativo (Mari gera link p/ cliente).
+ * Mesmo motivo da versão do site (createAsaasCheckout em create-checkout.ts):
+ * só o Checkout combina PIX + cartão parcelado na mesma página. O cliente
+ * preenche os próprios dados (nome/CPF/endereço) na página hospedada.
+ * Obs: o Checkout expira em no máx. 24h (o Payment Link dava 3 dias).
+ */
+async function createAsaasCheckoutAdmin(opts: {
+  itemName: string; itemDescription?: string; value: number;
+  externalReference: string; successUrl: string; cancelUrl: string;
+}): Promise<AsaasCheckout> {
+  // Até N x (default 6, configurável via env ASAAS_MAX_INSTALLMENTS sem deploy).
   const maxInstallments = Math.min(
     Math.max(parseInt(process.env.ASAAS_MAX_INSTALLMENTS || '6', 10) || 6, 1),
     12,
   );
   type Body = {
-    name: string; description: string; billingType: string; chargeType: string;
-    value: number; dueDateLimitDays: number; endDate: string;
-    maxInstallmentCount: number;
-    externalReference: string; notificationDisabled: boolean;
-    callback?: { successUrl: string; autoRedirect: boolean };
+    billingTypes:      string[];
+    chargeTypes:       string[];
+    minutesToExpire:   number;
+    externalReference: string;
+    callback:          { successUrl: string; cancelUrl: string };
+    items:             Array<{ name: string; description: string; quantity: number; value: number }>;
+    installment:       { maxInstallmentCount: number };
   };
   const body: Body = {
-    name:                opts.name,
-    description:         opts.description || '',
-    billingType:         'UNDEFINED',
-    chargeType:          'DETACHED',
-    value:               opts.value,
-    dueDateLimitDays:    3,                // janela maior que site (1 dia)
-    endDate,
-    maxInstallmentCount: maxInstallments,
-    externalReference:   opts.externalReference,
-    notificationDisabled: true,
+    billingTypes:      ['CREDIT_CARD', 'PIX'],
+    chargeTypes:       ['DETACHED', 'INSTALLMENT'],
+    minutesToExpire:   1440,
+    externalReference: opts.externalReference,
+    callback:          { successUrl: opts.successUrl, cancelUrl: opts.cancelUrl },
+    items: [{
+      name:        opts.itemName,
+      description: opts.itemDescription || '',
+      quantity:    1,
+      value:       opts.value,
+    }],
+    installment:       { maxInstallmentCount: maxInstallments },
   };
-  if (useCallback) body.callback = { successUrl: opts.successUrl, autoRedirect: true };
-  return asaasApi<{ id: string; url: string }>('/paymentLinks', { method: 'POST', body });
+  return asaasApi<AsaasCheckout>('/checkouts', { method: 'POST', body });
 }
 
 /* ───────── fim ASAAS helpers ───────── */
@@ -2824,15 +2847,16 @@ async function handleCreate(req: VercelRequest, res: VercelResponse, auth: { use
       let externalId: string;
 
       if (gw === 'asaas') {
-        const link = await createAsaasPaymentLinkAdmin({
-          name:              `Ensaio Fotográfico em Joinville — Pacote ${pkg.name}`,
-          description:       `${date.split('-').reverse().join('/')} às ${time} · ${pkg.duration} min · ${nb} ${nb === 1 ? 'bailarina' : 'bailarinas'}`,
+        const checkout = await createAsaasCheckoutAdmin({
+          itemName:          `Pacote ${pkg.name}`,   // ASAAS limita item.name a 30 chars
+          itemDescription:   `${date.split('-').reverse().join('/')} às ${time} · ${pkg.duration} min · ${nb} ${nb === 1 ? 'bailarina' : 'bailarinas'}`,
           value:             pkg.price,
           externalReference: encodeAsaasRefAdmin({ date, time, packageKey, numBailarinas: nb, name, email, whatsapp }),
           successUrl:        `${SITE_URL}/agendamento/sucesso`,
+          cancelUrl:         `${SITE_URL}/agendamento?cancelado=1`,
         });
-        paymentUrl = link.url;
-        externalId = link.id;
+        paymentUrl = checkout.link;
+        externalId = checkout.id;
       } else {
         const expiry = new Date(Date.now() + 3 * 24 * 60 * 60 * 1000).toISOString();
         const prefRes = await fetch('https://api.mercadopago.com/checkout/preferences', {
@@ -2890,7 +2914,7 @@ async function handleCreate(req: VercelRequest, res: VercelResponse, auth: { use
         const errMsg = pendingErr instanceof Error ? pendingErr.message : String(pendingErr);
         console.error(`[admin-bookings/create] createPending FAILED após paymentLink criado: ${errMsg} — rollback...`);
         if (gw === 'asaas' && externalId) {
-          await asaasApi(`/paymentLinks/${externalId}`, { method: 'DELETE' })
+          await cancelAsaasLink(externalId)
             .catch(e => console.error('[admin-bookings/create] rollback ASAAS falhou:', e instanceof Error ? e.message : e));
         } else if (gw === 'mp' && externalId) {
           await fetch(`https://api.mercadopago.com/checkout/preferences/${externalId}`, {
@@ -3084,8 +3108,8 @@ async function handlePaymentLink(req: VercelRequest, res: VercelResponse, auth: 
       const oldGateway = detectGatewayFromId(oldStripeSession);
       if (oldGateway === 'asaas') {
         try {
-          await asaasApi(`/paymentLinks/${oldStripeSession}`, { method: 'DELETE' });
-          console.log(`[handlePaymentLink] cancelled old ASAAS paymentLink ${oldStripeSession}`);
+          await cancelAsaasLink(oldStripeSession);
+          console.log(`[handlePaymentLink] cancelled old ASAAS link ${oldStripeSession}`);
         } catch (e) {
           console.warn(`[handlePaymentLink] failed to cancel old ASAAS link (best-effort): ${e instanceof Error ? e.message : e}`);
         }
@@ -3115,15 +3139,16 @@ async function handlePaymentLink(req: VercelRequest, res: VercelResponse, auth: 
     let externalId: string;
 
     if (gw === 'asaas') {
-      const link = await createAsaasPaymentLinkAdmin({
-        name:              `Ensaio Fotográfico em Joinville — Pacote ${pkg.name}`,
-        description:       `${date.split('-').reverse().join('/')} às ${time} · ${pkg.duration} min · ${nb} ${nb === 1 ? 'bailarina' : 'bailarinas'}`,
+      const checkout = await createAsaasCheckoutAdmin({
+        itemName:          `Ensaio Fotográfico em Joinville — Pacote ${pkg.name}`,
+        itemDescription:   `${date.split('-').reverse().join('/')} às ${time} · ${pkg.duration} min · ${nb} ${nb === 1 ? 'bailarina' : 'bailarinas'}`,
         value:             pkg.price,
         externalReference: encodeAsaasRefAdmin({ date, time, packageKey, numBailarinas: nb, name, email, whatsapp }),
         successUrl:        `${SITE_URL}/agendamento/sucesso`,
+        cancelUrl:         `${SITE_URL}/agendamento?cancelado=1`,
       });
-      url        = link.url;
-      externalId = link.id;
+      url        = checkout.link;
+      externalId = checkout.id;
     } else {
       const expiry = new Date(Date.now() + 3 * 24 * 60 * 60 * 1000).toISOString();
       const prefRes = await fetch('https://api.mercadopago.com/checkout/preferences', {
@@ -3183,7 +3208,7 @@ async function handlePaymentLink(req: VercelRequest, res: VercelResponse, auth: 
           instagramBailarina: instagramBailarina || '',
           nomeBailarina:      nomeBailarina || '',
           numBailarinas:      nb,
-          stripeSession:      externalId,    // MP preferenceId OR ASAAS paymentLinkId
+          stripeSession:      externalId,    // MP preferenceId OR ASAAS checkout id
           gateway:            gw,
           source:             'admin',
         }),
@@ -3193,7 +3218,7 @@ async function handlePaymentLink(req: VercelRequest, res: VercelResponse, auth: 
       const errMsg = pendingErr instanceof Error ? pendingErr.message : String(pendingErr);
       console.error(`[admin-bookings/paymentLink] createPending FAILED — rollback novo link: ${errMsg}`);
       if (gw === 'asaas' && externalId) {
-        await asaasApi(`/paymentLinks/${externalId}`, { method: 'DELETE' })
+        await cancelAsaasLink(externalId)
           .catch(e => console.error('[admin-bookings/paymentLink] rollback ASAAS falhou:', e instanceof Error ? e.message : e));
       } else if (gw === 'mp' && externalId) {
         await fetch(`https://api.mercadopago.com/checkout/preferences/${externalId}`, {

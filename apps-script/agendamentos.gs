@@ -751,6 +751,29 @@ function confirmBooking(data) {
   const thisStart  = timeToMin(_toHHMM(_val(row, cm, 'Início', 2)));
   const thisEnd    = timeToMin(_toHHMM(_val(row, cm, 'Fim',    3)));
 
+  // ── Idempotência ─────────────────────────────────────────────
+  // Se a reserva já está Confirmada, outro evento de webhook já confirmou
+  // (ex: PAYMENT_CONFIRMED seguido de PAYMENT_RECEIVED pro mesmo cartão, ou
+  // retry da ASAAS). Retorna sem reescrever a linha, redisparar a detecção de
+  // conflito ou reenviar e-mail de conflito. O webhook lê `alreadyConfirmed`
+  // pra pular o reenvio dos e-mails de confirmação ao cliente.
+  if (prevStatus === 'Confirmado') {
+    return {
+      ok:               true,
+      alreadyConfirmed: true,
+      bookingId:        thisId,
+      date:             dateStr,
+      start:            _toHHMM(_val(row, cm, 'Início', 2)),
+      end:              _toHHMM(_val(row, cm, 'Fim',    3)),
+      name:             _val(row, cm, 'Nome',     7),
+      email:            _val(row, cm, 'E-mail',   8),
+      whatsapp:         _val(row, cm, 'WhatsApp', 9),
+      package:          _val(row, cm, 'Pacote',   4),
+      numBailarinas:    Number(_val(row, cm, 'Nº Bailarinas')) || 1,
+      conflict:         false,
+    };
+  }
+
   // ── Revalidação anti-conflito (boleto pago tardiamente) ──────
   // Se este booking estava Expirado (passou de 7d) e a confirmação
   // chegou agora, é possível que outra pessoa já tenha reservado
@@ -828,6 +851,7 @@ function confirmBooking(data) {
 
   return {
     ok: true,
+    alreadyConfirmed: false,
     bookingId: thisId,
     date:      dateStr,
     start:     _toHHMM(_val(row, cm, 'Início', 2)),
@@ -836,6 +860,7 @@ function confirmBooking(data) {
     email:     _val(row, cm, 'E-mail',   8),
     whatsapp:  _val(row, cm, 'WhatsApp', 9),
     package:   _val(row, cm, 'Pacote',   4),
+    numBailarinas: Number(_val(row, cm, 'Nº Bailarinas')) || 1,
     conflict:  !!conflictAlert,
   };
 }

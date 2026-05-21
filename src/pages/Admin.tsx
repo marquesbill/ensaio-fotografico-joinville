@@ -383,9 +383,9 @@ function NewBookingModal({
   loading: boolean;
 }) {
   const PACKAGES = usePackages();
-  // Gateway pro "Criar + gerar link" — default MP (parcela em 6x; ASAAS ainda
-  // não libera parcelamento). Ignorado no "Confirmar direto".
-  const [gateway,             setGateway]             = useState<'mp' | 'asaas'>('mp');
+  // Gateway pro "Criar + gerar link" — default ASAAS (Checkout com PIX +
+  // cartão em até 6x na mesma página). Ignorado no "Confirmar direto".
+  const [gateway,             setGateway]             = useState<'mp' | 'asaas'>('asaas');
   const [name,                setName]                = useState('');
   const [email,               setEmail]               = useState('');
   const [whatsapp,            setWhatsapp]            = useState('');
@@ -563,8 +563,8 @@ function NewBookingModal({
           <label className="block text-xs font-semibold text-gray-600 mb-1 uppercase tracking-wide">Gerar link via</label>
           <div className="grid grid-cols-2 gap-2">
             {([
-              { key: 'mp'    as const, label: 'Mercado Pago', hint: 'parcela 6x' },
-              { key: 'asaas' as const, label: 'ASAAS',        hint: 'à vista'    },
+              { key: 'asaas' as const, label: 'ASAAS',        hint: 'PIX · cartão 6x'   },
+              { key: 'mp'    as const, label: 'Mercado Pago', hint: 'cartão 6x · boleto' },
             ]).map(opt => (
               <button
                 key={opt.key}
@@ -603,7 +603,7 @@ function NewBookingModal({
           </button>
         </div>
         <p className="text-[10px] text-center text-gray-400">
-          "Criar + gerar link" cria o agendamento pendente e retorna um link de pagamento (3 dias)<br />
+          "Criar + gerar link" cria o agendamento pendente e retorna um link de pagamento<br />
           no gateway escolhido acima. "Confirmar direto" confirma sem pagamento online.
         </p>
       </div>
@@ -745,6 +745,7 @@ function EditBookingModal({
 function PaymentLinkModal({ url, gateway, onClose }: { url: string; gateway: 'mp' | 'asaas'; onClose: () => void }) {
   const [copied, setCopied] = useState(false);
   const gatewayLabel = gateway === 'mp' ? 'Mercado Pago' : 'ASAAS';
+  const validade     = gateway === 'mp' ? '3 dias' : '24 horas';
   function copy() {
     navigator.clipboard.writeText(url).then(() => {
       setCopied(true);
@@ -760,7 +761,7 @@ function PaymentLinkModal({ url, gateway, onClose }: { url: string; gateway: 'mp
         </div>
         <div>
           <h2 className="text-base font-bold text-[#352D39]">Link de Pagamento</h2>
-          <p className="text-xs text-gray-500">Válido por 3 dias · {gatewayLabel}</p>
+          <p className="text-xs text-gray-500">Válido por {validade} · {gatewayLabel}</p>
         </div>
       </div>
 
@@ -790,8 +791,8 @@ function PaymentLinkModal({ url, gateway, onClose }: { url: string; gateway: 'mp
 
 /* ───────────────── Gateway Picker Modal ─────────────────────── */
 /* Mari escolhe ASAAS ou Mercado Pago ao gerar cobrança de um agendamento.
-   Enquanto o parcelamento ASAAS não está liberado (conta nível 1), o MP é a
-   opção pra vender parcelado em 6x. */
+   Ambos parcelam o cartão em até 6x sem juros — ASAAS faz PIX + cartão na
+   mesma página de checkout; o MP adiciona boleto como opção. */
 function GatewayPickerModal({
   booking, onClose, onPick,
 }: {
@@ -824,7 +825,7 @@ function GatewayPickerModal({
             </span>
           </div>
           <p className="text-xs text-gray-500 mt-0.5">
-            Cartão em até 6x sem juros, PIX e boleto. Use pra quem quer parcelar.
+            Cartão em até 6x sem juros, PIX e boleto.
           </p>
         </button>
 
@@ -834,12 +835,12 @@ function GatewayPickerModal({
         >
           <div className="flex items-center justify-between">
             <span className="text-sm font-bold text-[#352D39]">ASAAS</span>
-            <span className="text-[10px] font-semibold uppercase tracking-wide text-gray-500 bg-gray-100 rounded px-1.5 py-0.5">
-              à vista
+            <span className="text-[10px] font-semibold uppercase tracking-wide text-green-700 bg-green-100 rounded px-1.5 py-0.5">
+              PIX · cartão 6x
             </span>
           </div>
           <p className="text-xs text-gray-500 mt-0.5">
-            PIX, boleto e cartão à vista. Parcelamento ainda não liberado na conta.
+            PIX e cartão de crédito em até 6x sem juros, na mesma página.
           </p>
         </button>
       </div>

@@ -169,7 +169,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     const evt = body.event as string;
     const pay = body.payment as {
-      id: string; status: string; paymentLink?: string;
+      id: string; status: string; paymentLink?: string; checkoutSession?: string;
       externalReference?: string; installmentCount?: number; billingType?: string;
     };
 
@@ -180,16 +180,23 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     if (evt !== 'PAYMENT_CONFIRMED' && evt !== 'PAYMENT_RECEIVED') {
       return res.status(200).json({ received: true, event: evt, status: pay?.status });
     }
-    if (!pay?.paymentLink || !pay?.externalReference) {
-      console.error('[webhook] ASAAS payment without paymentLink or externalReference', pay);
-      return res.status(400).json({ error: 'Missing paymentLink or externalReference' });
+    // Pareamento com o pending no Sheets (coluna stripeSession):
+    //  - Checkout (atual)      → payment.checkoutSession
+    //  - Payment Link (legado) → payment.paymentLink
+    // O externalReference do payment NÃO é confiável: o Checkout não o propaga
+    // pro payment (vem null) — a meta do booking vem da resposta do confirmBooking.
+    const slotId = pay?.checkoutSession || pay?.paymentLink || '';
+    if (!slotId) {
+      console.error('[webhook] ASAAS payment sem checkoutSession nem paymentLink', pay);
+      // 200 (não 400): 4xx repetido faz a ASAAS marcar o webhook como interrompido.
+      return res.status(200).json({ received: true, ignored: true, reason: 'no slot id' });
     }
 
     normalized = {
       gateway:        'asaas',
-      externalSlotId: pay.paymentLink,            // ID do Link no Sheets
+      externalSlotId: slotId,                     // checkoutSession OU paymentLink
       paymentId:      pay.id,
-      externalRef:    pay.externalReference,
+      externalRef:    pay.externalReference || '',
       installments:   pay.installmentCount || 1,
       billingType:    pay.billingType,
     };
@@ -227,33 +234,28 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return res.status(200).json({ received: true, ignored: true });
   }
 
-  // Parse booking data from external_reference
-  // - MP usa formato JSON canon: {date,time,packageKey,name,email,whatsapp,numBailarinas}
-  // - ASAAS usa formato compacto (chaves de 1 letra) por causa do limite de 100 chars
-  let meta: { date: string; time: string; packageKey: string; name: string; email: string; whatsapp: string; numBailarinas: number };
+  // Meta do booking (data/horário/pacote/cliente) usada nos e-mails.
+  // FONTE PRIMÁRIA = resposta do confirmBooking (lê a linha da planilha, sempre
+  // completa) — sobrescrita logo abaixo. O bloco a seguir é só FALLBACK caso o
+  // confirmBooking falhe: aí o alerta pro André ainda tem algum dado.
+  //  - MP:    external_reference é JSON canônico.
+  //  - ASAAS: o Checkout NÃO propaga externalReference pro payment (vem null) —
+  //           pra Checkout esse fallback fica vazio; o confirmBooking preenche.
+  const meta: { date: string; time: string; packageKey: string; name: string; email: string; whatsapp: string; numBailarinas: number } = {
+    date: '', time: '', packageKey: '', name: '', email: '', whatsapp: '', numBailarinas: 1,
+  };
   if (normalized.gateway === 'asaas') {
-    const d = decodeAsaasRef(normalized.externalRef);
-    meta = { ...d, numBailarinas: d.numBailarinas };
+    Object.assign(meta, decodeAsaasRef(normalized.externalRef));
   } else {
     try {
       const j = JSON.parse(normalized.externalRef || '{}') as Partial<typeof meta>;
-      meta = {
-        date: j.date || '', time: j.time || '', packageKey: j.packageKey || '',
-        name: j.name || '', email: j.email || '', whatsapp: j.whatsapp || '',
-        numBailarinas: Number(j.numBailarinas) || 1,
-      };
+      meta.date = j.date || ''; meta.time = j.time || ''; meta.packageKey = j.packageKey || '';
+      meta.name = j.name || ''; meta.email = j.email || ''; meta.whatsapp = j.whatsapp || '';
+      meta.numBailarinas = Number(j.numBailarinas) || 1;
     } catch {
-      console.error('[webhook] invalid external_reference');
-      return res.status(400).json({ error: 'Invalid external_reference' });
+      console.warn('[webhook] external_reference inválido — meta virá do confirmBooking');
     }
   }
-
-  const { date, time, packageKey, name, email, whatsapp, numBailarinas } = meta;
-  const pkg = PACKAGES[packageKey] || { name: packageKey, duration: 0, price: 0 };
-
-  const [sh, sm] = time.split(':').map(Number);
-  const endMin   = sh * 60 + sm + pkg.duration;
-  const endTime  = String(Math.floor(endMin / 60)).padStart(2, '0') + ':' + String(endMin % 60).padStart(2, '0');
 
   // 1. Confirm booking in Sheets — retry 3x + alerta crítico se falhar.
   // Cenário evitado: cliente paga, Apps Script timeout, webhook segue
@@ -261,6 +263,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   // pending → cliente chega no dia sem reserva.
   let bookingId = '';
   let confirmFailed: string | null = null;
+  let alreadyConfirmed = false;
   for (let attempt = 1; attempt <= 3; attempt++) {
     try {
       const r = await fetch(SCRIPT_URL, {
@@ -274,8 +277,22 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         }),
       });
       if (!r.ok) throw new Error(`HTTP ${r.status}`);
-      const json = await r.json();
-      bookingId = json.bookingId || '';
+      const json = await r.json() as {
+        bookingId?: string; alreadyConfirmed?: boolean;
+        date?: string; start?: string; name?: string; email?: string;
+        whatsapp?: string; package?: string; numBailarinas?: number;
+      };
+      bookingId        = json.bookingId || '';
+      alreadyConfirmed = json.alreadyConfirmed === true;
+      // confirmBooking lê a linha da planilha — fonte autoritativa da meta.
+      // Sobrescreve o fallback (essencial pro Checkout ASAAS, que vem sem ref).
+      if (json.date)          meta.date          = json.date;
+      if (json.start)         meta.time          = json.start;
+      if (json.package)       meta.packageKey    = json.package;
+      if (json.name)          meta.name          = json.name;
+      if (json.email)         meta.email         = json.email;
+      if (json.whatsapp)      meta.whatsapp      = String(json.whatsapp);
+      if (json.numBailarinas) meta.numBailarinas = Number(json.numBailarinas) || meta.numBailarinas;
       confirmFailed = null;
       break;
     } catch (e) {
@@ -284,6 +301,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       if (attempt < 3) await new Promise(r => setTimeout(r, 500 * attempt));
     }
   }
+
+  // Meta consolidada — pkg/endTime calculados DEPOIS do confirmBooking sobrescrever.
+  const { date, time, packageKey, name, email, whatsapp, numBailarinas } = meta;
+  const pkg = PACKAGES[packageKey] || { name: packageKey, duration: 0, price: 0 };
+  const [sh, sm] = (time || '00:00').split(':').map(Number);
+  const endMin   = sh * 60 + sm + pkg.duration;
+  const endTime  = String(Math.floor(endMin / 60)).padStart(2, '0') + ':' + String(endMin % 60).padStart(2, '0');
   if (confirmFailed) {
     // 3 tentativas falharam — alerta urgente pro admin investigar manual.
     // Continua o fluxo de emails pra não confundir cliente que JÁ PAGOU.
@@ -307,6 +331,15 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     } catch (e) {
       console.error('[webhook] CRITICAL: confirmBooking failed AND admin alert failed', e);
     }
+  }
+
+  // Idempotência: se a reserva JÁ estava Confirmada antes deste evento, um
+  // webhook anterior já confirmou e enviou os e-mails. A ASAAS dispara
+  // PAYMENT_CONFIRMED e depois PAYMENT_RECEIVED pro mesmo cartão (e reenvia em
+  // retry); sem essa guarda o cliente/André/Mari receberiam e-mails duplicados.
+  if (!confirmFailed && alreadyConfirmed) {
+    console.log(`[webhook] booking ${bookingId} já confirmado — pula e-mails (${normalized.gateway}/${normalized.paymentId})`);
+    return res.status(200).json({ received: true, alreadyConfirmed: true });
   }
 
   // 2. Send confirmation email to client
