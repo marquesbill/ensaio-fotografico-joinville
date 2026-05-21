@@ -620,6 +620,33 @@ function normalizeStatus(s: string | null | undefined): 'confirmado' | 'pendente
   return 'other';
 }
 
+/**
+ * Parser robusto pra timestamps da coluna `criado_em` no Sheets.
+ *
+ * Formatos vistos em produção:
+ *   1. ISO 8601 normal — "2026-05-23T10:30:00.000Z" (fluxo de pagamento)
+ *   2. "admin-new-{ms}"    — quando admin cria booking sem pagamento
+ *      (handleCreate Path B usa esse sessionId e Apps Script aparentemente
+ *      grava ele na col N por engano)
+ *   3. "admin-direct-{ms}" — mesmo padrão pra confirmação direta admin
+ *   4. Date inválida / vazia — retorna 0
+ *
+ * Retorna Unix ms timestamp, ou 0 se não parseável.
+ */
+function parseBookingTimestamp(raw: string | null | undefined): number {
+  if (!raw) return 0;
+  const s = String(raw).trim();
+  // Formatos admin com timestamp embutido — extrai os dígitos após o último hífen
+  const adminMatch = s.match(/^admin-(?:new|direct|manual)-(\d+)$/);
+  if (adminMatch) {
+    const ms = parseInt(adminMatch[1], 10);
+    return Number.isFinite(ms) && ms > 0 ? ms : 0;
+  }
+  // Tenta parsing ISO/Date normal
+  const ts = new Date(s).getTime();
+  return Number.isFinite(ts) && ts > 0 ? ts : 0;
+}
+
 /* ───────── Sheets endpoints (Pagamentos + Comportamento + Aquisição) ───────── */
 
 async function handleSheetsBookings(_req: VercelRequest, res: VercelResponse) {
@@ -682,9 +709,11 @@ async function handleSheetsBookings(_req: VercelRequest, res: VercelResponse) {
       confCustomers.add(email);
 
       // Series diária — agrupa pelo dia da criação (coluna N do Sheets).
-      // Se row não tem timestamp parseável, ignora (sem ruído na curva).
-      const ts = new Date(criado).getTime();
-      if (Number.isFinite(ts) && ts > 0) {
+      // Apps Script ocasionalmente grava o sessionId admin no lugar do
+      // timestamp ISO (formato "admin-new-{Date.now()}" ou "admin-direct-{ms}").
+      // Esses ainda são parseáveis — o número após o prefixo é Unix ms.
+      const ts = parseBookingTimestamp(criado);
+      if (ts > 0) {
         const dateKey = new Date(ts).toISOString().slice(0, 10);
         dailyConfirmedMap[dateKey] = (dailyConfirmedMap[dateKey] || 0) + 1;
       }
@@ -709,8 +738,8 @@ async function handleSheetsBookings(_req: VercelRequest, res: VercelResponse) {
   }
 
   recent.sort((a, b) => {
-    const ta = new Date(a.criado_em).getTime() || 0;
-    const tb = new Date(b.criado_em).getTime() || 0;
+    const ta = parseBookingTimestamp(a.criado_em);
+    const tb = parseBookingTimestamp(b.criado_em);
     return tb - ta;
   });
 
@@ -1726,7 +1755,7 @@ async function handleEconomics(req: VercelRequest, res: VercelResponse) {
     if (normalizeStatus(String(row[12] || '')) !== 'confirmado') continue;
     const valor = parseFloat(String(row[6] || '').replace(/[^\d,.-]/g, '').replace(',', '.')) || 0;
     if (valor <= 0) continue; // ignora rows sem valor (provavelmente teste/admin manual)
-    const createdAt = new Date(String(row[13] || '')).getTime() || 0;
+    const createdAt = parseBookingTimestamp(String(row[13] || ''));
     confirmed.push({
       id:        String(row[0]),
       createdAt,
