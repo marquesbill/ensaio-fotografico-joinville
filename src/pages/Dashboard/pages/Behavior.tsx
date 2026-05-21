@@ -461,14 +461,14 @@ export function Behavior({ token }: { token: string }) {
 
 /* Gráfico de crescimento de leads — barras diárias com gradiente +
  * curva de velocidade (1ª derivada suavizada = média móvel de 7 dias) +
- * curva acumulada de leads vs curva acumulada de clientes (comparativo
- * topo do funil → fechamento). */
+ * curva acumulada de leads vs curva acumulada de pacotes fechados
+ * (comparativo topo do funil → fechamento). */
 function LeadsGrowthChart({
   daily, bookingsDaily, rangeLabel, loading,
 }: {
   daily: Array<{ date: string; count: number }>;
-  /** Diário de ensaios confirmados (lifetime). Será alinhado ao mesmo range
-   *  de datas que `daily` pra a curva ficar comparável visualmente. */
+  /** Diário de pacotes fechados (status=confirmado, 1 row = 1 pacote).
+   *  Lifetime — alinhado ao mesmo range de `daily` pra comparar visualmente. */
   bookingsDaily?: Array<{ date: string; count: number }>;
   rangeLabel: string;
   loading: boolean;
@@ -536,7 +536,7 @@ function LeadsGrowthChart({
     <div className="rounded-2xl border border-white/10 bg-white/[0.03] backdrop-blur-sm p-5 mb-6">
       <div className="flex items-baseline justify-between mb-4 flex-wrap gap-2">
         <div>
-          <h3 className="text-sm font-bold text-white">Crescimento de leads vs clientes</h3>
+          <h3 className="text-sm font-bold text-white">Crescimento de leads vs pacotes fechados</h3>
           <p className="text-[11px] text-[#d4baeb]/50 mt-0.5">
             Captures por dia ({rangeLabel}) — barras = diário · curvas = acumulados · velocidade ({window}d)
           </p>
@@ -549,7 +549,7 @@ function LeadsGrowthChart({
             </p>
           </div>
           <div className="text-right">
-            <p className="text-[10px] uppercase tracking-wider text-[#c5a3d4]/50 font-semibold">Clientes</p>
+            <p className="text-[10px] uppercase tracking-wider text-[#c5a3d4]/50 font-semibold">Pacotes fechados</p>
             <p className="font-black tabular-nums text-xl mt-0.5" style={{ color: '#4ade80' }}>
               {loading ? '—' : totalBookings.toLocaleString('pt-BR')}
               {!loading && total > 0 && (
@@ -701,7 +701,7 @@ function LeadsGrowthChart({
             </span>
             <span className="flex items-center gap-1.5">
               <span className="inline-block w-3 h-0.5 rounded-full" style={{ background: '#4ade80' }} />
-              Clientes acumulados ({totalBookings.toLocaleString('pt-BR')})
+              Pacotes fechados ({totalBookings.toLocaleString('pt-BR')})
             </span>
           </div>
         </div>
