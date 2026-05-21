@@ -379,10 +379,13 @@ function NewBookingModal({
   onClose, onSubmit, loading,
 }: {
   onClose: () => void;
-  onSubmit: (data: { name: string; email: string; whatsapp: string; instagram: string; instagramBailarina: string; nomeBailarina: string; numBailarinas: number; date: string; time: string; packageKey: string }, confirm: boolean) => void;
+  onSubmit: (data: { name: string; email: string; whatsapp: string; instagram: string; instagramBailarina: string; nomeBailarina: string; numBailarinas: number; date: string; time: string; packageKey: string }, confirm: boolean, gateway?: 'mp' | 'asaas') => void;
   loading: boolean;
 }) {
   const PACKAGES = usePackages();
+  // Gateway pro "Criar + gerar link" — default MP (parcela em 6x; ASAAS ainda
+  // não libera parcelamento). Ignorado no "Confirmar direto".
+  const [gateway,             setGateway]             = useState<'mp' | 'asaas'>('mp');
   const [name,                setName]                = useState('');
   const [email,               setEmail]               = useState('');
   const [whatsapp,            setWhatsapp]            = useState('');
@@ -422,7 +425,7 @@ function NewBookingModal({
       instagram: instagram.trim(), instagramBailarina: instagramBailarina.trim(), nomeBailarina: nomeBailarina.trim(),
       numBailarinas,
       date, time, packageKey: pkgKey,
-    }, confirm);
+    }, confirm, gateway);
   }
 
   return (
@@ -554,7 +557,33 @@ function NewBookingModal({
       </div>
 
       {/* Actions */}
-      <div className="mt-5 space-y-2">
+      <div className="mt-5 space-y-2.5">
+        {/* Seletor de gateway — só afeta "Criar + gerar link" */}
+        <div>
+          <label className="block text-xs font-semibold text-gray-600 mb-1 uppercase tracking-wide">Gerar link via</label>
+          <div className="grid grid-cols-2 gap-2">
+            {([
+              { key: 'mp'    as const, label: 'Mercado Pago', hint: 'parcela 6x' },
+              { key: 'asaas' as const, label: 'ASAAS',        hint: 'à vista'    },
+            ]).map(opt => (
+              <button
+                key={opt.key}
+                type="button"
+                onClick={() => setGateway(opt.key)}
+                className={`flex flex-col items-start px-3 py-2 rounded-lg border text-left transition-colors
+                  ${gateway === opt.key
+                    ? 'border-[#7a3f8f] bg-purple-50'
+                    : 'border-gray-200 hover:border-gray-300'}`}
+              >
+                <span className={`text-sm font-semibold ${gateway === opt.key ? 'text-[#7a3f8f]' : 'text-gray-600'}`}>
+                  {opt.label}
+                </span>
+                <span className="text-[10px] text-gray-400">{opt.hint}</span>
+              </button>
+            ))}
+          </div>
+        </div>
+
         <div className="grid grid-cols-2 gap-3">
           <button
             onClick={() => submit(false)}
@@ -574,8 +603,8 @@ function NewBookingModal({
           </button>
         </div>
         <p className="text-[10px] text-center text-gray-400">
-          "Criar + gerar link" cria o agendamento pendente e retorna um link MP (3 dias).<br />
-          "Confirmar direto" confirma imediatamente sem necessidade de pagamento online.
+          "Criar + gerar link" cria o agendamento pendente e retorna um link de pagamento (3 dias)<br />
+          no gateway escolhido acima. "Confirmar direto" confirma sem pagamento online.
         </p>
       </div>
     </Overlay>
@@ -713,8 +742,9 @@ function EditBookingModal({
 }
 
 /* ─────────────────── Payment Link Modal ────────────────────── */
-function PaymentLinkModal({ url, onClose }: { url: string; onClose: () => void }) {
+function PaymentLinkModal({ url, gateway, onClose }: { url: string; gateway: 'mp' | 'asaas'; onClose: () => void }) {
   const [copied, setCopied] = useState(false);
+  const gatewayLabel = gateway === 'mp' ? 'Mercado Pago' : 'ASAAS';
   function copy() {
     navigator.clipboard.writeText(url).then(() => {
       setCopied(true);
@@ -730,7 +760,7 @@ function PaymentLinkModal({ url, onClose }: { url: string; onClose: () => void }
         </div>
         <div>
           <h2 className="text-base font-bold text-[#352D39]">Link de Pagamento</h2>
-          <p className="text-xs text-gray-500">Válido por 7 dias · Mercado Pago</p>
+          <p className="text-xs text-gray-500">Válido por 3 dias · {gatewayLabel}</p>
         </div>
       </div>
 
@@ -754,6 +784,72 @@ function PaymentLinkModal({ url, onClose }: { url: string; onClose: () => void }
           <Link2 size={14} /> Abrir
         </a>
       </div>
+    </Overlay>
+  );
+}
+
+/* ───────────────── Gateway Picker Modal ─────────────────────── */
+/* Mari escolhe ASAAS ou Mercado Pago ao gerar cobrança de um agendamento.
+   Enquanto o parcelamento ASAAS não está liberado (conta nível 1), o MP é a
+   opção pra vender parcelado em 6x. */
+function GatewayPickerModal({
+  booking, onClose, onPick,
+}: {
+  booking: Booking;
+  onClose: () => void;
+  onPick: (gateway: 'mp' | 'asaas') => void;
+}) {
+  return (
+    <Overlay onClose={onClose}>
+      <div className="flex items-center gap-3 mb-4">
+        <div className="w-10 h-10 rounded-full flex items-center justify-center shrink-0"
+             style={{ background: 'linear-gradient(135deg,#7a3f8f,#e87060)' }}>
+          <Link2 size={18} className="text-white" />
+        </div>
+        <div>
+          <h2 className="text-base font-bold text-[#352D39]">Gerar cobrança</h2>
+          <p className="text-xs text-gray-500">{booking.name} · escolha o meio de pagamento</p>
+        </div>
+      </div>
+
+      <div className="space-y-2.5">
+        <button
+          onClick={() => onPick('mp')}
+          className="w-full text-left rounded-xl border border-gray-200 px-4 py-3 hover:border-[#7a3f8f] hover:bg-purple-50 transition-colors"
+        >
+          <div className="flex items-center justify-between">
+            <span className="text-sm font-bold text-[#352D39]">Mercado Pago</span>
+            <span className="text-[10px] font-semibold uppercase tracking-wide text-green-700 bg-green-100 rounded px-1.5 py-0.5">
+              parcela 6x
+            </span>
+          </div>
+          <p className="text-xs text-gray-500 mt-0.5">
+            Cartão em até 6x sem juros, PIX e boleto. Use pra quem quer parcelar.
+          </p>
+        </button>
+
+        <button
+          onClick={() => onPick('asaas')}
+          className="w-full text-left rounded-xl border border-gray-200 px-4 py-3 hover:border-[#7a3f8f] hover:bg-purple-50 transition-colors"
+        >
+          <div className="flex items-center justify-between">
+            <span className="text-sm font-bold text-[#352D39]">ASAAS</span>
+            <span className="text-[10px] font-semibold uppercase tracking-wide text-gray-500 bg-gray-100 rounded px-1.5 py-0.5">
+              à vista
+            </span>
+          </div>
+          <p className="text-xs text-gray-500 mt-0.5">
+            PIX, boleto e cartão à vista. Parcelamento ainda não liberado na conta.
+          </p>
+        </button>
+      </div>
+
+      <button
+        onClick={onClose}
+        className="w-full mt-3 py-2 text-xs font-semibold text-gray-400 hover:text-gray-600 transition-colors"
+      >
+        Cancelar
+      </button>
     </Overlay>
   );
 }
@@ -1211,7 +1307,8 @@ function Dashboard({
   const [editTarget,       setEditTarget]       = useState<Booking | null>(null);
   const [actionLoading,    setActionLoading]    = useState(false);
   const [toast,            setToast]            = useState<{ msg: string; type: 'ok' | 'err' } | null>(null);
-  const [paymentLinkUrl,   setPaymentLinkUrl]   = useState<string | null>(null);
+  const [paymentLink,      setPaymentLink]      = useState<{ url: string; gateway: 'mp' | 'asaas' } | null>(null);
+  const [gatewayPicker,    setGatewayPicker]    = useState<Booking | null>(null);
   const [showNewBooking,   setShowNewBooking]   = useState(false);
 
   const headers = { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` };
@@ -1245,7 +1342,7 @@ function Dashboard({
     const POLL_MS = 15_000;
     const isBusy = () =>
       !!cancelTarget || !!rescheduleTarget || !!editTarget ||
-      showNewBooking || actionLoading || !!paymentLinkUrl ||
+      showNewBooking || actionLoading || !!paymentLink || !!gatewayPicker ||
       document.visibilityState !== 'visible';
 
     const silentRefetch = async () => {
@@ -1274,7 +1371,7 @@ function Dashboard({
       window.clearInterval(id);
       document.removeEventListener('visibilitychange', onVis);
     };
-  }, [token, cancelTarget, rescheduleTarget, editTarget, showNewBooking, actionLoading, paymentLinkUrl]);
+  }, [token, cancelTarget, rescheduleTarget, editTarget, showNewBooking, actionLoading, paymentLink, gatewayPicker]);
 
   async function handleCancel(booking: Booking, reason: string) {
     setActionLoading(true);
@@ -1338,18 +1435,19 @@ function Dashboard({
   async function handleCreateBooking(
     data: { name: string; email: string; whatsapp: string; instagram: string; instagramBailarina: string; nomeBailarina: string; numBailarinas: number; date: string; time: string; packageKey: string },
     confirm: boolean,
+    gateway?: 'mp' | 'asaas',
   ) {
     setActionLoading(true);
     try {
       const r = await fetch(`${API}/api/admin-bookings`, {
         method: 'POST', headers,
-        body: JSON.stringify({ action: 'create', ...data, confirm }),
+        body: JSON.stringify({ action: 'create', ...data, confirm, gateway }),
       });
       const json = await r.json();
       if (!r.ok) throw new Error(json.error || 'Erro');
       setShowNewBooking(false);
       if (!confirm && json.paymentUrl) {
-        setPaymentLinkUrl(json.paymentUrl);
+        setPaymentLink({ url: json.paymentUrl, gateway: gateway ?? 'asaas' });
       } else {
         setToast({ msg: `Agendamento de ${data.name} criado e confirmado`, type: 'ok' });
       }
@@ -1382,13 +1480,21 @@ function Dashboard({
     }
   }
 
-  async function handleGetPaymentLink(booking: Booking) {
+  // Botão "Gerar link" → abre o seletor de gateway (ASAAS ou MercadoPago).
+  // A geração real acontece em doGeneratePaymentLink após a Mari escolher.
+  function handleGetPaymentLink(booking: Booking) {
+    setGatewayPicker(booking);
+  }
+
+  async function doGeneratePaymentLink(booking: Booking, gateway: 'mp' | 'asaas') {
+    setGatewayPicker(null);
     setActionLoading(true);
     try {
       const r = await fetch(`${API}/api/admin-bookings`, {
         method: 'POST', headers,
         body: JSON.stringify({
           action:           'paymentLink',
+          gateway,
           bookingId:        booking.id,
           name:             booking.name,
           email:            booking.email ?? '',
@@ -1402,7 +1508,7 @@ function Dashboard({
       });
       const json = await r.json();
       if (!r.ok) throw new Error(json.error || 'Erro');
-      setPaymentLinkUrl(json.url);
+      setPaymentLink({ url: json.url, gateway });
       await fetchBookings();
     } catch (e) {
       setToast({ msg: e instanceof Error ? e.message : 'Erro ao gerar link', type: 'err' });
@@ -1607,9 +1713,22 @@ function Dashboard({
         />
       )}
 
+      {/* Seletor de gateway — abre ao clicar "Gerar link" num agendamento */}
+      {gatewayPicker && (
+        <GatewayPickerModal
+          booking={gatewayPicker}
+          onClose={() => setGatewayPicker(null)}
+          onPick={(gw) => doGeneratePaymentLink(gatewayPicker, gw)}
+        />
+      )}
+
       {/* Payment link modal */}
-      {paymentLinkUrl && (
-        <PaymentLinkModal url={paymentLinkUrl} onClose={() => setPaymentLinkUrl(null)} />
+      {paymentLink && (
+        <PaymentLinkModal
+          url={paymentLink.url}
+          gateway={paymentLink.gateway}
+          onClose={() => setPaymentLink(null)}
+        />
       )}
 
       {/* Action loading overlay (for get-payment-link / confirm-payment, not modals) */}

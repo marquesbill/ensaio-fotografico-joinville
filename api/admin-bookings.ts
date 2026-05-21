@@ -35,6 +35,30 @@ const MP_TOKEN        = process.env.MERCADOPAGO_ACCESS_TOKEN!;
 const GATEWAY         = (process.env.PAYMENT_GATEWAY || 'mp').toLowerCase();
 const GA4_PROPERTY_ID = process.env.GA4_PROPERTY_ID || '494185724';
 
+/**
+ * Resolve o gateway pra uma operação de cobrança no /admin. A Mari escolhe
+ * no painel (ASAAS ou MercadoPago) e o frontend manda `gateway` no body —
+ * permite, ex., gerar link MP (que parcela em 6x) enquanto o parcelamento
+ * ASAAS não está liberado. Sem `gateway` no request, cai no default global
+ * (env PAYMENT_GATEWAY).
+ */
+function resolveGateway(raw: unknown): 'mp' | 'asaas' {
+  const g = String(raw || '').toLowerCase();
+  if (g === 'mp' || g === 'asaas') return g;
+  return GATEWAY === 'asaas' ? 'asaas' : 'mp';
+}
+
+/**
+ * Detecta o gateway de um `externalId` (coluna stripeSession do Sheets) pelo
+ * formato do ID. Necessário pra cancelar o link ANTIGO no gateway certo
+ * quando a Mari regenera a cobrança trocando de gateway (ex: link velho era
+ * ASAAS, novo é MP). MP preference id = "<dígitos>-<uuid>"; ASAAS paymentLink
+ * id = alfanumérico curto sem hífen no prefixo.
+ */
+function detectGatewayFromId(externalId: string): 'mp' | 'asaas' {
+  return /^\d+-/.test(String(externalId || '')) ? 'mp' : 'asaas';
+}
+
 /* ───────── ASAAS helpers (inlined — Vercel não bundla módulos _*.ts) ───────── */
 
 const ASAAS_API_KEY = process.env.ASAAS_API_KEY || '';
@@ -2791,14 +2815,15 @@ async function handleCreate(req: VercelRequest, res: VercelResponse, auth: { use
     console.error('[admin-bookings/create] pre-flight slot check failed', e);
   }
 
-  // Path A: gera link de pagamento — branch pelo gateway ativo (ASAAS ou MP).
-  // Mesma feature flag PAYMENT_GATEWAY usada em handlePaymentLink e create-checkout.
+  // Path A: gera link de pagamento — gateway escolhido pela Mari no painel
+  // (req.body.gateway); fallback no default global PAYMENT_GATEWAY.
   if (!confirm) {
     try {
+      const gw = resolveGateway((req.body as { gateway?: string }).gateway);
       let paymentUrl: string;
       let externalId: string;
 
-      if (GATEWAY === 'asaas') {
+      if (gw === 'asaas') {
         const link = await createAsaasPaymentLinkAdmin({
           name:              `Ensaio Fotográfico em Joinville — Pacote ${pkg.name}`,
           description:       `${date.split('-').reverse().join('/')} às ${time} · ${pkg.duration} min · ${nb} ${nb === 1 ? 'bailarina' : 'bailarinas'}`,
@@ -2855,7 +2880,7 @@ async function handleCreate(req: VercelRequest, res: VercelResponse, auth: { use
             nomeBailarina:      nomeBailarina || '',
             numBailarinas:      nb,
             stripeSession:      externalId,
-            gateway:            GATEWAY,
+            gateway:            gw,
             source:             'admin',
           }),
         });
@@ -2864,10 +2889,10 @@ async function handleCreate(req: VercelRequest, res: VercelResponse, auth: { use
       } catch (pendingErr) {
         const errMsg = pendingErr instanceof Error ? pendingErr.message : String(pendingErr);
         console.error(`[admin-bookings/create] createPending FAILED após paymentLink criado: ${errMsg} — rollback...`);
-        if (GATEWAY === 'asaas' && externalId) {
+        if (gw === 'asaas' && externalId) {
           await asaasApi(`/paymentLinks/${externalId}`, { method: 'DELETE' })
             .catch(e => console.error('[admin-bookings/create] rollback ASAAS falhou:', e instanceof Error ? e.message : e));
-        } else if (GATEWAY === 'mp' && externalId) {
+        } else if (gw === 'mp' && externalId) {
           await fetch(`https://api.mercadopago.com/checkout/preferences/${externalId}`, {
             method: 'PUT',
             headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${MP_TOKEN}` },
@@ -2883,7 +2908,7 @@ async function handleCreate(req: VercelRequest, res: VercelResponse, auth: { use
 
       await fetch(SCRIPT_URL, {
         method: 'POST', headers: { 'Content-Type': 'text/plain' },
-        body: JSON.stringify({ action: 'addLog', message: `${logUser} criou agendamento pendente para ${name} (${date} ${time}) e gerou link de pgmto (${GATEWAY})`, origin: 'painel' }),
+        body: JSON.stringify({ action: 'addLog', message: `${logUser} criou agendamento pendente para ${name} (${date} ${time}) e gerou link de pgmto (${gw})`, origin: 'painel' }),
       }).catch(() => {});
 
       return res.status(200).json({ bookingId, paymentUrl });
@@ -3042,23 +3067,29 @@ async function handlePaymentLink(req: VercelRequest, res: VercelResponse, auth: 
     nb = parsed;
   }
 
+  // Gateway escolhido pela Mari no painel pro link NOVO; fallback no default.
+  const gw = resolveGateway((req.body as { gateway?: string }).gateway);
+
   try {
     // 0. Cancela link de pagamento ANTIGO no gateway antes de criar o novo.
     //    Evita cenário: Mariane gera link novo, mas cliente paga pelo link
     //    antigo (que ele já tinha no email) → webhook não acha pending →
     //    cliente paga e não confirma → Mariane gera mais um → cliente paga 2x.
     //
+    //    O link antigo pode ser de gateway DIFERENTE do novo (ex: regerar um
+    //    link ASAAS como MP) — detecta pelo formato do ID, não pelo gw novo.
     //    Best-effort: erro não bloqueia (link antigo já pode estar expirado/inválido).
     //    "admin-{tipo}-{ts}" não vai pra gateway (são confirmações manuais).
     if (oldStripeSession && !oldStripeSession.startsWith('admin-')) {
-      if (GATEWAY === 'asaas') {
+      const oldGateway = detectGatewayFromId(oldStripeSession);
+      if (oldGateway === 'asaas') {
         try {
           await asaasApi(`/paymentLinks/${oldStripeSession}`, { method: 'DELETE' });
           console.log(`[handlePaymentLink] cancelled old ASAAS paymentLink ${oldStripeSession}`);
         } catch (e) {
           console.warn(`[handlePaymentLink] failed to cancel old ASAAS link (best-effort): ${e instanceof Error ? e.message : e}`);
         }
-      } else if (GATEWAY === 'mp') {
+      } else if (oldGateway === 'mp') {
         // MP preference não é deletável, só pode ter expiration alterada.
         // Força expiration retroativa (1 min atrás) — efetivamente invalida.
         try {
@@ -3077,14 +3108,13 @@ async function handlePaymentLink(req: VercelRequest, res: VercelResponse, auth: 
       }
     }
 
-    // 1. Cria link de pagamento — branch pelo gateway ativo (mesma feature flag
-    //    PAYMENT_GATEWAY usada em api/create-checkout.ts).
+    // 1. Cria link de pagamento — gateway escolhido pela Mari (gw).
     //    Em ambos os casos guardamos `externalId` no Sheets (campo legado
     //    `stripeSession`) que o webhook usa pra parear o pagamento.
     let url:        string;
     let externalId: string;
 
-    if (GATEWAY === 'asaas') {
+    if (gw === 'asaas') {
       const link = await createAsaasPaymentLinkAdmin({
         name:              `Ensaio Fotográfico em Joinville — Pacote ${pkg.name}`,
         description:       `${date.split('-').reverse().join('/')} às ${time} · ${pkg.duration} min · ${nb} ${nb === 1 ? 'bailarina' : 'bailarinas'}`,
@@ -3154,7 +3184,7 @@ async function handlePaymentLink(req: VercelRequest, res: VercelResponse, auth: 
           nomeBailarina:      nomeBailarina || '',
           numBailarinas:      nb,
           stripeSession:      externalId,    // MP preferenceId OR ASAAS paymentLinkId
-          gateway:            GATEWAY,
+          gateway:            gw,
           source:             'admin',
         }),
       });
@@ -3162,10 +3192,10 @@ async function handlePaymentLink(req: VercelRequest, res: VercelResponse, auth: 
     } catch (pendingErr) {
       const errMsg = pendingErr instanceof Error ? pendingErr.message : String(pendingErr);
       console.error(`[admin-bookings/paymentLink] createPending FAILED — rollback novo link: ${errMsg}`);
-      if (GATEWAY === 'asaas' && externalId) {
+      if (gw === 'asaas' && externalId) {
         await asaasApi(`/paymentLinks/${externalId}`, { method: 'DELETE' })
           .catch(e => console.error('[admin-bookings/paymentLink] rollback ASAAS falhou:', e instanceof Error ? e.message : e));
-      } else if (GATEWAY === 'mp' && externalId) {
+      } else if (gw === 'mp' && externalId) {
         await fetch(`https://api.mercadopago.com/checkout/preferences/${externalId}`, {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${MP_TOKEN}` },
@@ -3183,7 +3213,7 @@ async function handlePaymentLink(req: VercelRequest, res: VercelResponse, auth: 
       method: 'POST', headers: { 'Content-Type': 'text/plain' },
       body: JSON.stringify({
         action:  'addLog',
-        message: `${auth.user} gerou novo link de pagamento (${GATEWAY}) para ${name} (${date} ${time})`,
+        message: `${auth.user} gerou novo link de pagamento (${gw}) para ${name} (${date} ${time})`,
         origin:  'painel',
       }),
     }).catch(() => {});
