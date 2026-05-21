@@ -410,6 +410,7 @@ export function Engagement({ token }: { token: string }) {
           value={data ? `${(data.kpis.bounceRate.value * 100).toFixed(1)}%` : '—'}
           deltaPct={data?.kpis.bounceRate.deltaPct ?? null}
           deltaLabel={`vs ${RANGE_OPTIONS.find((r) => r.key === range)?.label} anteriores`}
+          invertedDelta  /* bounce descer = melhor */
           icon={Bounce} source="GA4"
           hint="% sessões <10s ou 1 só pageview (menor = melhor)"
           loading={loading}

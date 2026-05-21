@@ -16,6 +16,7 @@ import { Package, CheckCircle2, Clock, TrendingUp, Users, Wallet, Target } from 
 
 import { KpiCard } from '../components/KpiCard';
 import { DataSourceBadge } from '../components/DataSourceBadge';
+import { DeltaBadge } from '../components/DeltaBadge';
 
 interface PackageStat { customers: number; ensaios: number }
 
@@ -45,16 +46,20 @@ interface BookingsData {
 
 interface EconomicsData {
   fetched_at: string;
-  revenue: { total: number; ensaios: number; avg_ticket: number };
+  deltas_window?: { days: number; note: string };
+  revenue: { total: number; ensaios: number; avg_ticket: number; delta_pct?: number | null; ensaios_delta_pct?: number | null };
   costs: {
-    meta_ads: { gross: number; net: number; tax_rate: number; error: string | null };
+    meta_ads: { gross: number; net: number; tax_rate: number; error: string | null; delta_pct?: number | null };
     elisa:    { total: number; per_ensaio: number };
     mari:     { fixed: number; commission: number; total: number; per_ensaio: number };
     total:    number;
+    total_delta_pct?: number | null;
   };
   kpis: {
     roas:     number;
+    roas_delta_pct?: number | null;
     cpa_real: number;
+    cpa_real_delta_pct?: number | null;
     cpa_meta: number;
     profit:   number;
     breakeven: { deficit: number; ensaios_needed: number; progress_pct: number };
@@ -333,8 +338,9 @@ function EconomicsBlock({
           <p className="text-[10px] uppercase tracking-widest text-[#c5a3d4]/60 font-bold flex items-center gap-1.5">
             <Target className="w-3 h-3" /> ROAS
           </p>
-          <p className="font-black tabular-nums text-4xl mt-1" style={{ color: roasColor }}>
+          <p className="font-black tabular-nums text-4xl mt-1 flex items-baseline gap-2" style={{ color: roasColor }}>
             {kpis.roas.toFixed(2)}x
+            <DeltaBadge value={kpis.roas_delta_pct ?? null} size="sm" title={economics.deltas_window?.note} />
           </p>
           {/* Barra de progresso pra break-even — visual auxiliar, mantém */}
           <div className="h-1.5 bg-white/5 rounded-full overflow-hidden mt-3">
@@ -347,22 +353,30 @@ function EconomicsBlock({
           </div>
         </div>
 
-        {/* 3 KPIs — sem hint (só dado limpo) */}
+        {/* 3 KPIs — KpiCard agora com deltaPct + invertedDelta onde aplicável */}
         <KpiCard
           label="Receita realizada"
           value={fmtBRL(revenue.total)}
+          deltaPct={revenue.delta_pct ?? null}
+          deltaLabel={economics.deltas_window?.note}
           icon={TrendingUp} source="Sheets"
           loading={false}
         />
         <KpiCard
           label="Custo equipe + ads"
           value={fmtBRL(costs.total)}
+          deltaPct={costs.total_delta_pct ?? null}
+          deltaLabel={economics.deltas_window?.note}
+          invertedDelta  /* subir = vermelho (custo aumentou) */
           icon={Wallet} source="Meta + Sheets"
           loading={false}
         />
         <KpiCard
           label="CPA real"
           value={revenue.ensaios > 0 ? fmtBRL(kpis.cpa_real) : '—'}
+          deltaPct={kpis.cpa_real_delta_pct ?? null}
+          deltaLabel={economics.deltas_window?.note}
+          invertedDelta  /* CPA descer = melhor */
           icon={Target} source="Calculado"
           loading={false}
         />

@@ -17,6 +17,7 @@ import { KpiCard } from '../components/KpiCard';
 import { ChannelBar } from '../components/ChannelBar';
 import { DataTable } from '../components/DataTable';
 import { DataSourceBadge } from '../components/DataSourceBadge';
+import { DeltaBadge } from '../components/DeltaBadge';
 
 /**
  * Formata idade do objeto Meta (adset/ad) em formato compacto pra coluna
@@ -91,6 +92,7 @@ interface LeadsData {
   by_source: Record<string, number>;
   by_intent: { sim: number; nao: number; none: number };
   daily: Array<{ date: string; count: number }>;
+  deltas?: { total: number | null; intent_sim: number | null };
 }
 
 interface MetaAdsData {
@@ -101,6 +103,11 @@ interface MetaAdsData {
     impressions: number; clicks: number; reach: number;
     ctr: number; cpc: number; cpm: number; frequency: number;
     leads: number; purchases: number; cpl: number; cpa: number;
+    deltas?: {
+      spend: number | null; leads: number | null; cpl: number | null;
+      cpm: number | null; cpc: number | null; ctr: number | null;
+      impressions: number | null;
+    };
   };
   campaigns: Array<{
     id: string; name: string;
@@ -293,8 +300,9 @@ export function Acquisition({ token }: { token: string }) {
               Leads totais capturados
               <span className="text-[8px] uppercase tracking-wider px-1.5 py-0.5 rounded bg-[#7a3f8f]/30 text-[#d4baeb] not-italic">Sheets · qualquer caminho</span>
             </p>
-            <p className="font-black text-4xl text-white tabular-nums mt-1">
+            <p className="font-black text-4xl text-white tabular-nums mt-1 flex items-baseline gap-2 flex-wrap">
               {loading ? '—' : (leads?.total ?? 0).toLocaleString('pt-BR')}
+              {!loading && <DeltaBadge value={leads?.deltas?.total ?? null} title={`vs ${RANGE_OPTIONS.find(r => r.key === range)?.label} anteriores`} />}
             </p>
             <p className="text-[11px] text-[#d4baeb]/50 mt-1">
               {leads ? `~${(leads.total / Math.max(RANGE_OPTIONS.find(r => r.key === range)?.days || 28, 1)).toFixed(1)} leads/dia · inclui orgânico, direto, link da bio` : ''}
@@ -317,8 +325,9 @@ export function Acquisition({ token }: { token: string }) {
             </div>
             <div>
               <p className="text-[10px] uppercase tracking-wider text-[#e87060]/80 font-semibold">High intent 🔥</p>
-              <p className="text-[#e87060] font-black tabular-nums text-2xl mt-0.5">
+              <p className="text-[#e87060] font-black tabular-nums text-2xl mt-0.5 flex items-baseline gap-1.5">
                 {loading ? '—' : (leads?.by_intent.sim ?? 0).toLocaleString('pt-BR')}
+                {!loading && <DeltaBadge value={leads?.deltas?.intent_sim ?? null} size="sm" title={`vs ${RANGE_OPTIONS.find(r => r.key === range)?.label} anteriores`} />}
               </p>
               <p className="text-[9px] text-[#e87060]/60 mt-0.5">"Vai pra Joinville: Sim"</p>
             </div>
@@ -363,8 +372,9 @@ export function Acquisition({ token }: { token: string }) {
               <p className="text-[10px] uppercase tracking-widest text-blue-300/70 font-bold">
                 Meta Ads · gasto real (com imposto) e CPL no período
               </p>
-              <p className="font-black text-3xl text-white tabular-nums mt-1">
+              <p className="font-black text-3xl text-white tabular-nums mt-1 flex items-baseline gap-2 flex-wrap">
                 R$ {meta.account.spend.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                <DeltaBadge value={meta.account.deltas?.spend ?? null} title={`spend vs ${RANGE_OPTIONS.find(r => r.key === range)?.label} anteriores`} />
               </p>
               <p className="text-[11px] text-[#d4baeb]/50 mt-1">
                 <span title={`Sem imposto: R$ ${meta.account.spend_net.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`}>
@@ -379,22 +389,29 @@ export function Acquisition({ token }: { token: string }) {
             <div className="flex items-baseline gap-6 text-sm">
               <div>
                 <p className="text-[10px] uppercase tracking-wider text-white/40 font-semibold">Leads (Meta)</p>
-                <p className="text-[#e87060] font-black tabular-nums text-2xl mt-0.5">{meta.account.leads}</p>
+                <p className="text-[#e87060] font-black tabular-nums text-2xl mt-0.5 flex items-baseline gap-1.5">
+                  {meta.account.leads}
+                  <DeltaBadge value={meta.account.deltas?.leads ?? null} size="sm" title={`vs ${RANGE_OPTIONS.find(r => r.key === range)?.label} anteriores`} />
+                </p>
                 <p className="text-[9px] text-white/30 mt-0.5">Pixel Lead events</p>
               </div>
               <div>
                 <p className="text-[10px] uppercase tracking-wider text-white/40 font-semibold">CPL</p>
-                <p className="text-white font-black tabular-nums text-2xl mt-0.5">
+                <p className="text-white font-black tabular-nums text-2xl mt-0.5 flex items-baseline gap-1.5">
                   {meta.account.cpl > 0 ? `R$ ${meta.account.cpl.toFixed(2)}` : '—'}
+                  <DeltaBadge value={meta.account.deltas?.cpl ?? null} inverted size="sm" title={`descer = melhor · vs ${RANGE_OPTIONS.find(r => r.key === range)?.label} anteriores`} />
                 </p>
                 <p className="text-[9px] text-white/30 mt-0.5">gross / leads Meta</p>
               </div>
               <div>
                 <p className="text-[10px] uppercase tracking-wider text-white/40 font-semibold">CPM · CTR</p>
-                <p className="text-white font-black tabular-nums text-2xl mt-0.5">
+                <p className="text-white font-black tabular-nums text-2xl mt-0.5 flex items-baseline gap-1.5">
                   R$ {meta.account.cpm.toFixed(2)} · {meta.account.ctr.toFixed(2)}%
                 </p>
-                <p className="text-[9px] text-white/30 mt-0.5">eficiência</p>
+                <p className="text-[9px] text-white/30 mt-0.5 flex items-center gap-1.5">
+                  <DeltaBadge value={meta.account.deltas?.cpm ?? null} inverted size="sm" title="CPM (descer = melhor)" />
+                  <DeltaBadge value={meta.account.deltas?.ctr ?? null} size="sm" title="CTR (subir = melhor)" />
+                </p>
               </div>
             </div>
           </div>

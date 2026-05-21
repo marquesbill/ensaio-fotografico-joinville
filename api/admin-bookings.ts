@@ -746,12 +746,19 @@ async function handleSheetsLeads(req: VercelRequest, res: VercelResponse) {
   const rows = await fetchSheetRange(LEADS_SHEET_ID, 'A2:F1000');
 
   const cutoff = days > 0 ? Date.now() - days * 24 * 60 * 60 * 1000 : 0;
+  // Cutoff do período ANTERIOR (mesma duração, deslocado) — pra delta total/intent.
+  // Só faz sentido quando há range ativo (sem range = lifetime, não há comparação).
+  const prevCutoff = days > 0 ? Date.now() - 2 * days * 24 * 60 * 60 * 1000 : 0;
 
   const bySource: Record<string, number> = {};
   const byIntent: Record<string, number> = { sim: 0, nao: 0, none: 0 };
   const byState:  Record<string, number> = {};
   const byDDD:    Record<string, number> = {};
   const dailyMap: Record<string, number> = {};
+
+  // Contadores do período anterior (só pra delta — sem detalhamento)
+  let totalPrev = 0;
+  const byIntentPrev = { sim: 0, nao: 0, none: 0 };
 
   let total = 0;
   const recent: Array<{
@@ -769,6 +776,16 @@ async function handleSheetsLeads(req: VercelRequest, res: VercelResponse) {
 
     const ts = new Date(dh).getTime();
     if (Number.isNaN(ts)) continue;
+
+    // Período ANTERIOR (mesma duração que `days`, deslocado) — só conta totais.
+    if (prevCutoff > 0 && ts >= prevCutoff && ts < cutoff) {
+      totalPrev++;
+      if (vai === 'sim') byIntentPrev.sim++;
+      else if (vai.startsWith('nã') || vai === 'nao') byIntentPrev.nao++;
+      else byIntentPrev.none++;
+      continue;
+    }
+
     if (cutoff > 0 && ts < cutoff) continue;
 
     total++;
@@ -808,6 +825,10 @@ async function handleSheetsLeads(req: VercelRequest, res: VercelResponse) {
     .map(([date, count]) => ({ date, count }))
     .sort((a, b) => a.date.localeCompare(b.date));
 
+  // Deltas vs período anterior (mesma duração) — só faz sentido com range ativo
+  const totalDelta    = days > 0 ? pctDelta(total,        totalPrev)        : null;
+  const intentSimDelta = days > 0 ? pctDelta(byIntent.sim, byIntentPrev.sim) : null;
+
   return res.status(200).json({
     fetched_at:   new Date().toISOString(),
     next_refresh: new Date(Date.now() + 12 * 3600 * 1000).toISOString(),
@@ -819,6 +840,10 @@ async function handleSheetsLeads(req: VercelRequest, res: VercelResponse) {
     by_ddd:       dddList,
     daily,
     recent:       recent.slice(0, 20),
+    deltas: {
+      total:        totalDelta,
+      intent_sim:   intentSimDelta,
+    },
   });
 }
 
@@ -1385,21 +1410,31 @@ async function handleMetaAds(req: VercelRequest, res: VercelResponse) {
     return r.json() as Promise<{ data?: Array<Record<string, unknown>> }>;
   };
 
+  // Período anterior (pra delta vs período) — mesmo número de dias, deslocado
+  const sincePrev = new Date(Date.now() - 2 * days * 86400000).toISOString().slice(0, 10);
+  const untilPrev = new Date(Date.now() - days * 86400000).toISOString().slice(0, 10);
+  const timeRangePrev = encodeURIComponent(JSON.stringify({ since: sincePrev, until: untilPrev }));
+
   // 1. Account-level + 2. Per-campaign + 3. Per-adset + 4. Per-ad em paralelo.
   // 4 chamadas, ~500ms cada → ~500ms total porque é paralelo. Cache de 6h amortiza.
   //
   // Plus: metadata extra (5/6) com created_time pra calcular idade dos adsets/ads
   // — Meta API não expõe created_time em /insights, precisa de chamada dedicada.
   // limit alto (200) cobre conta inteira; se a conta crescer muito, paginar.
+  //
+  // E account-level do período ANTERIOR (7) pra computar delta_pct em spend,
+  // leads, CPL, CPM, CTR, CPC. Pros níveis campaign/adset/ad ficaria pesado
+  // (4 chamadas extras) e a UI das tabelas não precisa — só o card de spend.
   const metaAdsetsUrl = `https://graph.facebook.com/v19.0/${acctPath}/adsets?fields=id,created_time,start_time&limit=200&access_token=${token}`;
   const metaAdsUrl    = `https://graph.facebook.com/v19.0/${acctPath}/ads?fields=id,created_time&limit=500&access_token=${token}`;
-  const [accountJson, campaignJson, adsetJson, adJson, adsetMetaJson, adMetaJson] = await Promise.all([
+  const [accountJson, campaignJson, adsetJson, adJson, adsetMetaJson, adMetaJson, accountPrevJson] = await Promise.all([
     fetchMeta(`${baseUrl}?fields=${fields}&time_range=${timeRange}&access_token=${token}`),
     fetchMeta(`${baseUrl}?fields=campaign_name,campaign_id,${fields}&level=campaign&time_range=${timeRange}&access_token=${token}`),
     fetchMeta(`${baseUrl}?fields=adset_name,adset_id,campaign_name,campaign_id,${fields}&level=adset&time_range=${timeRange}&access_token=${token}`),
     fetchMeta(`${baseUrl}?fields=ad_name,ad_id,adset_name,adset_id,campaign_name,campaign_id,${fields}&level=ad&time_range=${timeRange}&access_token=${token}`),
     fetchMeta(metaAdsetsUrl).catch(() => ({ data: [] })),  // metadata é nice-to-have; falha não bloqueia
     fetchMeta(metaAdsUrl).catch(()    => ({ data: [] })),
+    fetchMeta(`${baseUrl}?fields=${fields}&time_range=${timeRangePrev}&access_token=${token}`).catch(() => ({ data: [] })),
   ]);
 
   // Mapeia metadata id → created_time pra resolver age_days nos loops abaixo
@@ -1450,21 +1485,49 @@ async function handleMetaAds(req: VercelRequest, res: VercelResponse) {
   const acctSpendGross = acctSpendNet * (1 + TAX_RATE);
   const taxMultiplier  = 1 + TAX_RATE;
 
+  // Período anterior — só pra deltas de KPIs principais
+  const acctPrev = accountPrevJson.data?.[0] || {};
+  const prevLeads     = extractActionCount(acctPrev.actions, LEAD_TYPES);
+  const prevSpendNet  = Number(acctPrev.spend) || 0;
+  const prevSpendGross = prevSpendNet * (1 + TAX_RATE);
+  const prevCpl = prevLeads > 0 ? prevSpendGross / prevLeads : 0;
+  const prevCpm = (Number(acctPrev.cpm) || 0) * taxMultiplier;
+  const prevCpc = (Number(acctPrev.cpc) || 0) * taxMultiplier;
+  const prevCtr = Number(acctPrev.ctr) || 0;
+  const prevImpressions = Number(acctPrev.impressions) || 0;
+
+  const curCpl = acctLeads > 0 ? acctSpendGross / acctLeads : 0;
+  const curCpm = (Number(acct.cpm) || 0) * taxMultiplier;
+  const curCpc = (Number(acct.cpc) || 0) * taxMultiplier;
+  const curCtr = Number(acct.ctr) || 0;
+  const curImpressions = Number(acct.impressions) || 0;
+
   const accountSummary = {
     spend:       acctSpendGross,                        // gross = principal
     spend_net:   acctSpendNet,                          // sem imposto (Meta gerenciador)
     tax_rate:    TAX_RATE,                              // 0..1
-    impressions: Number(acct.impressions) || 0,
+    impressions: curImpressions,
     clicks:      Number(acct.clicks)      || 0,
-    ctr:         Number(acct.ctr)         || 0,         // %
-    cpc:         (Number(acct.cpc) || 0) * taxMultiplier, // ajustado com tax
-    cpm:         (Number(acct.cpm) || 0) * taxMultiplier,
+    ctr:         curCtr,                                // %
+    cpc:         curCpc,                                // ajustado com tax
+    cpm:         curCpm,
     reach:       Number(acct.reach)       || 0,
     frequency:   Number(acct.frequency)   || 0,
     leads:       acctLeads,
     purchases:   acctPurchases,
-    cpl:         acctLeads     > 0 ? acctSpendGross / acctLeads     : 0,
+    cpl:         curCpl,
     cpa:         acctPurchases > 0 ? acctSpendGross / acctPurchases : 0,
+    // Deltas vs período anterior — null se base do período anterior é 0
+    // (evita Infinity% / divisão por zero). UI omite delta nesse caso.
+    deltas: {
+      spend:       pctDelta(acctSpendGross, prevSpendGross),
+      leads:       pctDelta(acctLeads,      prevLeads),
+      cpl:         pctDelta(curCpl,         prevCpl),
+      cpm:         pctDelta(curCpm,         prevCpm),
+      cpc:         pctDelta(curCpc,         prevCpc),
+      ctr:         pctDelta(curCtr,         prevCtr),
+      impressions: pctDelta(curImpressions, prevImpressions),
+    },
   };
 
   const campaigns = (campaignJson.data || [])
@@ -1662,23 +1725,62 @@ async function handleEconomics(req: VercelRequest, res: VercelResponse) {
   const since = new Date(Date.now() - days * 86400000).toISOString().slice(0, 10);
   const taxRate = parseFloat(process.env.META_ADS_TAX_RATE || '0.125');
 
+  // Janela "recente" pra calcular deltas — usa ~14 dias (suficiente pra
+  // tendência sem ser tão curto que vire ruído). Configurável via env.
+  const recentDays = Math.min(Math.max(parseInt(process.env.ECONOMICS_RECENT_DAYS || '14', 10), 1), 90);
+  const nowMs = Date.now();
+  const recentCutoff = nowMs - recentDays * 86400000;
+  const prevCutoff   = nowMs - 2 * recentDays * 86400000;
+
+  // Receita e ensaios em 2 janelas: últimos N dias vs N dias anteriores.
+  let revenueRecent = 0, revenuePrev = 0;
+  let ensaiosRecent = 0, ensaiosPrev = 0;
+  for (const b of confirmed) {
+    if (b.createdAt >= recentCutoff) {
+      revenueRecent += b.price; ensaiosRecent++;
+    } else if (b.createdAt >= prevCutoff) {
+      revenuePrev += b.price; ensaiosPrev++;
+    }
+  }
+  const revenueDelta = pctDelta(revenueRecent, revenuePrev);
+  const ensaiosDelta = pctDelta(ensaiosRecent, ensaiosPrev);
+
   let metaSpendNet = 0;
   let metaSpendGross = 0;
+  let metaSpendRecent = 0;  // últimos recentDays — pra delta
+  let metaSpendPrev   = 0;
   let metaError: string | null = null;
   const metaToken     = process.env.META_ADS_TOKEN;
   const metaAccountId = process.env.META_ADS_ACCOUNT_ID;
   if (metaToken && metaAccountId) {
     const acctPath = metaAccountId.startsWith('act_') ? metaAccountId : `act_${metaAccountId}`;
-    const tr = encodeURIComponent(JSON.stringify({ since, until }));
-    const url = `https://graph.facebook.com/v19.0/${acctPath}/insights?fields=spend&time_range=${tr}&access_token=${metaToken}`;
+    const sinceRecent = new Date(nowMs - recentDays * 86400000).toISOString().slice(0, 10);
+    const sincePrev2  = new Date(nowMs - 2 * recentDays * 86400000).toISOString().slice(0, 10);
+    const tr       = encodeURIComponent(JSON.stringify({ since,        until }));
+    const trRecent = encodeURIComponent(JSON.stringify({ since: sinceRecent, until }));
+    const trPrev   = encodeURIComponent(JSON.stringify({ since: sincePrev2,  until: sinceRecent }));
+    const mkUrl = (timeRange: string) =>
+      `https://graph.facebook.com/v19.0/${acctPath}/insights?fields=spend&time_range=${timeRange}&access_token=${metaToken}`;
     try {
-      const r = await fetch(url);
-      if (r.ok) {
-        const j = await r.json() as { data?: Array<{ spend?: string }> };
+      const [rTotal, rRecent, rPrev] = await Promise.all([
+        fetch(mkUrl(tr)),
+        fetch(mkUrl(trRecent)),
+        fetch(mkUrl(trPrev)),
+      ]);
+      if (rTotal.ok) {
+        const j = await rTotal.json() as { data?: Array<{ spend?: string }> };
         metaSpendNet = Number(j.data?.[0]?.spend) || 0;
         metaSpendGross = metaSpendNet * (1 + taxRate);
       } else {
-        metaError = `Meta API ${r.status}`;
+        metaError = `Meta API ${rTotal.status}`;
+      }
+      if (rRecent.ok) {
+        const j = await rRecent.json() as { data?: Array<{ spend?: string }> };
+        metaSpendRecent = (Number(j.data?.[0]?.spend) || 0) * (1 + taxRate);
+      }
+      if (rPrev.ok) {
+        const j = await rPrev.json() as { data?: Array<{ spend?: string }> };
+        metaSpendPrev = (Number(j.data?.[0]?.spend) || 0) * (1 + taxRate);
       }
     } catch (e) {
       metaError = e instanceof Error ? e.message : 'Erro Meta API';
@@ -1686,6 +1788,8 @@ async function handleEconomics(req: VercelRequest, res: VercelResponse) {
   } else {
     metaError = 'META_ADS_TOKEN ou META_ADS_ACCOUNT_ID ausentes';
   }
+
+  const metaSpendDelta = pctDelta(metaSpendRecent, metaSpendPrev);
 
   // 3. Custos da equipe.
   const elisaTotal = parseFloat(process.env.ELISA_TOTAL_COST || String(ELISA_TOTAL_DEFAULT));
@@ -1708,14 +1812,52 @@ async function handleEconomics(req: VercelRequest, res: VercelResponse) {
     ? Math.ceil(deficit / avgTicket)
     : 0;
 
+  // Deltas derivados (ROAS, CPA) calculados sobre as janelas recentes.
+  // Pra ROAS recente: usa receita recente / spend recente; idem pra prev.
+  // Custos fixos (Elisa/Mari) são proporcionalizados por dias na janela —
+  // assumimos que esses custos rolam continuamente (mensal).
+  const recentRatio = recentDays / 30; // fração de mês na janela
+  const fixedCostRecent = (elisaTotal + mariFixed) * recentRatio;
+  // Comissão Mari recente: só dos ensaios na janela recente
+  const recentBookings = confirmed.filter(b => b.createdAt >= recentCutoff);
+  const recentCommission = recentBookings.reduce((s, b, idx) => {
+    const pos = confirmed.findIndex(c => c.id === b.id) + 1;
+    const rate = pos <= 15 ? 0.05 : pos <= 30 ? 0.08 : 0.10;
+    return s + b.price * rate;
+  }, 0);
+  const prevBookings = confirmed.filter(b => b.createdAt >= prevCutoff && b.createdAt < recentCutoff);
+  const prevCommission = prevBookings.reduce((s, b) => {
+    const pos = confirmed.findIndex(c => c.id === b.id) + 1;
+    const rate = pos <= 15 ? 0.05 : pos <= 30 ? 0.08 : 0.10;
+    return s + b.price * rate;
+  }, 0);
+  const totalCostRecent = metaSpendRecent + fixedCostRecent + recentCommission;
+  const totalCostPrev   = metaSpendPrev   + fixedCostRecent + prevCommission;
+
+  const roasRecent = totalCostRecent > 0 ? revenueRecent / totalCostRecent : 0;
+  const roasPrev   = totalCostPrev   > 0 ? revenuePrev   / totalCostPrev   : 0;
+  const roasDelta  = pctDelta(roasRecent, roasPrev);
+
+  const cpaRecent  = ensaiosRecent > 0 ? totalCostRecent / ensaiosRecent : 0;
+  const cpaPrev    = ensaiosPrev   > 0 ? totalCostPrev   / ensaiosPrev   : 0;
+  const cpaDelta   = pctDelta(cpaRecent, cpaPrev);
+
+  const totalCostDelta = pctDelta(totalCostRecent, totalCostPrev);
+
   return res.status(200).json({
     fetched_at:   new Date().toISOString(),
     next_refresh: new Date(Date.now() + 12 * 3600 * 1000).toISOString(),
     range:        { since, until, days, note: 'Lifetime do festival 2026 por default' },
+    // `deltas_window`: janela recente comparada vs período anterior de mesma duração.
+    // Permite UI mostrar "+12%" ou "-5%" pra indicar tendência de curto prazo
+    // independente do range "lifetime" usado pros números absolutos.
+    deltas_window: { days: recentDays, note: `Últimos ${recentDays}d vs ${recentDays}d anteriores` },
     revenue: {
       total:    revenue,
       ensaios:  nEnsaios,
       avg_ticket: avgTicket,
+      delta_pct:         revenueDelta,
+      ensaios_delta_pct: ensaiosDelta,
     },
     costs: {
       meta_ads: {
@@ -1723,6 +1865,7 @@ async function handleEconomics(req: VercelRequest, res: VercelResponse) {
         net:      metaSpendNet,
         tax_rate: taxRate,
         error:    metaError,
+        delta_pct: metaSpendDelta,
       },
       elisa: {
         total: elisaTotal,
@@ -1736,10 +1879,13 @@ async function handleEconomics(req: VercelRequest, res: VercelResponse) {
         breakdown:    mariPerBooking.slice(0, 50), // até 50 pra payload não inflar
       },
       total: totalCost,
+      total_delta_pct: totalCostDelta,
     },
     kpis: {
       roas,                                // > 1 = lucro
+      roas_delta_pct:    roasDelta,
       cpa_real: cpaReal,                   // custo total / ensaios
+      cpa_real_delta_pct: cpaDelta,        // INVERTED — subir é ruim
       cpa_meta: cpaMeta,                   // só Meta / ensaios
       profit:   revenue - totalCost,       // pode ser negativo
       breakeven: {

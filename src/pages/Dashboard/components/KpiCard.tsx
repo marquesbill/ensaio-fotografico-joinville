@@ -18,6 +18,10 @@ interface Props {
   deltaPct?: number | null;
   /** Texto do período comparado (ex: "vs 28 dias anteriores") */
   deltaLabel?: string;
+  /** Quando true, inverte o significado do delta — útil pra métricas onde
+   *  subir é RUIM (CPL, CPC, CPM, CPA, bounce rate, custo). Positivo vira
+   *  vermelho/down, negativo vira verde/up. Default false. */
+  invertedDelta?: boolean;
   /** Ícone opcional no canto superior direito */
   icon?: LucideIcon;
   /** Nota de fonte (sempre visível em rodapé) */
@@ -28,9 +32,16 @@ interface Props {
   loading?: boolean;
 }
 
-export function KpiCard({ label, value, deltaPct, deltaLabel, icon: Icon, source, hint, loading }: Props) {
+export function KpiCard({ label, value, deltaPct, deltaLabel, invertedDelta, icon: Icon, source, hint, loading }: Props) {
   const delta = deltaPct ?? null;
-  const trendUp = delta !== null && delta > 0;
+  // "Tendência" semântica (boa/ruim) — depende de invertedDelta.
+  // Pra métricas normais: ↑ = bom (verde), ↓ = ruim (vermelho).
+  // Pra métricas invertidas (custos): ↑ = ruim (vermelho), ↓ = bom (verde).
+  const isGood = delta !== null && (invertedDelta ? delta < 0 : delta > 0);
+  const isBad  = delta !== null && (invertedDelta ? delta > 0 : delta < 0);
+  // Seta visual sempre reflete direção REAL (positivo = up, negativo = down),
+  // independente de invertedDelta. Cor é que muda.
+  const trendUp   = delta !== null && delta > 0;
   const trendDown = delta !== null && delta < 0;
 
   return (
@@ -48,7 +59,7 @@ export function KpiCard({ label, value, deltaPct, deltaLabel, icon: Icon, source
         </span>
         {delta !== null && !loading && (
           <span className={`inline-flex items-center gap-0.5 text-xs font-bold tabular-nums px-1.5 py-0.5 rounded
-            ${trendUp ? 'bg-emerald-500/15 text-emerald-300' : trendDown ? 'bg-red-500/15 text-red-300' : 'bg-white/5 text-white/50'}`}>
+            ${isGood ? 'bg-emerald-500/15 text-emerald-300' : isBad ? 'bg-red-500/15 text-red-300' : 'bg-white/5 text-white/50'}`}>
             {trendUp ? <ArrowUp className="w-3 h-3" /> : trendDown ? <ArrowDown className="w-3 h-3" /> : <ArrowRight className="w-3 h-3" />}
             {Math.abs(delta).toFixed(1)}%
           </span>
