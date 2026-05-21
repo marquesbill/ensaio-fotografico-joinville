@@ -107,9 +107,16 @@ async function createAsaasPaymentLinkAdmin(opts: {
 }): Promise<{ id: string; url: string }> {
   const endDate = new Date(Date.now() + 3 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
   const useCallback = (process.env.ASAAS_USE_CALLBACK || 'false').toLowerCase() === 'true';
+  // Parcelamento de cartão — até N x (default 6, configurável via env sem deploy).
+  // Mesma config do fluxo do site (createAsaasPaymentLink em create-checkout.ts).
+  const maxInstallments = Math.min(
+    Math.max(parseInt(process.env.ASAAS_MAX_INSTALLMENTS || '6', 10) || 6, 1),
+    12,
+  );
   type Body = {
     name: string; description: string; billingType: string; chargeType: string;
     value: number; dueDateLimitDays: number; endDate: string;
+    maxInstallmentCount: number;
     externalReference: string; notificationDisabled: boolean;
     callback?: { successUrl: string; autoRedirect: boolean };
   };
@@ -121,6 +128,7 @@ async function createAsaasPaymentLinkAdmin(opts: {
     value:               opts.value,
     dueDateLimitDays:    3,                // janela maior que site (1 dia)
     endDate,
+    maxInstallmentCount: maxInstallments,
     externalReference:   opts.externalReference,
     notificationDisabled: true,
   };

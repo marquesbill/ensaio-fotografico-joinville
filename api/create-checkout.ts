@@ -74,9 +74,17 @@ async function createAsaasPaymentLink(opts: {
 }): Promise<AsaasPaymentLink> {
   const endDate = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
   const useCallback = (process.env.ASAAS_USE_CALLBACK || 'false').toLowerCase() === 'true';
+  // Parcelamento de cartão — até N x (default 6, configurável via env sem deploy).
+  // PIX/boleto seguem à vista; só cartão vê o seletor de parcelas. "Sem juros"
+  // pro cliente — a ASAAS desconta a taxa de parcelamento do líquido do lojista.
+  const maxInstallments = Math.min(
+    Math.max(parseInt(process.env.ASAAS_MAX_INSTALLMENTS || '6', 10) || 6, 1),
+    12,
+  );
   type Body = {
     name: string; description: string; billingType: string; chargeType: string;
     value: number; dueDateLimitDays: number; endDate: string;
+    maxInstallmentCount: number;
     externalReference: string; notificationDisabled: boolean;
     callback?: { successUrl: string; autoRedirect: boolean };
   };
@@ -88,6 +96,7 @@ async function createAsaasPaymentLink(opts: {
     value:               opts.value,
     dueDateLimitDays:    1,
     endDate,
+    maxInstallmentCount: maxInstallments,
     externalReference:   opts.externalReference,
     notificationDisabled: true,
   };
