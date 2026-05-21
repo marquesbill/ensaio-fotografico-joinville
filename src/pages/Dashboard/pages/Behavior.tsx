@@ -258,6 +258,7 @@ export function Behavior({ token }: { token: string }) {
       <LeadsGrowthChart
         daily={leads?.daily || []}
         bookingsDaily={bookings?.daily || []}
+        totalBookingsLifetime={bookings?.total_ensaios ?? 0}
         rangeLabel={RANGE_OPTIONS.find(r => r.key === range)?.label || ''}
         loading={loading}
       />
@@ -464,12 +465,18 @@ export function Behavior({ token }: { token: string }) {
  * curva acumulada de leads vs curva acumulada de pacotes fechados
  * (comparativo topo do funil → fechamento). */
 function LeadsGrowthChart({
-  daily, bookingsDaily, rangeLabel, loading,
+  daily, bookingsDaily, totalBookingsLifetime, rangeLabel, loading,
 }: {
   daily: Array<{ date: string; count: number }>;
   /** Diário de pacotes fechados (status=confirmado, 1 row = 1 pacote).
-   *  Lifetime — alinhado ao mesmo range de `daily` pra comparar visualmente. */
+   *  Lifetime — alinhado ao mesmo range de `daily` pra comparar visualmente.
+   *  Pode ter MENOS items que totalBookingsLifetime se algumas rows não têm
+   *  timestamp parseável na coluna criado_em do Sheets. */
   bookingsDaily?: Array<{ date: string; count: number }>;
+  /** Total absoluto de fechamentos lifetime (do payload bookings.total_ensaios).
+   *  Garante consistência com o card "Pacotes fechados" em Pagamentos —
+   *  mesmo se algum booking não tem data parseável e não entra na curva. */
+  totalBookingsLifetime?: number;
   rangeLabel: string;
   loading: boolean;
 }) {
@@ -529,8 +536,15 @@ function LeadsGrowthChart({
   // Mostra label de data a cada N dias pra não poluir
   const labelEvery = Math.max(1, Math.ceil(daily.length / 8));
 
-  // Taxa de conversão acumulada (clientes / leads) na janela — útil pro header.
-  const convRate = total > 0 ? (totalBookings / total) * 100 : 0;
+  // Header mostra o lifetime total (consistente com Pagamentos = 10), mas
+  // a curva e taxa de conversão usam só o que tem timestamp dentro do range.
+  // Se faltar fechamento sem data parseável, totalBookings (na curva) < lifetime.
+  const lifetimeTotal = totalBookingsLifetime ?? totalBookings;
+  const totalInRange  = totalBookings;
+  // Taxa de conversão calculada SOBRE o range — fica coerente com a curva.
+  const convRate = total > 0 ? (totalInRange / total) * 100 : 0;
+  // Indica se há fechamentos "fora" do gráfico (sem date parseável OU fora do range)
+  const hasOutOfRange = lifetimeTotal > totalInRange;
 
   return (
     <div className="rounded-2xl border border-white/10 bg-white/[0.03] backdrop-blur-sm p-5 mb-6">
@@ -551,13 +565,21 @@ function LeadsGrowthChart({
           <div className="text-right">
             <p className="text-[10px] uppercase tracking-wider text-[#c5a3d4]/50 font-semibold">Fechamentos</p>
             <p className="font-black tabular-nums text-xl mt-0.5" style={{ color: '#4ade80' }}>
-              {loading ? '—' : totalBookings.toLocaleString('pt-BR')}
-              {!loading && total > 0 && (
-                <span className="text-[10px] ml-1 text-[#4ade80]/70">
-                  ({convRate.toFixed(1)}%)
+              {loading ? '—' : lifetimeTotal.toLocaleString('pt-BR')}
+              {!loading && hasOutOfRange && (
+                <span
+                  className="text-[10px] ml-1 text-[#4ade80]/60 cursor-help"
+                  title={`Total lifetime: ${lifetimeTotal} · No gráfico (range ${rangeLabel} + com data parseável): ${totalInRange}. Fechamentos sem timestamp no Sheets ficam de fora da curva.`}
+                >
+                  ({totalInRange} no gráfico)
                 </span>
               )}
             </p>
+            {!loading && total > 0 && totalInRange > 0 && (
+              <p className="text-[9px] text-[#4ade80]/50 mt-0.5">
+                {convRate.toFixed(1)}% conv. no período
+              </p>
+            )}
           </div>
           <div className="text-right">
             <p className="text-[10px] uppercase tracking-wider text-[#c5a3d4]/50 font-semibold">Velocidade</p>
