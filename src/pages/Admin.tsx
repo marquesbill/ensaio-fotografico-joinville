@@ -1341,13 +1341,19 @@ function Dashboard({
   // Pausa quando: aba escondida, modal aberto, ou ação em andamento.
   useEffect(() => {
     const POLL_MS = 15_000;
+    // Trava de concorrência: nunca dispara um refetch novo se o anterior
+    // ainda está em voo. Sem isso, se a API/Apps Script ficar lenta os polls
+    // de 15s se empilham (dezenas simultâneas) e entopem o backend — foi
+    // exatamente o que derrubou o site de agendamento.
+    let inFlight = false;
     const isBusy = () =>
       !!cancelTarget || !!rescheduleTarget || !!editTarget ||
       showNewBooking || actionLoading || !!paymentLink || !!gatewayPicker ||
       document.visibilityState !== 'visible';
 
     const silentRefetch = async () => {
-      if (isBusy()) return;
+      if (isBusy() || inFlight) return;
+      inFlight = true;
       try {
         const r = await fetch(`${API}/api/admin-bookings`, {
           headers: { Authorization: `Bearer ${token}` },
@@ -1362,6 +1368,7 @@ function Dashboard({
           end:   b.end?.includes('T')   ? b.end.split('T')[1].slice(0,5)   : (b.end   ?? ''),
         })));
       } catch { /* silent */ }
+      finally { inFlight = false; }
     };
 
     const id = window.setInterval(silentRefetch, POLL_MS);
