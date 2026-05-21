@@ -482,7 +482,10 @@ function sendVendedoraNotification(booking) {
 }
 
 function toWaLink(phone, msg) {
-  const digits     = phone.replace(/\D/g, '');
+  // Coerção defensiva: a coluna WhatsApp do Sheet às vezes vem como número
+  // (ex: 47999999999), e phone.replace quebraria com "is not a function" —
+  // foi o que derrubou o processReminders e travou o Apps Script inteiro.
+  const digits     = String(phone == null ? '' : phone).replace(/\D/g, '');
   const normalized = digits.length >= 12 ? digits : '55' + digits;
   return 'https://wa.me/' + normalized + '?text=' + encodeURIComponent(msg);
 }
