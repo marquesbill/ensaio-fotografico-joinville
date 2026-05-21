@@ -648,6 +648,11 @@ async function handleSheetsBookings(_req: VercelRequest, res: VercelResponse) {
   let confEnsaios = 0;
   let pendEnsaios = 0;
 
+  // Diário de ensaios confirmados (data de criação, YYYY-MM-DD) — alimenta
+  // a curva de "clientes" no gráfico Crescimento de leads em Comportamento.
+  // Comparado com leads.daily, mostra a relação topo-do-funil → fechamento.
+  const dailyConfirmedMap: Record<string, number> = {};
+
   const recent: Array<{
     id: string; name: string; pacote: string; date: string;
     status: string; criado_em: string;
@@ -675,6 +680,14 @@ async function handleSheetsBookings(_req: VercelRequest, res: VercelResponse) {
     if (status === 'confirmado') {
       confEnsaios++;
       confCustomers.add(email);
+
+      // Series diária — agrupa pelo dia da criação (coluna N do Sheets).
+      // Se row não tem timestamp parseável, ignora (sem ruído na curva).
+      const ts = new Date(criado).getTime();
+      if (Number.isFinite(ts) && ts > 0) {
+        const dateKey = new Date(ts).toISOString().slice(0, 10);
+        dailyConfirmedMap[dateKey] = (dailyConfirmedMap[dateKey] || 0) + 1;
+      }
 
       // DDD geo: só de confirmados (intent real de compra)
       const ddd = extractDDD(whatsapp);
@@ -722,6 +735,12 @@ async function handleSheetsBookings(_req: VercelRequest, res: VercelResponse) {
     .map(([state, set]) => ({ state, count: set.size }))
     .sort((a, b) => b.count - a.count);
 
+  // Diário de confirmados ordenado cronologicamente — sem range filter,
+  // frontend recorta pra mesma janela usada em leads.daily.
+  const dailyConfirmed = Object.entries(dailyConfirmedMap)
+    .map(([date, count]) => ({ date, count }))
+    .sort((a, b) => a.date.localeCompare(b.date));
+
   return res.status(200).json({
     fetched_at:      new Date().toISOString(),
     next_refresh:    new Date(Date.now() + 12 * 3600 * 1000).toISOString(),
@@ -734,6 +753,7 @@ async function handleSheetsBookings(_req: VercelRequest, res: VercelResponse) {
     },
     by_state:        stateList,
     by_ddd:          dddList,
+    daily:           dailyConfirmed,
     recent:          recent.slice(0, 15),
   });
 }

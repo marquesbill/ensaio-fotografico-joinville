@@ -47,6 +47,7 @@ interface SheetsBookingsData {
   total_ensaios:   number;
   by_state:        StateEntry[];
   by_ddd:          DDDEntry[];
+  daily?:          Array<{ date: string; count: number }>;
 }
 
 interface SheetsLeadsData {
@@ -256,6 +257,7 @@ export function Behavior({ token }: { token: string }) {
       {/* Crescimento de leads ao longo do tempo */}
       <LeadsGrowthChart
         daily={leads?.daily || []}
+        bookingsDaily={bookings?.daily || []}
         rangeLabel={RANGE_OPTIONS.find(r => r.key === range)?.label || ''}
         loading={loading}
       />
@@ -458,11 +460,16 @@ export function Behavior({ token }: { token: string }) {
 }
 
 /* Gráfico de crescimento de leads — barras diárias com gradiente +
- * curva de velocidade (1ª derivada suavizada = média móvel de 7 dias) */
+ * curva de velocidade (1ª derivada suavizada = média móvel de 7 dias) +
+ * curva acumulada de leads vs curva acumulada de clientes (comparativo
+ * topo do funil → fechamento). */
 function LeadsGrowthChart({
-  daily, rangeLabel, loading,
+  daily, bookingsDaily, rangeLabel, loading,
 }: {
   daily: Array<{ date: string; count: number }>;
+  /** Diário de ensaios confirmados (lifetime). Será alinhado ao mesmo range
+   *  de datas que `daily` pra a curva ficar comparável visualmente. */
+  bookingsDaily?: Array<{ date: string; count: number }>;
   rangeLabel: string;
   loading: boolean;
 }) {
@@ -475,7 +482,25 @@ function LeadsGrowthChart({
   // Acumulado pra a curva monotônica que mostra o "volume total ao longo do tempo"
   let running = 0;
   const cumulative = counts.map(c => (running += c));
-  const cumMax = Math.max(...cumulative, 1);
+
+  // Curva de clientes — pra cada dia do range `daily`, pega o count de
+  // bookings confirmados naquele mesmo dia. bookings lifetime ≠ daily range,
+  // então alinhamos por chave de data (YYYY-MM-DD). Acumulado começa do 0.
+  const bookingsMap = new Map<string, number>(
+    (bookingsDaily || []).map(b => [b.date, b.count])
+  );
+  let runningBookings = 0;
+  const cumulativeBookings = daily.map(d => {
+    runningBookings += bookingsMap.get(d.date) || 0;
+    return runningBookings;
+  });
+  const totalBookings = runningBookings;
+
+  // Escala Y compartilhada entre as 2 curvas acumuladas — leads sempre será
+  // >= clientes (funil), então o max é determinado pelo acumulado de leads.
+  // Compartilhar escala faz a "distância" entre as curvas visualmente
+  // representar a perda do funil (% que não converte).
+  const cumMax = Math.max(...cumulative, ...cumulativeBookings, 1);
 
   // Velocidade = primeira derivada suavizada (média móvel dos leads diários).
   // Mostra como anda o RITMO de captura — acelerando ou desacelerando — sem
@@ -504,26 +529,34 @@ function LeadsGrowthChart({
   // Mostra label de data a cada N dias pra não poluir
   const labelEvery = Math.max(1, Math.ceil(daily.length / 8));
 
+  // Taxa de conversão acumulada (clientes / leads) na janela — útil pro header.
+  const convRate = total > 0 ? (totalBookings / total) * 100 : 0;
+
   return (
     <div className="rounded-2xl border border-white/10 bg-white/[0.03] backdrop-blur-sm p-5 mb-6">
       <div className="flex items-baseline justify-between mb-4 flex-wrap gap-2">
         <div>
-          <h3 className="text-sm font-bold text-white">Crescimento de leads</h3>
+          <h3 className="text-sm font-bold text-white">Crescimento de leads vs clientes</h3>
           <p className="text-[11px] text-[#d4baeb]/50 mt-0.5">
-            Captures por dia ({rangeLabel}) — barras = diário · curva = velocidade ({window}d)
+            Captures por dia ({rangeLabel}) — barras = diário · curvas = acumulados · velocidade ({window}d)
           </p>
         </div>
         <div className="flex items-baseline gap-6 text-xs">
           <div className="text-right">
-            <p className="text-[10px] uppercase tracking-wider text-[#c5a3d4]/50 font-semibold">Total</p>
+            <p className="text-[10px] uppercase tracking-wider text-[#c5a3d4]/50 font-semibold">Leads total</p>
             <p className="text-white font-black tabular-nums text-xl mt-0.5">
               {loading ? '—' : total.toLocaleString('pt-BR')}
             </p>
           </div>
           <div className="text-right">
-            <p className="text-[10px] uppercase tracking-wider text-[#c5a3d4]/50 font-semibold">Média/dia</p>
-            <p className="text-[#e87060] font-black tabular-nums text-xl mt-0.5">
-              {loading ? '—' : avgPerDay.toFixed(1)}
+            <p className="text-[10px] uppercase tracking-wider text-[#c5a3d4]/50 font-semibold">Clientes</p>
+            <p className="font-black tabular-nums text-xl mt-0.5" style={{ color: '#4ade80' }}>
+              {loading ? '—' : totalBookings.toLocaleString('pt-BR')}
+              {!loading && total > 0 && (
+                <span className="text-[10px] ml-1 text-[#4ade80]/70">
+                  ({convRate.toFixed(1)}%)
+                </span>
+              )}
             </p>
           </div>
           <div className="text-right">
@@ -574,15 +607,18 @@ function LeadsGrowthChart({
               })}
             </div>
 
-            {/* Curvas: Acumulado (salmão) + Velocidade (dourado) — ambas 2.5px.
-                Cada uma com sua própria escala Y (forma > valor exato — KPIs no
-                header dão os valores reais). */}
+            {/* Curvas:
+                  - Acumulado de leads (salmão)   — escala compartilhada cumMax
+                  - Acumulado de clientes (verde) — escala compartilhada cumMax
+                    (distância vertical entre essas 2 = perda do funil)
+                  - Velocidade (dourado)          — escala própria velMax
+                Todas 2.5px. */}
             <svg
               className="absolute inset-0 w-full h-full pointer-events-none"
               preserveAspectRatio="none"
               viewBox={`0 0 ${Math.max(daily.length - 1, 1)} 100`}
             >
-              {/* Acumulado — monotônico crescente, normalizado pra 0..100 */}
+              {/* Acumulado leads — monotônico crescente */}
               <polyline
                 fill="none"
                 stroke="#e87060"
@@ -591,6 +627,16 @@ function LeadsGrowthChart({
                 strokeLinecap="round"
                 vectorEffect="non-scaling-stroke"
                 points={cumulative.map((c, i) => `${i},${100 - (c / cumMax) * 100}`).join(' ')}
+              />
+              {/* Acumulado clientes — mesma escala Y que leads pra visual ser comparável */}
+              <polyline
+                fill="none"
+                stroke="#4ade80"
+                strokeWidth="2.5"
+                strokeLinejoin="round"
+                strokeLinecap="round"
+                vectorEffect="non-scaling-stroke"
+                points={cumulativeBookings.map((c, i) => `${i},${100 - (c / cumMax) * 100}`).join(' ')}
               />
               {/* Velocidade — média móvel, oscilante */}
               <polyline
@@ -602,13 +648,22 @@ function LeadsGrowthChart({
                 vectorEffect="non-scaling-stroke"
                 points={velocity.map((v, i) => `${i},${100 - (v / velMax) * 100}`).join(' ')}
               />
-              {/* Pontos finais destacados em ambas as curvas */}
+              {/* Pontos finais destacados nas 3 curvas */}
               {cumulative.length > 0 && (
                 <circle
                   cx={cumulative.length - 1}
                   cy={100 - (cumulative[cumulative.length - 1] / cumMax) * 100}
                   r="2.5"
                   fill="#e87060"
+                  vectorEffect="non-scaling-stroke"
+                />
+              )}
+              {cumulativeBookings.length > 0 && totalBookings > 0 && (
+                <circle
+                  cx={cumulativeBookings.length - 1}
+                  cy={100 - (cumulativeBookings[cumulativeBookings.length - 1] / cumMax) * 100}
+                  r="2.5"
+                  fill="#4ade80"
                   vectorEffect="non-scaling-stroke"
                 />
               )}
@@ -633,17 +688,20 @@ function LeadsGrowthChart({
             ))}
           </div>
 
-          {/* Legenda — só marcadores das barras e do Acumulado. Velocidade
-              não tem marcador horizontal aqui; o KPI no header já identifica
-              a curva dourada. */}
-          <div className="flex items-center gap-4 mt-3 text-[10px] text-[#c5a3d4]/60">
+          {/* Legenda — marcadores das barras e das 2 curvas acumuladas (velocidade
+              fica identificada pelo KPI no header). */}
+          <div className="flex items-center gap-4 mt-3 text-[10px] text-[#c5a3d4]/60 flex-wrap">
             <span className="flex items-center gap-1.5">
               <span className="inline-block w-3 h-2 rounded-sm bg-gradient-to-r from-[#7a3f8f] to-[#e87060]" />
               Leads/dia (gradiente por intensidade)
             </span>
             <span className="flex items-center gap-1.5">
               <span className="inline-block w-3 h-0.5 rounded-full" style={{ background: '#e87060' }} />
-              Acumulado (até {cumulative[cumulative.length - 1]?.toLocaleString('pt-BR') || 0})
+              Leads acumulados ({cumulative[cumulative.length - 1]?.toLocaleString('pt-BR') || 0})
+            </span>
+            <span className="flex items-center gap-1.5">
+              <span className="inline-block w-3 h-0.5 rounded-full" style={{ background: '#4ade80' }} />
+              Clientes acumulados ({totalBookings.toLocaleString('pt-BR')})
             </span>
           </div>
         </div>
