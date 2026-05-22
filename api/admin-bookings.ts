@@ -3140,7 +3140,7 @@ async function handlePaymentLink(req: VercelRequest, res: VercelResponse, auth: 
 
     if (gw === 'asaas') {
       const checkout = await createAsaasCheckoutAdmin({
-        itemName:          `Ensaio Fotográfico em Joinville — Pacote ${pkg.name}`,
+        itemName:          `Pacote ${pkg.name}`,   // ASAAS limita item.name a 30 chars
         itemDescription:   `${date.split('-').reverse().join('/')} às ${time} · ${pkg.duration} min · ${nb} ${nb === 1 ? 'bailarina' : 'bailarinas'}`,
         value:             pkg.price,
         externalReference: encodeAsaasRefAdmin({ date, time, packageKey, numBailarinas: nb, name, email, whatsapp }),
