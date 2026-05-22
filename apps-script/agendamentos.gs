@@ -11,6 +11,12 @@
 //   lote 0 (pré-venda curta): até 15/05 23:59  → 140000 / 190000 / 220000
 //   lote 1: 16/05 → 30/06                     → 160000 / 210000 / 260000
 //   lote 2: 01/07 em diante (preço cheio)     → 180000 / 240000 / 280000
+// Planilha de produção. Recriada limpa em 2026-05-21: a original ficou lenta
+// (cada acesso via SpreadsheetApp levava ~25s — provável bloat de histórico de
+// revisões). O script abre a planilha por ID (openById) em vez de
+// getActiveSpreadsheet(), pra não depender do vínculo de container.
+const SHEET_ID = '1e8PA6anb12YRD5jn-0Ei0mM1SkaB9RkZhfsz-7qlqQA';
+
 const LOTE1_START_MS = new Date('2026-05-16T00:00:00-03:00').getTime();
 const LOTE2_START_MS = new Date('2026-07-01T00:00:00-03:00').getTime();
 
@@ -67,7 +73,7 @@ function formatDateBR(dateStr) {
 
 // ── Sheet helpers ─────────────────────────────────────────────
 function getSheet(name) {
-  return SpreadsheetApp.getActiveSpreadsheet().getSheetByName(name);
+  return SpreadsheetApp.openById(SHEET_ID).getSheetByName(name);
 }
 
 // ── RESEND key ────────────────────────────────────────────────
@@ -106,7 +112,7 @@ function _val(row, map, name, fallback0) {
 
 // ── Inicialização das abas ────────────────────────────────────
 function initSheets() {
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const ss = SpreadsheetApp.openById(SHEET_ID);
 
   function ensureSheet(name, headers, tabColor) {
     let sh = ss.getSheetByName(name);
@@ -149,7 +155,7 @@ function initSheets() {
 
 // ── Aba Clientes ──────────────────────────────────────────────
 function buildClientesSheet() {
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const ss = SpreadsheetApp.openById(SHEET_ID);
   let cl = ss.getSheetByName('Clientes');
   if (!cl) { cl = ss.insertSheet('Clientes'); cl.setTabColor('#009688'); }
   else      { cl.clearContents(); }
@@ -989,7 +995,7 @@ function cleanupAgendamentos() {
   });
 
   // Garante aba de arquivo
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const ss = SpreadsheetApp.openById(SHEET_ID);
   let arch = ss.getSheetByName('Agendamentos Arquivados');
   if (!arch) {
     arch = ss.insertSheet('Agendamentos Arquivados');
@@ -1556,7 +1562,7 @@ function migrateAddNumBailarinas() {
 // ── Mover "Agendamentos Arquivados" para o backup mais recente ────
 // e apagar a aba Sheet1 default da planilha principal, se existir.
 function moveArchivedToBackup() {
-  const mainSs = SpreadsheetApp.getActiveSpreadsheet();
+  const mainSs = SpreadsheetApp.openById(SHEET_ID);
   const src    = mainSs.getSheetByName('Agendamentos Arquivados');
   if (!src) throw new Error('Aba "Agendamentos Arquivados" não existe');
 
@@ -1614,7 +1620,7 @@ function setupTriggers() {
   ScriptApp.getProjectTriggers().forEach(t => ScriptApp.deleteTrigger(t));
   ScriptApp.newTrigger('processReminders').timeBased().everyMinutes(5).create();
   ScriptApp.newTrigger('onEditAgendamentos')
-    .forSpreadsheet(SpreadsheetApp.getActiveSpreadsheet())
+    .forSpreadsheet(SpreadsheetApp.openById(SHEET_ID))
     .onEdit()
     .create();
   addLog('TRIGGER_INSTALADO', '', 'processReminders (5min) + onEditAgendamentos', 'sistema');
