@@ -1,7 +1,7 @@
 /**
  * Payments — Página 5 do Dashboard.
  *
- * Fonte canon: planilha agendamentos (Apps Script sheet 1o5qmsX...).
+ * Fonte canon: planilha agendamentos (Apps Script sheet 1e8PA6...).
  * 1 row = 1 cliente, com `Qtd ensaios` agregado e `Status atual`.
  *
  * Foco em CONTAGEM de pacotes fechados (sem R$). Receita/finanças
@@ -138,7 +138,7 @@ export function Payments({ token }: { token: string }) {
       <div className="mb-6">
         <DataSourceBadge
           sources={[
-            { label: 'Sheets',   detail: 'agendamentos · 1o5qmsX...',     status: error ? 'error' : 'live' },
+            { label: 'Sheets',   detail: 'agendamentos · 1e8PA6...',     status: error ? 'error' : 'live' },
             { label: 'Meta Ads', detail: 'spend gross · custos equipe',   status: economicsError ? 'error' : (economics ? 'live' : 'stale') },
           ]}
           lastFetched={data?.fetched_at}

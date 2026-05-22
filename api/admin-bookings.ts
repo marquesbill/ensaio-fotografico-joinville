@@ -509,7 +509,7 @@ async function handleGa4Dashboard(req: VercelRequest, res: VercelResponse) {
 /* ───────── Google Sheets (Service Account JWT) ───────── */
 
 const LEADS_SHEET_ID    = '1H7AT6rJ0ojyTi4zp0DG6PEUMfzdFn-lUlZ6-8fXNBqA';
-const BOOKINGS_SHEET_ID = '1o5qmsXuMZ0elx-uwD0RcQpD0HzrQBHLU3W1VepP1too';
+const BOOKINGS_SHEET_ID = '1e8PA6anb12YRD5jn-0Ei0mM1SkaB9RkZhfsz-7qlqQA';
 
 interface SACredentials {
   client_email: string;
