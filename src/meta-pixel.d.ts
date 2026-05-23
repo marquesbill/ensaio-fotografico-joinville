@@ -2,7 +2,11 @@ declare global {
   interface Window {
     fbq: {
       (command: 'track' | 'trackCustom', event: string, params?: Record<string, string | number>): void;
-      (command: 'init', pixelId: string): void;
+      (command: 'init', pixelId: string, advancedMatching?: {
+        em?: string; ph?: string; fn?: string; ln?: string;
+        ge?: string; db?: string; ct?: string; st?: string;
+        zp?: string; country?: string; external_id?: string;
+      }): void;
       (command: 'consent', consent: 'grant' | 'revoke'): void;
     };
     clarity: {

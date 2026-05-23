@@ -293,6 +293,20 @@ export default function Agendamento() {
       return;
     }
     if (!pkg || !selectedDate || !selectedTime || !form.nome || !form.email || !form.whatsapp) return;
+
+    // Meta Pixel — correspondência avançada: re-inicializa o pixel com email/telefone
+    // do cliente pra melhorar atribuição no Facebook Ads. O pixel SDK hash-eia os
+    // valores em SHA-256 client-side antes de enviar pra Meta (PII nunca sai em claro).
+    // Telefone em E.164 (BR sempre com prefixo 55).
+    if (window.fbq) {
+      const phoneDigits = form.whatsapp.replace(/\D/g, '');
+      const phoneE164   = phoneDigits.startsWith('55') ? phoneDigits : `55${phoneDigits}`;
+      window.fbq('init', '1117650036922205', {
+        em: form.email.trim().toLowerCase(),
+        ph: phoneE164,
+      });
+    }
+
     track.event('agendamento_checkout_attempt');
     track.tag('bailarinas_count', form.numBailarinas);
     track.tag('has_instagram', form.instagram ? 'true' : 'false');
