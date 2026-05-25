@@ -670,9 +670,19 @@ function processReminders() {
 function createPending(data) {
   const { date, start, packageKey, name, email, whatsapp,
           instagram, instagramBailarina, nomeBailarina, numBailarinas,
-          stripeSession, source } = data;
+          stripeSession, source, customValue } = data;
   const pkg = CFG.PACKAGES[packageKey];
   if (!pkg) throw new Error('Pacote inválido: ' + packageKey);
+
+  // Admin pode customizar valor (descontos especiais para fechar pacote).
+  // customValue chega em REAIS (e.g., 1700 = R$1.700). pkg.price é em centavos
+  // internamente (e.g., 180000 = R$1.800) — comparamos em REAIS.
+  // Sem customValue → preço do catálogo. Sanity: >= 0 e <= pkg.price (não
+  // permitimos COBRAR mais que o catálogo via descontos do admin).
+  const pkgPriceReais = pkg.price / 100;
+  const valorReais    = (typeof customValue === 'number' && customValue >= 0 && customValue <= pkgPriceReais)
+    ? customValue
+    : pkgPriceReais;
 
   const nb = Number(numBailarinas);
   if (!Number.isInteger(nb) || nb < 1 || nb > pkg.maxBailarinas) {
@@ -711,7 +721,7 @@ function createPending(data) {
   set('Fim',                   endTime,                            3);
   set('Pacote',                packageKey,                         4);
   set('Duração (min)',         pkg.duration,                       5);
-  set('Valor (R$)',            (pkg.price / 100).toFixed(2),       6);
+  set('Valor (R$)',            valorReais.toFixed(2),              6);
   set('Nome',                  name,                               7);
   set('E-mail',                email,                              8);
   set('WhatsApp',              whatsapp,                           9);
@@ -779,6 +789,7 @@ function confirmBooking(data) {
       whatsapp:         _val(row, cm, 'WhatsApp', 9),
       package:          _val(row, cm, 'Pacote',   4),
       numBailarinas:    Number(_val(row, cm, 'Nº Bailarinas')) || 1,
+      valor:            parseFloat(_val(row, cm, 'Valor (R$)', 6)) || 0,
       conflict:         false,
     };
   }
@@ -870,6 +881,7 @@ function confirmBooking(data) {
     whatsapp:  _val(row, cm, 'WhatsApp', 9),
     package:   _val(row, cm, 'Pacote',   4),
     numBailarinas: Number(_val(row, cm, 'Nº Bailarinas')) || 1,
+    valor:     parseFloat(_val(row, cm, 'Valor (R$)', 6)) || 0,
     conflict:  !!conflictAlert,
   };
 }

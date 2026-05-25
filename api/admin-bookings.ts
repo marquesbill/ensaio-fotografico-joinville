@@ -2805,10 +2805,11 @@ async function handleConfirm(req: VercelRequest, res: VercelResponse, auth: { us
 async function handleCreate(req: VercelRequest, res: VercelResponse, auth: { user: string }) {
   const PACKAGES = getPackages();
   const { name, email, whatsapp, instagram, instagramBailarina, nomeBailarina, numBailarinas,
-          date, time, packageKey, confirm } = req.body as {
+          date, time, packageKey, confirm, customValue } = req.body as {
     name: string; email: string; whatsapp: string;
     instagram?: string; instagramBailarina?: string; nomeBailarina?: string; numBailarinas?: number;
     date: string; time: string; packageKey: PkgKey; confirm: boolean;
+    customValue?: number;
   };
 
   if (!name || !email || !date || !time || !packageKey) {
@@ -2822,6 +2823,13 @@ async function handleCreate(req: VercelRequest, res: VercelResponse, auth: { use
   if (!Number.isInteger(nb) || nb < 1 || nb > pkg.maxBailarinas) {
     return res.status(400).json({ error: `Nº Bailarinas deve estar entre 1 e ${pkg.maxBailarinas} para o pacote ${pkg.name}` });
   }
+
+  // Admin pode customizar valor (descontos especiais). Em REAIS, mesma unidade
+  // de pkg.price. Sanity: número >= 0 e <= pkg.price (não permitimos cobrar
+  // ACIMA do catálogo via descontos). Fora da faixa → usa catálogo.
+  const chargeValue = (typeof customValue === 'number' && customValue >= 0 && customValue <= pkg.price)
+    ? customValue
+    : pkg.price;
 
   const endTime = calcEnd(time, pkg.duration);
   const logUser = auth.user;
@@ -2850,7 +2858,7 @@ async function handleCreate(req: VercelRequest, res: VercelResponse, auth: { use
         const checkout = await createAsaasCheckoutAdmin({
           itemName:          `Pacote ${pkg.name}`,   // ASAAS limita item.name a 30 chars
           itemDescription:   `${date.split('-').reverse().join('/')} às ${time} · ${pkg.duration} min · ${nb} ${nb === 1 ? 'bailarina' : 'bailarinas'}`,
-          value:             pkg.price,
+          value:             chargeValue,
           externalReference: encodeAsaasRefAdmin({ date, time, packageKey, numBailarinas: nb, name, email, whatsapp }),
           successUrl:        `${SITE_URL}/agendamento/sucesso`,
           cancelUrl:         `${SITE_URL}/agendamento?cancelado=1`,
@@ -2867,7 +2875,7 @@ async function handleCreate(req: VercelRequest, res: VercelResponse, auth: { use
               title:       `Ensaio Fotográfico em Joinville — Pacote ${pkg.name}`,
               description: `${date.split('-').reverse().join('/')} às ${time} · ${pkg.duration} min`,
               quantity:    1,
-              unit_price:  pkg.price,
+              unit_price:  chargeValue,
               currency_id: 'BRL',
             }],
             payer: { email },
@@ -2906,6 +2914,7 @@ async function handleCreate(req: VercelRequest, res: VercelResponse, auth: { use
             stripeSession:      externalId,
             gateway:            gw,
             source:             'admin',
+            customValue:        chargeValue,
           }),
         });
         if (!pendingRes.ok) throw new Error(`Sheets HTTP ${pendingRes.status}`);
@@ -2957,6 +2966,7 @@ async function handleCreate(req: VercelRequest, res: VercelResponse, auth: { use
         numBailarinas:      nb,
         stripeSession:      sessionId,
         source:             'admin',
+        customValue:        chargeValue,
       }),
     });
 
@@ -2982,7 +2992,7 @@ async function handleCreate(req: VercelRequest, res: VercelResponse, auth: { use
         name, date, time, endTime,
         packageName: pkg.name,
         duration:    pkg.duration,
-        price:       pkg.price.toFixed(2).replace('.', ','),
+        price:       chargeValue.toFixed(2).replace('.', ','),
         bookingId,
         numBailarinas: nb,
       }, 'confirmed');
@@ -3068,11 +3078,12 @@ async function handleEdit(req: VercelRequest, res: VercelResponse, auth: { user:
 async function handlePaymentLink(req: VercelRequest, res: VercelResponse, auth: { user: string }) {
   const PACKAGES = getPackages();
   const { bookingId, name, email, whatsapp, instagram, instagramBailarina, nomeBailarina, numBailarinas,
-          date, time, packageKey, oldStripeSession } = req.body as {
+          date, time, packageKey, oldStripeSession, customValue } = req.body as {
     bookingId: string; name: string; email: string; whatsapp: string;
     instagram?: string; instagramBailarina?: string; nomeBailarina?: string; numBailarinas?: number;
     date: string; time: string; packageKey: PkgKey;
     oldStripeSession?: string; // ID do link antigo (pra cancelar via API)
+    customValue?: number;       // valor customizado pra desconto (REAIS)
   };
 
   if (!bookingId || !date || !time || !packageKey || !name || !email) {
@@ -3081,6 +3092,11 @@ async function handlePaymentLink(req: VercelRequest, res: VercelResponse, auth: 
 
   const pkg = PACKAGES[packageKey];
   if (!pkg) return res.status(400).json({ error: 'Pacote inválido' });
+
+  // Admin pode customizar valor (descontos). Em REAIS. Sanity igual ao handleCreate.
+  const chargeValue = (typeof customValue === 'number' && customValue >= 0 && customValue <= pkg.price)
+    ? customValue
+    : pkg.price;
 
   let nb = 1;
   if (numBailarinas !== undefined && numBailarinas !== null && String(numBailarinas) !== '') {
@@ -3142,7 +3158,7 @@ async function handlePaymentLink(req: VercelRequest, res: VercelResponse, auth: 
       const checkout = await createAsaasCheckoutAdmin({
         itemName:          `Pacote ${pkg.name}`,   // ASAAS limita item.name a 30 chars
         itemDescription:   `${date.split('-').reverse().join('/')} às ${time} · ${pkg.duration} min · ${nb} ${nb === 1 ? 'bailarina' : 'bailarinas'}`,
-        value:             pkg.price,
+        value:             chargeValue,
         externalReference: encodeAsaasRefAdmin({ date, time, packageKey, numBailarinas: nb, name, email, whatsapp }),
         successUrl:        `${SITE_URL}/agendamento/sucesso`,
         cancelUrl:         `${SITE_URL}/agendamento?cancelado=1`,
@@ -3159,7 +3175,7 @@ async function handlePaymentLink(req: VercelRequest, res: VercelResponse, auth: 
             title:       `Ensaio Fotográfico em Joinville — Pacote ${pkg.name}`,
             description: `${date.split('-').reverse().join('/')} às ${time} · ${pkg.duration} min`,
             quantity:    1,
-            unit_price:  pkg.price,
+            unit_price:  chargeValue,
             currency_id: 'BRL',
           }],
           payer: { email },

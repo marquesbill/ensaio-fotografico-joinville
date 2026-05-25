@@ -241,8 +241,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   //  - MP:    external_reference é JSON canônico.
   //  - ASAAS: o Checkout NÃO propaga externalReference pro payment (vem null) —
   //           pra Checkout esse fallback fica vazio; o confirmBooking preenche.
-  const meta: { date: string; time: string; packageKey: string; name: string; email: string; whatsapp: string; numBailarinas: number } = {
-    date: '', time: '', packageKey: '', name: '', email: '', whatsapp: '', numBailarinas: 1,
+  // `valor` é o valor PAGO em REAIS (lido da coluna 'Valor (R$)' da planilha) —
+  // pode ser custom (desconto do admin) ou padrão do catálogo. Fica 0 se a meta
+  // do confirmBooking não preencher; aí caímos no fallback pkg.price.
+  const meta: { date: string; time: string; packageKey: string; name: string; email: string; whatsapp: string; numBailarinas: number; valor: number } = {
+    date: '', time: '', packageKey: '', name: '', email: '', whatsapp: '', numBailarinas: 1, valor: 0,
   };
   if (normalized.gateway === 'asaas') {
     Object.assign(meta, decodeAsaasRef(normalized.externalRef));
@@ -280,7 +283,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       const json = await r.json() as {
         bookingId?: string; alreadyConfirmed?: boolean;
         date?: string; start?: string; name?: string; email?: string;
-        whatsapp?: string; package?: string; numBailarinas?: number;
+        whatsapp?: string; package?: string; numBailarinas?: number; valor?: number;
       };
       bookingId        = json.bookingId || '';
       alreadyConfirmed = json.alreadyConfirmed === true;
@@ -293,6 +296,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       if (json.email)         meta.email         = json.email;
       if (json.whatsapp)      meta.whatsapp      = String(json.whatsapp);
       if (json.numBailarinas) meta.numBailarinas = Number(json.numBailarinas) || meta.numBailarinas;
+      if (json.valor)         meta.valor         = Number(json.valor) || 0;
       confirmFailed = null;
       break;
     } catch (e) {
@@ -303,11 +307,15 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   }
 
   // Meta consolidada — pkg/endTime calculados DEPOIS do confirmBooking sobrescrever.
-  const { date, time, packageKey, name, email, whatsapp, numBailarinas } = meta;
+  const { date, time, packageKey, name, email, whatsapp, numBailarinas, valor } = meta;
   const pkg = PACKAGES[packageKey] || { name: packageKey, duration: 0, price: 0 };
   const [sh, sm] = (time || '00:00').split(':').map(Number);
   const endMin   = sh * 60 + sm + pkg.duration;
   const endTime  = String(Math.floor(endMin / 60)).padStart(2, '0') + ':' + String(endMin % 60).padStart(2, '0');
+  // priceFinal = valor PAGO (lido do Sheet via confirmBooking); fallback pro
+  // catálogo se a planilha não preencher (booking antigo / outro caminho).
+  // É essa variável que vai nos e-mails de confirmação ao cliente/admin.
+  const priceFinal = (valor && valor > 0) ? valor : pkg.price;
   if (confirmFailed) {
     // 3 tentativas falharam — alerta urgente pro admin investigar manual.
     // Continua o fluxo de emails pra não confundir cliente que JÁ PAGOU.
@@ -321,7 +329,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 <strong>Email:</strong> ${email}<br>
 <strong>WhatsApp:</strong> ${whatsapp}<br>
 <strong>Data:</strong> ${date} ${time}<br>
-<strong>Pacote:</strong> ${pkg.name} (R$ ${pkg.price})<br>
+<strong>Pacote:</strong> ${pkg.name} (R$ ${priceFinal})<br>
 <strong>Gateway:</strong> ${normalized.gateway.toUpperCase()}<br>
 <strong>Payment ID:</strong> ${normalized.paymentId}<br>
 <strong>External Slot ID:</strong> ${normalized.externalSlotId}<br>
@@ -346,7 +354,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   const htmlBody = buildBookingEmailHtml({
     name, date, time, endTime,
     packageName: pkg.name, duration: pkg.duration,
-    price: pkg.price.toFixed(2).replace('.', ','),
+    price: priceFinal.toFixed(2).replace('.', ','),
     bookingId,
     numBailarinas,
   }, 'confirmed');
@@ -370,7 +378,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       html:    `<p><strong>Nova reserva confirmada</strong><br>
 Cliente: ${name}<br>E-mail: ${email}<br>WhatsApp: ${whatsapp}<br>
 Data: ${fmtDate(date)}<br>Horário: ${time}–${endTime}<br>
-Pacote: ${pkg.name}<br>Nº Bailarinas: ${numBailarinas}<br>Valor: R$ ${pkg.price}<br>
+Pacote: ${pkg.name}<br>Nº Bailarinas: ${numBailarinas}<br>Valor: R$ ${priceFinal}<br>
 Parcelas: ${normalized.installments}x<br>
 ${normalized.billingType ? `Método: ${normalized.billingType}<br>` : ''}
 Booking ID: ${bookingId}<br>Gateway: ${normalized.gateway.toUpperCase()} · Payment: ${normalized.paymentId}</p>`,
@@ -403,7 +411,7 @@ Booking ID: ${bookingId}<br>Gateway: ${normalized.gateway.toUpperCase()} · Paym
       <tr><td style="color:#6b7280;padding:6px 0;font-size:13px;">Data</td>
           <td style="font-size:13px;">${fmtDate(date)} às ${time} – ${endTime}</td></tr>
       <tr><td style="color:#6b7280;padding:6px 0;font-size:13px;border-top:1px solid #e5e7eb;">Valor pago</td>
-          <td style="font-weight:700;font-size:14px;color:#7a3f8f;border-top:1px solid #e5e7eb;">R$ ${pkg.price.toFixed(2).replace('.', ',')}${normalized.installments > 1 ? ` em ${normalized.installments}x` : ''}</td></tr>
+          <td style="font-weight:700;font-size:14px;color:#7a3f8f;border-top:1px solid #e5e7eb;">R$ ${priceFinal.toFixed(2).replace('.', ',')}${normalized.installments > 1 ? ` em ${normalized.installments}x` : ''}</td></tr>
     </table>
     <p style="font-size:12px;color:#9ca3af;margin-top:16px;border-top:1px solid #f0f0f0;padding-top:12px;">
       Booking ID: ${bookingId}

@@ -379,7 +379,7 @@ function NewBookingModal({
   onClose, onSubmit, loading,
 }: {
   onClose: () => void;
-  onSubmit: (data: { name: string; email: string; whatsapp: string; instagram: string; instagramBailarina: string; nomeBailarina: string; numBailarinas: number; date: string; time: string; packageKey: string }, confirm: boolean, gateway?: 'mp' | 'asaas') => void;
+  onSubmit: (data: { name: string; email: string; whatsapp: string; instagram: string; instagramBailarina: string; nomeBailarina: string; numBailarinas: number; date: string; time: string; packageKey: string; customValue?: number }, confirm: boolean, gateway?: 'mp' | 'asaas') => void;
   loading: boolean;
 }) {
   const PACKAGES = usePackages();
@@ -394,6 +394,11 @@ function NewBookingModal({
   const [nomeBailarina,       setNomeBailarina]       = useState('');
   const [numBailarinas,       setNumBailarinas]       = useState<number>(1);
   const [pkgKey,              setPkgKey]              = useState('lembranca');
+  // Valor em REAIS — default = preço do catálogo do pacote selecionado.
+  // Admin pode editar pra aplicar desconto (ex: 1800 → 1500 = R$300 off).
+  const [customValue,         setCustomValue]         = useState<number>(
+    () => PACKAGES.find(p => p.key === 'lembranca')?.price ?? 0
+  );
   const [date,     setDate]     = useState('');
   const [time,     setTime]     = useState('');
   const [slots,    setSlots]    = useState<Slot[]>([]);
@@ -425,6 +430,7 @@ function NewBookingModal({
       instagram: instagram.trim(), instagramBailarina: instagramBailarina.trim(), nomeBailarina: nomeBailarina.trim(),
       numBailarinas,
       date, time, packageKey: pkgKey,
+      customValue,
     }, confirm, gateway);
   }
 
@@ -516,12 +522,32 @@ function NewBookingModal({
               setTime('');
               const max = MAX_BAILARINAS[k] ?? 4;
               setNumBailarinas(n => n > max ? max : n);
+              // Reseta valor pro catálogo do novo pacote (admin pode editar pra desconto).
+              setCustomValue(PACKAGES.find(p => p.key === k)?.price ?? 0);
             }}
           >
             {PACKAGES.map(p => (
               <option key={p.key} value={p.key}>{p.name} — {p.duration}min — R$ {p.price}</option>
             ))}
           </select>
+        </div>
+
+        {/* Valor customizado — admin pode editar pra dar desconto */}
+        <div>
+          <label className="block text-xs font-semibold text-gray-600 mb-1 uppercase tracking-wide">
+            Valor (R$) — editável p/ desconto
+          </label>
+          <input
+            type="number" min={0} max={PACKAGES.find(p => p.key === pkgKey)?.price ?? 0} step={50}
+            className="w-full border border-gray-200 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-purple-200"
+            value={customValue}
+            onChange={e => setCustomValue(Math.max(0, parseInt(e.target.value, 10) || 0))}
+          />
+          {customValue < (PACKAGES.find(p => p.key === pkgKey)?.price ?? 0) && (
+            <p className="mt-1 text-xs text-purple-600 font-medium">
+              Desconto de R$ {((PACKAGES.find(p => p.key === pkgKey)?.price ?? 0) - customValue).toFixed(2).replace('.', ',')} aplicado
+            </p>
+          )}
         </div>
 
         {/* Date */}
@@ -1441,7 +1467,7 @@ function Dashboard({
   }
 
   async function handleCreateBooking(
-    data: { name: string; email: string; whatsapp: string; instagram: string; instagramBailarina: string; nomeBailarina: string; numBailarinas: number; date: string; time: string; packageKey: string },
+    data: { name: string; email: string; whatsapp: string; instagram: string; instagramBailarina: string; nomeBailarina: string; numBailarinas: number; date: string; time: string; packageKey: string; customValue?: number },
     confirm: boolean,
     gateway?: 'mp' | 'asaas',
   ) {
