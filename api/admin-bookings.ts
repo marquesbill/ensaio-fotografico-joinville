@@ -2825,11 +2825,26 @@ async function handleCreate(req: VercelRequest, res: VercelResponse, auth: { use
   }
 
   // Admin pode customizar valor (descontos especiais). Em REAIS, mesma unidade
-  // de pkg.price. Sanity: número >= 0 e <= pkg.price (não permitimos cobrar
-  // ACIMA do catálogo via descontos). Fora da faixa → usa catálogo.
-  const chargeValue = (typeof customValue === 'number' && customValue >= 0 && customValue <= pkg.price)
-    ? customValue
-    : pkg.price;
+  // de pkg.price. Sanity: número finito >= 0 e <= pkg.price (não permitimos
+  // cobrar ACIMA do catálogo via descontos).
+  //
+  // IMPORTANTE: se admin ENVIOU um customValue mas é inválido (NaN, negativo,
+  // ou > catálogo), RETORNA 400 em vez de cair em pkg.price silenciosamente.
+  // Fallback silencioso é o bug que fazia Mari achar que aplicou desconto e
+  // o ASAAS cobrar o valor cheio. Só usa catálogo se admin NÃO mandou o campo.
+  let chargeValue: number;
+  if (customValue === undefined || customValue === null) {
+    chargeValue = pkg.price;
+  } else if (typeof customValue !== 'number' || !isFinite(customValue)) {
+    return res.status(400).json({ error: `Valor inválido: ${String(customValue)}. Use um número inteiro em reais (ex: 1400).` });
+  } else if (customValue < 0) {
+    return res.status(400).json({ error: 'Valor não pode ser negativo.' });
+  } else if (customValue > pkg.price) {
+    return res.status(400).json({ error: `Valor (R$ ${customValue}) acima do catálogo (R$ ${pkg.price}). Desconto só pra baixo.` });
+  } else {
+    chargeValue = customValue;
+  }
+  console.log(`[admin-bookings/create] chargeValue=${chargeValue} (pkg.price=${pkg.price}, customValue=${customValue})`);
 
   const endTime = calcEnd(time, pkg.duration);
   const logUser = auth.user;
@@ -3094,9 +3109,20 @@ async function handlePaymentLink(req: VercelRequest, res: VercelResponse, auth: 
   if (!pkg) return res.status(400).json({ error: 'Pacote inválido' });
 
   // Admin pode customizar valor (descontos). Em REAIS. Sanity igual ao handleCreate.
-  const chargeValue = (typeof customValue === 'number' && customValue >= 0 && customValue <= pkg.price)
-    ? customValue
-    : pkg.price;
+  // Mesma regra: rejeita inválidos em vez de cair em catálogo silenciosamente.
+  let chargeValue: number;
+  if (customValue === undefined || customValue === null) {
+    chargeValue = pkg.price;
+  } else if (typeof customValue !== 'number' || !isFinite(customValue)) {
+    return res.status(400).json({ error: `Valor inválido: ${String(customValue)}. Use um número inteiro em reais (ex: 1400).` });
+  } else if (customValue < 0) {
+    return res.status(400).json({ error: 'Valor não pode ser negativo.' });
+  } else if (customValue > pkg.price) {
+    return res.status(400).json({ error: `Valor (R$ ${customValue}) acima do catálogo (R$ ${pkg.price}). Desconto só pra baixo.` });
+  } else {
+    chargeValue = customValue;
+  }
+  console.log(`[admin-bookings/paymentLink] chargeValue=${chargeValue} (pkg.price=${pkg.price}, customValue=${customValue})`);
 
   let nb = 1;
   if (numBailarinas !== undefined && numBailarinas !== null && String(numBailarinas) !== '') {
