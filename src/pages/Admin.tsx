@@ -527,28 +527,61 @@ function NewBookingModal({
             }}
           >
             {PACKAGES.map(p => (
-              <option key={p.key} value={p.key}>{p.name} — {p.duration}min — R$ {p.price}</option>
+              <option key={p.key} value={p.key}>{p.name} — {p.duration}min — R$ {p.price.toLocaleString('pt-BR')}</option>
             ))}
           </select>
         </div>
 
-        {/* Valor customizado — admin pode editar pra dar desconto */}
-        <div>
-          <label className="block text-xs font-semibold text-gray-600 mb-1 uppercase tracking-wide">
-            Valor (R$) — editável p/ desconto
-          </label>
-          <input
-            type="number" min={0} max={PACKAGES.find(p => p.key === pkgKey)?.price ?? 0} step={50}
-            className="w-full border border-gray-200 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-purple-200"
-            value={customValue}
-            onChange={e => setCustomValue(Math.max(0, parseInt(e.target.value, 10) || 0))}
-          />
-          {customValue < (PACKAGES.find(p => p.key === pkgKey)?.price ?? 0) && (
-            <p className="mt-1 text-xs text-purple-600 font-medium">
-              Desconto de R$ {((PACKAGES.find(p => p.key === pkgKey)?.price ?? 0) - customValue).toFixed(2).replace('.', ',')} aplicado
-            </p>
-          )}
-        </div>
+        {/* Valor cobrado — admin pode editar pra dar desconto (em REAIS inteiros) */}
+        {(() => {
+          const catalogPrice = PACKAGES.find(p => p.key === pkgKey)?.price ?? 0;
+          const desconto     = Math.max(0, catalogPrice - customValue);
+          const pctOff       = catalogPrice > 0 ? (desconto / catalogPrice) * 100 : 0;
+          return (
+            <div className="bg-purple-50/40 border border-purple-100 rounded-lg p-3">
+              <label className="block text-xs font-semibold text-gray-700 mb-1 uppercase tracking-wide">
+                Valor cobrado (R$)
+              </label>
+              <p className="text-[11px] text-gray-500 mb-2">
+                Preço de tabela: <strong>R$ {catalogPrice.toLocaleString('pt-BR')},00</strong> — edite pra aplicar desconto
+              </p>
+              <input
+                type="text"
+                inputMode="numeric"
+                placeholder="1500"
+                className="w-full border border-gray-200 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-purple-200"
+                value={customValue || ''}
+                onChange={e => {
+                  // Aceita "1500", "1.500", "1500,00", "1.500,00" — tudo vira REAIS inteiros.
+                  // pt-BR: ponto = separador de milhar, vírgula = decimal.
+                  const raw     = e.target.value.replace(/[^\d.,]/g, '');
+                  if (!raw) { setCustomValue(0); return; }
+                  const cleaned = raw.replace(/\./g, '').replace(',', '.');
+                  const num     = parseFloat(cleaned);
+                  if (!isFinite(num) || num < 0) { setCustomValue(0); return; }
+                  // Limita ao catálogo (não cobrar acima)
+                  const capped  = Math.min(Math.round(num), catalogPrice);
+                  setCustomValue(capped);
+                }}
+              />
+              {customValue < catalogPrice && customValue > 0 && (
+                <p className="mt-2 text-xs text-purple-700 font-semibold">
+                  Desconto: R$ {desconto.toLocaleString('pt-BR')},00 ({pctOff.toFixed(1).replace('.', ',')}% off)
+                </p>
+              )}
+              {customValue === 0 && (
+                <p className="mt-2 text-xs text-amber-700 font-medium">
+                  ⚠ Valor zerado — sem cobrança
+                </p>
+              )}
+              {customValue === catalogPrice && (
+                <p className="mt-2 text-xs text-gray-500">
+                  Sem desconto — valor de tabela
+                </p>
+              )}
+            </div>
+          );
+        })()}
 
         {/* Date */}
         <div className="grid grid-cols-2 gap-3">
@@ -1106,7 +1139,7 @@ function BookingCard({
           {booking.instagramBailarina && <p className="text-xs text-purple-400">📷 {booking.instagramBailarina}</p>}
           <p className="text-xs text-purple-600 mt-0.5">👯 Nº Bailarinas: <strong>{booking.numBailarinas ?? 1}</strong></p>
           {booking.price != null && (
-            <p className="text-xs font-medium text-[#352D39] mt-1">R$ {Number(booking.price).toFixed(2).replace('.', ',')}</p>
+            <p className="text-xs font-medium text-[#352D39] mt-1">R$ {Number(booking.price).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
           )}
         </div>
         <span className={`text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full border ${STATUS_COLOR[booking.status] ?? ''}`}>
@@ -1247,7 +1280,7 @@ function BookingList({
                 </td>
                 <td className="px-4 py-3 text-gray-600">{b.package}</td>
                 <td className="px-4 py-3 text-gray-600">
-                  {b.price != null ? `R$ ${Number(b.price).toFixed(2).replace('.', ',')}` : '—'}
+                  {b.price != null ? `R$ ${Number(b.price).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : '—'}
                 </td>
                 <td className="px-4 py-3">
                   <span className={`text-[10px] font-bold uppercase tracking-wider px-2.5 py-1 rounded-full border ${STATUS_COLOR[b.status] ?? 'bg-gray-100 text-gray-500 border-gray-200'}`}>
@@ -1524,6 +1557,11 @@ function Dashboard({
     setGatewayPicker(null);
     setActionLoading(true);
     try {
+      // Preserva o valor original (que pode ser custom/desconto) ao regerar o link.
+      // booking.price vem do Sheet como string "1500.00" — Number() resolve.
+      const preservedValue = booking.price != null && Number(booking.price) > 0
+        ? Number(booking.price)
+        : undefined;
       const r = await fetch(`${API}/api/admin-bookings`, {
         method: 'POST', headers,
         body: JSON.stringify({
@@ -1538,6 +1576,7 @@ function Dashboard({
           packageKey:       PKG_KEY[booking.package] ?? 'lembranca',
           numBailarinas:    booking.numBailarinas ?? 1,
           oldStripeSession: booking.stripeSession ?? '', // pra backend cancelar link antigo no gateway
+          customValue:      preservedValue,              // mantém desconto original (se houver)
         }),
       });
       const json = await r.json();

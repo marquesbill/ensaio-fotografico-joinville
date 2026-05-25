@@ -2710,7 +2710,7 @@ async function handleCancel(req: VercelRequest, res: VercelResponse, auth: { use
       endTime:       endTime || time,
       packageName:   pkg.name,
       duration:      pkg.duration,
-      price:         (pkg.price || 0).toFixed(2).replace('.', ','),
+      price:         (pkg.price || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }),
       bookingId,
       numBailarinas: Number(numBailarinas) || 1,
     }, 'cancelled');
@@ -2778,7 +2778,7 @@ async function handleConfirm(req: VercelRequest, res: VercelResponse, auth: { us
       name, date, time, endTime,
       packageName: pkg.name,
       duration:    pkg.duration,
-      price:       (pkg.price || 0).toFixed(2).replace('.', ','),
+      price:       (pkg.price || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }),
       bookingId:   confirmedId,
       numBailarinas: Number(numBailarinas) || 1,
     }, 'confirmed');
@@ -2992,7 +2992,7 @@ async function handleCreate(req: VercelRequest, res: VercelResponse, auth: { use
         name, date, time, endTime,
         packageName: pkg.name,
         duration:    pkg.duration,
-        price:       chargeValue.toFixed(2).replace('.', ','),
+        price:       chargeValue.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }),
         bookingId,
         numBailarinas: nb,
       }, 'confirmed');
@@ -3227,6 +3227,7 @@ async function handlePaymentLink(req: VercelRequest, res: VercelResponse, auth: 
           stripeSession:      externalId,    // MP preferenceId OR ASAAS checkout id
           gateway:            gw,
           source:             'admin',
+          customValue:        chargeValue,   // preserva desconto admin no novo pending
         }),
       });
       if (!pendingRes.ok) throw new Error(`Sheets HTTP ${pendingRes.status}`);
@@ -3341,7 +3342,7 @@ async function handleReschedule(req: VercelRequest, res: VercelResponse, auth: {
       endTime,
       packageName:   pkg.name,
       duration:      pkg.duration,
-      price:         (pkg.price || 0).toFixed(2).replace('.', ','),
+      price:         (pkg.price || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }),
       bookingId:     newBookingId,
       numBailarinas: Number(numBailarinas) || 1,
     }, 'rescheduled');

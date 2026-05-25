@@ -329,7 +329,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 <strong>Email:</strong> ${email}<br>
 <strong>WhatsApp:</strong> ${whatsapp}<br>
 <strong>Data:</strong> ${date} ${time}<br>
-<strong>Pacote:</strong> ${pkg.name} (R$ ${priceFinal})<br>
+<strong>Pacote:</strong> ${pkg.name} (R$ ${priceFinal.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })})<br>
 <strong>Gateway:</strong> ${normalized.gateway.toUpperCase()}<br>
 <strong>Payment ID:</strong> ${normalized.paymentId}<br>
 <strong>External Slot ID:</strong> ${normalized.externalSlotId}<br>
@@ -354,7 +354,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   const htmlBody = buildBookingEmailHtml({
     name, date, time, endTime,
     packageName: pkg.name, duration: pkg.duration,
-    price: priceFinal.toFixed(2).replace('.', ','),
+    price: priceFinal.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }),
     bookingId,
     numBailarinas,
   }, 'confirmed');
@@ -378,7 +378,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       html:    `<p><strong>Nova reserva confirmada</strong><br>
 Cliente: ${name}<br>E-mail: ${email}<br>WhatsApp: ${whatsapp}<br>
 Data: ${fmtDate(date)}<br>Horário: ${time}–${endTime}<br>
-Pacote: ${pkg.name}<br>Nº Bailarinas: ${numBailarinas}<br>Valor: R$ ${priceFinal}<br>
+Pacote: ${pkg.name}<br>Nº Bailarinas: ${numBailarinas}<br>Valor: R$ ${priceFinal.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}<br>
 Parcelas: ${normalized.installments}x<br>
 ${normalized.billingType ? `Método: ${normalized.billingType}<br>` : ''}
 Booking ID: ${bookingId}<br>Gateway: ${normalized.gateway.toUpperCase()} · Payment: ${normalized.paymentId}</p>`,
@@ -411,7 +411,7 @@ Booking ID: ${bookingId}<br>Gateway: ${normalized.gateway.toUpperCase()} · Paym
       <tr><td style="color:#6b7280;padding:6px 0;font-size:13px;">Data</td>
           <td style="font-size:13px;">${fmtDate(date)} às ${time} – ${endTime}</td></tr>
       <tr><td style="color:#6b7280;padding:6px 0;font-size:13px;border-top:1px solid #e5e7eb;">Valor pago</td>
-          <td style="font-weight:700;font-size:14px;color:#7a3f8f;border-top:1px solid #e5e7eb;">R$ ${priceFinal.toFixed(2).replace('.', ',')}${normalized.installments > 1 ? ` em ${normalized.installments}x` : ''}</td></tr>
+          <td style="font-weight:700;font-size:14px;color:#7a3f8f;border-top:1px solid #e5e7eb;">R$ ${priceFinal.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}${normalized.installments > 1 ? ` em ${normalized.installments}x` : ''}</td></tr>
     </table>
     <p style="font-size:12px;color:#9ca3af;margin-top:16px;border-top:1px solid #f0f0f0;padding-top:12px;">
       Booking ID: ${bookingId}
