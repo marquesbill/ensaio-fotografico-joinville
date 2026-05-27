@@ -26,6 +26,7 @@ import {
   Loader2,
   Menu,
   X,
+  FileDown,
 } from 'lucide-react';
 
 import { Overview } from './pages/Overview';
@@ -34,6 +35,7 @@ import { Funnel } from './pages/Funnel';
 import { Engagement } from './pages/Engagement';
 import { Payments } from './pages/Payments';
 import { Behavior } from './pages/Behavior';
+import { generateFullReport, downloadMarkdown, reportFilename } from './lib/report';
 
 type DashboardPage = 'overview' | 'acquisition' | 'funnel' | 'engagement' | 'payments' | 'behavior';
 
@@ -108,6 +110,24 @@ function DashboardShell({ token, user, onLogout }: { token: string; user: string
   const [sidebarOpen, setSidebarOpen] = useState(() =>
     typeof window !== 'undefined' && window.matchMedia('(min-width: 1024px)').matches
   );
+  // Estado do botão "Gerar Relatório" — só visível pro user `andre`.
+  // Restrição é UI-only (Elisa também tem token válido e pode chamar os
+  // endpoints individuais — o relatório só consolida o que ela já vê).
+  const [reportLoading, setReportLoading] = useState(false);
+  const [reportError,   setReportError]   = useState<string | null>(null);
+
+  async function handleGenerateReport() {
+    setReportLoading(true);
+    setReportError(null);
+    try {
+      const md = await generateFullReport(token, user);
+      downloadMarkdown(md, reportFilename(user));
+    } catch (e) {
+      setReportError(e instanceof Error ? e.message : 'Erro ao gerar relatório');
+    } finally {
+      setReportLoading(false);
+    }
+  }
 
   // Em mobile, escolher uma página = fechar a sidebar (UX padrão de drawer).
   // Em desktop fica aberta (não atrapalha layout).
@@ -192,6 +212,35 @@ function DashboardShell({ token, user, onLogout }: { token: string; user: string
         </nav>
 
         <div className="p-3 border-t border-white/5">
+          {/* Gerar Relatório — só pro andre. UI-only gating; consolida o que
+              os outros usuários já podem ver nas páginas individuais. */}
+          {user === 'andre' && (
+            <>
+              <button
+                onClick={handleGenerateReport}
+                disabled={reportLoading}
+                className="w-full flex items-center gap-2 px-3 py-2.5 mb-2 rounded-lg text-sm font-semibold text-white shadow-sm transition-all disabled:opacity-50"
+                style={{ background: 'linear-gradient(135deg, #7a3f8f, #e87060)' }}
+                title="Coleta GA4 + Clarity + Sheets + roda Monte Carlo e baixa em markdown"
+              >
+                {reportLoading ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    Coletando dados…
+                  </>
+                ) : (
+                  <>
+                    <FileDown className="w-4 h-4" />
+                    Gerar Relatório
+                  </>
+                )}
+              </button>
+              {reportError && (
+                <p className="text-xs text-red-300/90 px-2 mb-2 break-words">{reportError}</p>
+              )}
+            </>
+          )}
+
           <div className="flex items-center gap-3 px-3 py-2 mb-2">
             <div className="w-8 h-8 rounded-full bg-[#7a3f8f]/20 border border-[#a578bb]/30 flex items-center justify-center text-[#d4baeb] text-sm font-bold">
               {user.charAt(0).toUpperCase()}
