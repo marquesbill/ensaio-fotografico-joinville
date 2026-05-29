@@ -136,7 +136,7 @@ function initSheets() {
     'ID','Data','Início','Fim','Pacote','Duração (min)','Valor (R$)',
     'Nome','E-mail','WhatsApp','Instagram Cliente','Instagram Bailarina','Nome Bailarina','Nº Bailarinas',
     'Stripe Session','Stripe Payment','Status','Criado em','Atualizado em',
-    'Rem1Sent','Rem2Sent','Rem3Sent','AndreNotified','ExpiryWarnSent','Source','Sessões Pagas'
+    'Rem1Sent','Rem2Sent','Rem3Sent','AndreNotified','ExpiryWarnSent','Source','Sessões Pagas','Nomes Pagadores'
   ];
   ensureSheet('Agendamentos', agHeaders, '#4CAF50');
   ensureSheet('Bloqueios',    ['Data','Início','Fim','Motivo'],                '#FF9800');
@@ -695,7 +695,7 @@ function _ensureColumn(sa, headerName) {
 function createPending(data) {
   const { date, start, packageKey, name, email, whatsapp,
           instagram, instagramBailarina, nomeBailarina, numBailarinas,
-          stripeSession, source, customValue } = data;
+          stripeSession, source, customValue, payerNames } = data;
   const pkg = CFG.PACKAGES[packageKey];
   if (!pkg) throw new Error('Pacote inválido: ' + packageKey);
 
@@ -731,7 +731,16 @@ function createPending(data) {
   const now       = nowIso();
 
   const sa = getSheet('Agendamentos');
+  // Self-healing: garante colunas novas (multi-pagador) antes de montar a linha.
+  _ensureColumn(sa, 'Sessões Pagas');
+  _ensureColumn(sa, 'Nomes Pagadores');
   const cm = _colMap(sa);
+
+  // payerNames pode chegar como array ou string comma-separated — normaliza pra
+  // CSV paralelo a "Stripe Session" (1 nome por pagador, mesma ordem).
+  const payerNamesCsv = Array.isArray(payerNames)
+    ? payerNames.map(function(n) { return String(n || '').trim(); }).join(',')
+    : String(payerNames || '');
 
   // Monta a linha header-by-header — funciona com schema antigo ou novo.
   const numCols = Math.max(sa.getLastColumn(), 23);
@@ -760,6 +769,7 @@ function createPending(data) {
   set('Criado em',             now,                                16);
   set('Atualizado em',         now,                                17);
   set('Source',                source || 'site');
+  set('Nomes Pagadores',       payerNamesCsv);
 
   sa.appendRow(newRow);
 
@@ -777,9 +787,10 @@ function confirmBooking(data) {
   const sa = getSheet('Agendamentos');
   if (!sa || sa.getLastRow() < 2) throw new Error('Planilha vazia');
 
-  // Self-healing: garante coluna "Sessões Pagas" (multi-pagador). Auto-migra
-  // sheets antigas sem precisar rodar initSheets manualmente.
+  // Self-healing: garante colunas multi-pagador. Auto-migra sheets antigas
+  // sem precisar rodar initSheets manualmente.
   _ensureColumn(sa, 'Sessões Pagas');
+  _ensureColumn(sa, 'Nomes Pagadores');
 
   const cm      = _colMap(sa);
   const numCols = sa.getLastColumn();
@@ -816,6 +827,12 @@ function confirmBooking(data) {
   const totalCount    = totalSessions.length || 1;
   const wasAlreadyPaid = !!prevPaidSet[stripeSession];
 
+  // Nomes dos pagadores (paralelo a "Stripe Session" por posição). Permite
+  // dizer "Ana pagou (2/4) · falta Bruna, Carla" no e-mail parcial pra Mari.
+  const payerNames = splitCsv(_val(row, cm, 'Nomes Pagadores'));
+  const thisPos    = totalSessions.indexOf(stripeSession);
+  const thisPayerName = (thisPos >= 0 && payerNames[thisPos]) ? payerNames[thisPos] : '';
+
   // Resposta-base reusada nos retornos abaixo
   const baseReturn = {
     bookingId:        thisId,
@@ -829,6 +846,7 @@ function confirmBooking(data) {
     numBailarinas:    Number(_val(row, cm, 'Nº Bailarinas')) || 1,
     valor:            parseFloat(_val(row, cm, 'Valor (R$)', 6)) || 0,
     totalSessions:    totalCount,
+    paidPayerName:    thisPayerName,
   };
 
   // ── Idempotência ─────────────────────────────────────────────
@@ -944,12 +962,24 @@ function confirmBooking(data) {
     }
   }
 
+  // Nomes dos pagadores que AINDA faltam (sessions em totalSessions e não em
+  // newPaidList). Usado no e-mail parcial pra Mari saber quem cobrar.
+  const newPaidSet = {};
+  newPaidList.forEach(function(s) { newPaidSet[s] = true; });
+  const pendingPayerNames = [];
+  totalSessions.forEach(function(sid, i) {
+    if (!newPaidSet[sid]) {
+      pendingPayerNames.push(payerNames[i] || ('Pagador ' + (i + 1)));
+    }
+  });
+
   return Object.assign({
     ok: true,
-    alreadyConfirmed: false,
-    fullyConfirmed:   fullyConfirmed,
-    paidCount:        newPaidCount,
-    conflict:         fullyConfirmed && !!conflictAlert,
+    alreadyConfirmed:   false,
+    fullyConfirmed:     fullyConfirmed,
+    paidCount:          newPaidCount,
+    pendingPayerNames:  pendingPayerNames,
+    conflict:           fullyConfirmed && !!conflictAlert,
   }, baseReturn);
 }
 
@@ -1856,6 +1886,7 @@ function doGet(e) {
         const iStatus   = ci['Status']               ?? (iInsta === -1 ? 12 : 15);
         const iCreated  = ci['Criado em']            ?? (iInsta === -1 ? 13 : 16);
         const iPaidSes  = ci['Sessões Pagas']        ?? -1;
+        const iPayerNm  = ci['Nomes Pagadores']      ?? -1;
         const splitCsv  = function(v) {
           return String(v || '').split(',').map(function(s) { return s.trim(); }).filter(function(s) { return !!s; });
         };
@@ -1863,10 +1894,15 @@ function doGet(e) {
           var fmtDate = function(v) { return v ? (typeof v === 'string' ? v : Utilities.formatDate(v, TZ, 'yyyy-MM-dd')) : ''; };
           var fmtTime = function(v) { return v ? (typeof v === 'string' ? v : Utilities.formatDate(v, TZ, 'HH:mm')) : ''; };
           var fmtIso  = function(v) { return v ? (typeof v === 'string' ? v : v.toISOString()) : ''; };
-          // Multi-pagador: expõe lista de sessions + lista pagas pra UI mostrar
-          // "2/4 pagos" e botão "regerar" por pagador.
+          // Multi-pagador: expõe lista de sessions + lista pagas + nomes pra UI
+          // mostrar "2/4 pagos", nome por pagador e botão "regerar".
           var sessions  = splitCsv(r[iSession]);
           var paidList  = iPaidSes >= 0 ? splitCsv(r[iPaidSes]) : [];
+          // payerNames NÃO usa splitCsv (que filtra vazios) — precisa preservar
+          // posições; um pagador pode ter nome em branco. Split manual sem filtro.
+          var payerNames = iPayerNm >= 0
+            ? String(r[iPayerNm] || '').split(',').map(function(s) { return s.trim(); })
+            : [];
           return {
             id:                  r[iId],
             date:                fmtDate(r[iDate]),
@@ -1884,6 +1920,7 @@ function doGet(e) {
             stripeSession:       r[iSession],
             stripeSessions:      sessions,       // array (1 ou N elementos)
             paidSessions:        paidList,       // array (subset de stripeSessions)
+            payerNames:          payerNames,     // array paralelo a stripeSessions
             splitCount:          sessions.length,
             paidCount:           paidList.length,
             status:              r[iStatus],

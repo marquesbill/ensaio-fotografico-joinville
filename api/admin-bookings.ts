@@ -2805,12 +2805,13 @@ async function handleConfirm(req: VercelRequest, res: VercelResponse, auth: { us
 async function handleCreate(req: VercelRequest, res: VercelResponse, auth: { user: string }) {
   const PACKAGES = getPackages();
   const { name, email, whatsapp, instagram, instagramBailarina, nomeBailarina, numBailarinas,
-          date, time, packageKey, confirm, customValue, splitCount } = req.body as {
+          date, time, packageKey, confirm, customValue, splitCount, payerNames } = req.body as {
     name: string; email: string; whatsapp: string;
     instagram?: string; instagramBailarina?: string; nomeBailarina?: string; numBailarinas?: number;
     date: string; time: string; packageKey: PkgKey; confirm: boolean;
     customValue?: number;
-    splitCount?: number; // 1 (default) ou até pkg.maxBailarinas — multi-pagador
+    splitCount?: number;      // 1 (default) ou até pkg.maxBailarinas — multi-pagador
+    payerNames?: string[];    // nome de cada pagador (paralelo aos links do split)
   };
 
   if (!name || !email || !date || !time || !packageKey) {
@@ -2837,6 +2838,12 @@ async function handleCreate(req: VercelRequest, res: VercelResponse, auth: { use
     }
     split = splitCount;
   }
+
+  // Nomes dos pagadores (1 por link). Normaliza pra array de tamanho `split`:
+  // entradas faltantes viram '' (link fica sem nome — fallback "Pagador N").
+  const names: string[] = Array.from({ length: split }, (_, i) =>
+    (Array.isArray(payerNames) && typeof payerNames[i] === 'string' ? payerNames[i].trim() : '')
+  );
 
   // Admin pode customizar valor (descontos especiais). Em REAIS, mesma unidade
   // de pkg.price. Sanity: número finito >= 0 e <= pkg.price (não permitimos
@@ -2897,11 +2904,21 @@ async function handleCreate(req: VercelRequest, res: VercelResponse, auth: { use
       }
 
       const createOneLink = async (partValue: number, idx: number): Promise<{ url: string; id: string }> => {
-        const partLabel = split > 1 ? ` (pagador ${idx + 1}/${split})` : '';
+        // Nome do pagador desse link (vazio → "pagador N/total" genérico).
+        const payerName = names[idx] || '';
+        const partLabel = split > 1
+          ? (payerName ? ` · ${payerName}` : ` (pagador ${idx + 1}/${split})`)
+          : '';
+        const dateLabel = `${date.split('-').reverse().join('/')} às ${time}`;
         if (gw === 'asaas') {
+          // ASAAS itemName limita 30 chars: prioriza o nome do pagador (é o que
+          // a Mari precisa ver pra saber de quem é o link). Sem nome → "Pacote X".
+          const asaasItemName = (split > 1 && payerName)
+            ? `${pkg.name}: ${payerName}`.slice(0, 30)
+            : `Pacote ${pkg.name}`.slice(0, 30);
           const checkout = await createAsaasCheckoutAdmin({
-            itemName:          `Pacote ${pkg.name}`.slice(0, 30),
-            itemDescription:   `${date.split('-').reverse().join('/')} às ${time} · ${pkg.duration} min · ${nb} ${nb === 1 ? 'bailarina' : 'bailarinas'}${partLabel}`,
+            itemName:          asaasItemName,
+            itemDescription:   `${dateLabel} · ${pkg.duration} min · ${nb} ${nb === 1 ? 'bailarina' : 'bailarinas'}${partLabel}`,
             value:             partValue,
             externalReference: encodeAsaasRefAdmin({ date, time, packageKey, numBailarinas: nb, name, email, whatsapp }),
             successUrl:        `${SITE_URL}/agendamento/sucesso`,
@@ -2909,15 +2926,18 @@ async function handleCreate(req: VercelRequest, res: VercelResponse, auth: { use
           });
           return { url: checkout.link, id: checkout.id };
         }
-        // Mercado Pago
+        // Mercado Pago — title aceita mais chars; coloca o nome direto.
+        const mpTitle = (split > 1 && payerName)
+          ? `Ensaio Joinville — ${pkg.name} · ${payerName}`
+          : `Ensaio Joinville — ${pkg.name}${partLabel}`;
         const expiry = new Date(Date.now() + 3 * 24 * 60 * 60 * 1000).toISOString();
         const prefRes = await fetch('https://api.mercadopago.com/checkout/preferences', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${MP_TOKEN}` },
           body: JSON.stringify({
             items: [{
-              title:       `Ensaio Joinville — ${pkg.name}${partLabel}`,
-              description: `${date.split('-').reverse().join('/')} às ${time} · ${pkg.duration} min`,
+              title:       mpTitle,
+              description: `${dateLabel} · ${pkg.duration} min`,
               quantity:    1,
               unit_price:  partValue,
               currency_id: 'BRL',
@@ -2975,6 +2995,7 @@ async function handleCreate(req: VercelRequest, res: VercelResponse, auth: { use
             gateway:            gw,
             source:             'admin',
             customValue:        chargeValue,
+            payerNames:         names,   // 1 nome por link (paralelo a sessionsJoined)
           }),
         });
         if (!pendingRes.ok) throw new Error(`Sheets HTTP ${pendingRes.status}`);
@@ -3009,7 +3030,7 @@ async function handleCreate(req: VercelRequest, res: VercelResponse, auth: { use
         bookingId,
         paymentUrl:  createdLinks[0].url,
         paymentUrls: createdLinks.map(l => l.url),
-        paymentParts: createdLinks.map((l, i) => ({ url: l.url, sessionId: l.id, value: linkValues[i] })),
+        paymentParts: createdLinks.map((l, i) => ({ url: l.url, sessionId: l.id, value: linkValues[i], payerName: names[i] || '' })),
         splitCount:  split,
         externalId:  primaryExternalId,
       });
@@ -3454,11 +3475,12 @@ async function handleReschedule(req: VercelRequest, res: VercelResponse, auth: {
  */
 async function handleRegenerateSplitLink(req: VercelRequest, res: VercelResponse, auth: { user: string }) {
   const { bookingId, oldStripeSession, gateway, partValue,
-          date, time, packageKey, numBailarinas, name, email, whatsapp } = req.body as {
+          date, time, packageKey, numBailarinas, name, email, whatsapp, payerName } = req.body as {
     bookingId: string; oldStripeSession: string;
     gateway?: 'mp' | 'asaas'; partValue: number;
     date: string; time: string; packageKey: PkgKey; numBailarinas?: number;
     name: string; email: string; whatsapp?: string;
+    payerName?: string;   // nome do pagador desse link (pra carregar no item)
   };
 
   if (!bookingId || !oldStripeSession || !date || !time || !packageKey || !name || !email) {
@@ -3500,10 +3522,15 @@ async function handleRegenerateSplitLink(req: VercelRequest, res: VercelResponse
     // 2. Cria novo link no gateway escolhido pela Mari (default: ASAAS).
     let newUrl: string;
     let newId:  string;
+    const pName    = (payerName || '').trim();
+    const dateLbl  = `${date.split('-').reverse().join('/')} às ${time}`;
     if (gw === 'asaas') {
+      const asaasItemName = pName
+        ? `${pkg.name}: ${pName}`.slice(0, 30)
+        : `Pacote ${pkg.name}`.slice(0, 30);
       const checkout = await createAsaasCheckoutAdmin({
-        itemName:          `Pacote ${pkg.name}`.slice(0, 30),
-        itemDescription:   `${date.split('-').reverse().join('/')} às ${time} · ${pkg.duration} min · ${nb} ${nb === 1 ? 'bailarina' : 'bailarinas'} (link regerado)`,
+        itemName:          asaasItemName,
+        itemDescription:   `${dateLbl} · ${pkg.duration} min · ${nb} ${nb === 1 ? 'bailarina' : 'bailarinas'}${pName ? ` · ${pName}` : ''} (link regerado)`,
         value:             partValue,
         externalReference: encodeAsaasRefAdmin({ date, time, packageKey, numBailarinas: nb, name, email, whatsapp: whatsapp || '' }),
         successUrl:        `${SITE_URL}/agendamento/sucesso`,
@@ -3518,8 +3545,8 @@ async function handleRegenerateSplitLink(req: VercelRequest, res: VercelResponse
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${MP_TOKEN}` },
         body: JSON.stringify({
           items: [{
-            title:       `Ensaio Joinville — ${pkg.name} (link regerado)`,
-            description: `${date.split('-').reverse().join('/')} às ${time} · ${pkg.duration} min`,
+            title:       pName ? `Ensaio Joinville — ${pkg.name} · ${pName}` : `Ensaio Joinville — ${pkg.name} (link regerado)`,
+            description: `${dateLbl} · ${pkg.duration} min`,
             quantity:    1,
             unit_price:  partValue,
             currency_id: 'BRL',

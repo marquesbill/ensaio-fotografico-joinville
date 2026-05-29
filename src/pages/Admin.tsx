@@ -22,6 +22,7 @@ interface Booking {
   stripeSession?:       string;   // comma-separated em splits ("sess1,sess2,sess3")
   stripeSessions?:      string[]; // expandido pela API (1 ou N elementos)
   paidSessions?:        string[]; // subset de stripeSessions que pagaram
+  payerNames?:          string[]; // nome de cada pagador (paralelo a stripeSessions)
   splitCount?:          number;   // = stripeSessions.length
   paidCount?:           number;   // = paidSessions.length
   status:               string;   // "Confirmado" | "Pendente" | "Cancelado" | "Pago Parcial"
@@ -385,7 +386,7 @@ function NewBookingModal({
   onClose, onSubmit, loading,
 }: {
   onClose: () => void;
-  onSubmit: (data: { name: string; email: string; whatsapp: string; instagram: string; instagramBailarina: string; nomeBailarina: string; numBailarinas: number; date: string; time: string; packageKey: string; customValue?: number; splitCount?: number }, confirm: boolean, gateway?: 'mp' | 'asaas') => void;
+  onSubmit: (data: { name: string; email: string; whatsapp: string; instagram: string; instagramBailarina: string; nomeBailarina: string; numBailarinas: number; date: string; time: string; packageKey: string; customValue?: number; splitCount?: number; payerNames?: string[] }, confirm: boolean, gateway?: 'mp' | 'asaas') => void;
   loading: boolean;
 }) {
   const PACKAGES = usePackages();
@@ -408,6 +409,9 @@ function NewBookingModal({
   // Multi-pagador: 1 = link único (default). Até pkg.maxBailarinas = N links
   // de chargeValue/N cada. Mari escolhe pra dividir entre os participantes.
   const [splitCount,          setSplitCount]          = useState<number>(1);
+  // Nome de cada pagador (índice = posição do link). Array sempre com
+  // pelo menos `splitCount` posições; campos vazios viram fallback no backend.
+  const [payerNames,          setPayerNames]          = useState<string[]>([]);
   const [date,     setDate]     = useState('');
   const [time,     setTime]     = useState('');
   const [slots,    setSlots]    = useState<Slot[]>([]);
@@ -434,6 +438,7 @@ function NewBookingModal({
 
   function submit(confirm: boolean) {
     if (!canSubmit) return;
+    const effectiveSplit = confirm ? 1 : splitCount;
     onSubmit({
       name: name.trim(), email: email.trim(), whatsapp: whatsapp.trim(),
       instagram: instagram.trim(), instagramBailarina: instagramBailarina.trim(), nomeBailarina: nomeBailarina.trim(),
@@ -442,7 +447,11 @@ function NewBookingModal({
       customValue,
       // splitCount só viaja em "Criar + gerar link" (Path A); ignorado no
       // "Confirmar direto" (Path B é pagamento manual, sem links).
-      splitCount: confirm ? 1 : splitCount,
+      splitCount: effectiveSplit,
+      // Nomes só relevantes em split > 1. Recorta/normaliza pro tamanho certo.
+      payerNames: effectiveSplit > 1
+        ? Array.from({ length: effectiveSplit }, (_, i) => (payerNames[i] || '').trim())
+        : undefined,
     }, confirm, gateway);
   }
 
@@ -632,6 +641,34 @@ function NewBookingModal({
                   {remainder !== perLink ? ` + 1× R$ ${remainder.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : ''}
                   {' '}= R$ {customValue.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} total
                 </p>
+              )}
+
+              {/* Nome de cada pagador — cada link carrega o nome (Mari sabe quem é quem) */}
+              {effectiveSplit > 1 && (
+                <div className="mt-3 space-y-2 bg-purple-50/40 border border-purple-100 rounded-lg p-3">
+                  <p className="text-[11px] text-gray-600 font-medium">
+                    Nome de cada pagador (aparece no link de pagamento):
+                  </p>
+                  {Array.from({ length: effectiveSplit }, (_, i) => (
+                    <div key={i} className="flex items-center gap-2">
+                      <span className="text-xs font-bold text-[#7a3f8f] w-6 shrink-0">{i + 1}.</span>
+                      <input
+                        type="text"
+                        className="flex-1 border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-purple-200"
+                        placeholder={`Nome do pagador ${i + 1}`}
+                        value={payerNames[i] || ''}
+                        onChange={e => {
+                          const next = [...payerNames];
+                          next[i] = e.target.value;
+                          setPayerNames(next);
+                        }}
+                      />
+                    </div>
+                  ))}
+                  <p className="text-[10px] text-gray-400">
+                    Pode deixar em branco — sem nome o link mostra só "pagador {'{N}'}".
+                  </p>
+                </div>
               )}
             </div>
           );
@@ -861,7 +898,7 @@ function PaymentLinkModal({
   url, parts, gateway, onClose,
 }: {
   url: string;
-  parts?: Array<{ url: string; sessionId: string; value: number }>;
+  parts?: Array<{ url: string; sessionId: string; value: number; payerName?: string }>;
   gateway: 'mp' | 'asaas';
   onClose: () => void;
 }) {
@@ -898,7 +935,7 @@ function PaymentLinkModal({
             <div key={p.sessionId} className="border border-gray-200 rounded-xl p-3">
               <div className="flex items-center justify-between mb-2">
                 <span className="text-xs font-semibold text-[#7a3f8f] uppercase tracking-wide">
-                  Pagador {idx + 1}
+                  {p.payerName ? p.payerName : `Pagador ${idx + 1}`}
                 </span>
                 <span className="text-sm font-bold text-[#352D39]">
                   R$ {p.value.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
@@ -1030,11 +1067,12 @@ function SplitDetailsModal({
           const value        = idx === total - 1 ? lastLink : perLink;
           const newUrl       = regenerated[sessId];
           const isRegenerating = regenerating === sessId;
+          const payerName    = (booking.payerNames ?? [])[idx] || '';
           return (
             <div key={sessId} className={`border rounded-xl p-3 ${isPaid ? 'border-green-200 bg-green-50/50' : 'border-gray-200'}`}>
               <div className="flex items-center justify-between mb-1.5">
                 <div className="flex items-center gap-2">
-                  <span className="text-xs font-bold text-[#352D39]">Pagador {idx + 1}</span>
+                  <span className="text-xs font-bold text-[#352D39]">{payerName || `Pagador ${idx + 1}`}</span>
                   <span className="text-xs font-semibold text-[#7a3f8f]">
                     R$ {value.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                   </span>
@@ -1656,7 +1694,7 @@ function Dashboard({
   const [paymentLink,      setPaymentLink]      = useState<{
     url:     string;
     urls?:   string[];
-    parts?:  Array<{ url: string; sessionId: string; value: number }>;
+    parts?:  Array<{ url: string; sessionId: string; value: number; payerName?: string }>;
     gateway: 'mp' | 'asaas';
   } | null>(null);
   const [gatewayPicker,    setGatewayPicker]    = useState<Booking | null>(null);
@@ -1794,7 +1832,7 @@ function Dashboard({
   }
 
   async function handleCreateBooking(
-    data: { name: string; email: string; whatsapp: string; instagram: string; instagramBailarina: string; nomeBailarina: string; numBailarinas: number; date: string; time: string; packageKey: string; customValue?: number; splitCount?: number },
+    data: { name: string; email: string; whatsapp: string; instagram: string; instagramBailarina: string; nomeBailarina: string; numBailarinas: number; date: string; time: string; packageKey: string; customValue?: number; splitCount?: number; payerNames?: string[] },
     confirm: boolean,
     gateway?: 'mp' | 'asaas',
   ) {
@@ -1911,6 +1949,8 @@ function Dashboard({
     const partValue = idx === total - 1
       ? Number((totalValue - perLink * (total - 1)).toFixed(2))
       : perLink;
+    // Nome do pagador dessa posição — pra carregar no link regerado
+    const payerName = idx >= 0 ? (booking.payerNames ?? [])[idx] || '' : '';
 
     setRegenSession(oldSessionId);
     try {
@@ -1929,6 +1969,7 @@ function Dashboard({
           name:             booking.name,
           email:            booking.email ?? '',
           whatsapp:         booking.whatsapp ?? '',
+          payerName,
         }),
       });
       const json = await r.json() as { url?: string; sessionId?: string; error?: string };

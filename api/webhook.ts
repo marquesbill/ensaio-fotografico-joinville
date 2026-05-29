@@ -277,6 +277,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   let fullyConfirmed = true;  // default true pra compat (single-pagador sempre fecha)
   let paidCount     = 1;
   let totalSessions = 1;
+  let paidPayerName = '';            // nome do pagador que acabou de pagar
+  let pendingPayerNames: string[] = []; // nomes que ainda faltam pagar
   for (let attempt = 1; attempt <= 3; attempt++) {
     try {
       const r = await fetch(SCRIPT_URL, {
@@ -293,6 +295,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       const json = await r.json() as {
         bookingId?: string; alreadyConfirmed?: boolean; fullyConfirmed?: boolean;
         paidCount?: number; totalSessions?: number;
+        paidPayerName?: string; pendingPayerNames?: string[];
         date?: string; start?: string; name?: string; email?: string;
         whatsapp?: string; package?: string; numBailarinas?: number; valor?: number;
       };
@@ -303,6 +306,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       fullyConfirmed   = json.fullyConfirmed !== false;
       paidCount        = json.paidCount     || 1;
       totalSessions    = json.totalSessions || 1;
+      paidPayerName    = json.paidPayerName || '';
+      pendingPayerNames = Array.isArray(json.pendingPayerNames) ? json.pendingPayerNames : [];
       // confirmBooking lê a linha da planilha — fonte autoritativa da meta.
       // Sobrescreve o fallback (essencial pro Checkout ASAAS, que vem sem ref).
       if (json.date)          meta.date          = json.date;
@@ -375,13 +380,22 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     console.log(`[webhook] booking ${bookingId} pagamento PARCIAL ${paidCount}/${totalSessions} — só notifica Mari`);
     try {
       const valorPago = (Number(normalized.amount) || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+      // Quem acabou de pagar e quem ainda falta — o ponto central do pedido:
+      // Mari precisa saber QUEM falta pagar de QUAL ensaio.
+      const quemPagou = paidPayerName ? `<strong>${paidPayerName}</strong>` : 'Um dos pagadores';
+      const faltam    = pendingPayerNames.length > 0
+        ? pendingPayerNames.map(n => n || '(sem nome)').join(', ')
+        : `${totalSessions - paidCount} pagador(es)`;
       await resend.emails.send({
         from:    FROM_EMAIL,
         to:      MARIANE_EMAIL,
-        subject: `💰 Pagamento parcial recebido — ${name} (${paidCount}/${totalSessions}) · ${pkg.name}`,
+        subject: `💰 ${paidPayerName || 'Pagamento parcial'} pagou — ${name} (${paidCount}/${totalSessions}) · ${pkg.name}`,
         html: `<div style="font-family:Arial,sans-serif;font-size:14px;line-height:1.6;color:#1a1a1a;">
 <h2 style="color:#7a3f8f;margin:0 0 12px;">Pagamento parcial recebido</h2>
-<p>Um dos pagadores do split fechou. Reserva ainda <strong>não está confirmada</strong> — falta ${totalSessions - paidCount} pagador(es).</p>
+<p>${quemPagou} pagou a parte do split. Reserva ainda <strong>não está confirmada</strong>.</p>
+<p style="background:#fef3c7;border-radius:8px;padding:10px 12px;margin:12px 0;">
+  <strong>Ainda falta(m) pagar:</strong> ${faltam}
+</p>
 <p><strong>Cliente:</strong> ${name}<br>
 <strong>E-mail:</strong> ${email}<br>
 <strong>WhatsApp:</strong> ${whatsapp || '—'}<br>
