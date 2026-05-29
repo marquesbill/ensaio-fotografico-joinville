@@ -19,8 +19,12 @@ interface Booking {
   instagramBailarina?:  string;
   nomeBailarina?:       string;
   numBailarinas?:       number;
-  stripeSession?:       string;
-  status:               string;   // "Confirmado" | "Pendente" | "Cancelado"
+  stripeSession?:       string;   // comma-separated em splits ("sess1,sess2,sess3")
+  stripeSessions?:      string[]; // expandido pela API (1 ou N elementos)
+  paidSessions?:        string[]; // subset de stripeSessions que pagaram
+  splitCount?:          number;   // = stripeSessions.length
+  paidCount?:           number;   // = paidSessions.length
+  status:               string;   // "Confirmado" | "Pendente" | "Cancelado" | "Pago Parcial"
   createdAt?:           string;
 }
 
@@ -83,15 +87,17 @@ const PKG_KEY: Record<string, string> = {
 };
 
 const STATUS_COLOR: Record<string, string> = {
-  Confirmado: 'bg-green-100 text-green-700 border-green-200',
-  Pendente:   'bg-amber-100  text-amber-700  border-amber-200',
-  Cancelado:  'bg-gray-100  text-gray-500  border-gray-200',
+  Confirmado:    'bg-green-100 text-green-700 border-green-200',
+  Pendente:      'bg-amber-100  text-amber-700  border-amber-200',
+  Cancelado:     'bg-gray-100  text-gray-500  border-gray-200',
+  'Pago Parcial': 'bg-blue-100  text-blue-700  border-blue-200',
 };
 
 const STATUS_DOT: Record<string, string> = {
-  Confirmado: 'bg-green-500',
-  Pendente:   'bg-amber-400',
-  Cancelado:  'bg-gray-400',
+  Confirmado:    'bg-green-500',
+  Pendente:      'bg-amber-400',
+  Cancelado:     'bg-gray-400',
+  'Pago Parcial': 'bg-blue-500',
 };
 
 function fmtDate(d: string) {
@@ -379,7 +385,7 @@ function NewBookingModal({
   onClose, onSubmit, loading,
 }: {
   onClose: () => void;
-  onSubmit: (data: { name: string; email: string; whatsapp: string; instagram: string; instagramBailarina: string; nomeBailarina: string; numBailarinas: number; date: string; time: string; packageKey: string; customValue?: number }, confirm: boolean, gateway?: 'mp' | 'asaas') => void;
+  onSubmit: (data: { name: string; email: string; whatsapp: string; instagram: string; instagramBailarina: string; nomeBailarina: string; numBailarinas: number; date: string; time: string; packageKey: string; customValue?: number; splitCount?: number }, confirm: boolean, gateway?: 'mp' | 'asaas') => void;
   loading: boolean;
 }) {
   const PACKAGES = usePackages();
@@ -399,6 +405,9 @@ function NewBookingModal({
   const [customValue,         setCustomValue]         = useState<number>(
     () => PACKAGES.find(p => p.key === 'lembranca')?.price ?? 0
   );
+  // Multi-pagador: 1 = link único (default). Até pkg.maxBailarinas = N links
+  // de chargeValue/N cada. Mari escolhe pra dividir entre os participantes.
+  const [splitCount,          setSplitCount]          = useState<number>(1);
   const [date,     setDate]     = useState('');
   const [time,     setTime]     = useState('');
   const [slots,    setSlots]    = useState<Slot[]>([]);
@@ -431,6 +440,9 @@ function NewBookingModal({
       numBailarinas,
       date, time, packageKey: pkgKey,
       customValue,
+      // splitCount só viaja em "Criar + gerar link" (Path A); ignorado no
+      // "Confirmar direto" (Path B é pagamento manual, sem links).
+      splitCount: confirm ? 1 : splitCount,
     }, confirm, gateway);
   }
 
@@ -577,6 +589,48 @@ function NewBookingModal({
               {customValue === catalogPrice && (
                 <p className="mt-2 text-xs text-gray-500">
                   Sem desconto — valor de tabela
+                </p>
+              )}
+            </div>
+          );
+        })()}
+
+        {/* Nº de Pagadores (multi-pagador / split) */}
+        {(() => {
+          const maxSplit = PACKAGES.find(p => p.key === pkgKey)?.maxBailarinas ?? 1;
+          // Garante que se Mari trocou pra um pacote com menos pagadores, splitCount cai
+          const effectiveSplit = Math.min(splitCount, maxSplit);
+          if (effectiveSplit !== splitCount) {
+            // sync soft — evita splitCount > maxSplit ao trocar pacote sem revalidar
+            setTimeout(() => setSplitCount(effectiveSplit), 0);
+          }
+          const perLink = effectiveSplit > 1
+            ? Math.floor((customValue / effectiveSplit) * 100) / 100
+            : customValue;
+          const remainder = effectiveSplit > 1
+            ? Number((customValue - perLink * (effectiveSplit - 1)).toFixed(2))
+            : customValue;
+          return (
+            <div>
+              <label className="block text-xs font-semibold text-gray-600 mb-1 uppercase tracking-wide">
+                Nº de Pagadores (divide o valor)
+              </label>
+              <select
+                className="w-full border border-gray-200 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-purple-200"
+                value={effectiveSplit}
+                onChange={e => setSplitCount(parseInt(e.target.value, 10) || 1)}
+              >
+                {Array.from({ length: maxSplit }, (_, i) => i + 1).map(n => (
+                  <option key={n} value={n}>
+                    {n === 1 ? '1 pagador (link único)' : `${n} pagadores (${n} links)`}
+                  </option>
+                ))}
+              </select>
+              {effectiveSplit > 1 && (
+                <p className="mt-1 text-xs text-purple-700 font-medium">
+                  {effectiveSplit - 1}× R$ {perLink.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  {remainder !== perLink ? ` + 1× R$ ${remainder.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : ''}
+                  {' '}= R$ {customValue.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} total
                 </p>
               )}
             </div>
@@ -800,17 +854,29 @@ function EditBookingModal({
   );
 }
 
-/* ─────────────────── Payment Link Modal ────────────────────── */
-function PaymentLinkModal({ url, gateway, onClose }: { url: string; gateway: 'mp' | 'asaas'; onClose: () => void }) {
-  const [copied, setCopied] = useState(false);
+/* ─────────────────── Payment Link Modal ──────────────────────
+ * Suporta single-link (`url`) ou multi-pagador (`parts` com N entradas).
+ * Em multi: mostra 1 row por pagador com valor + copy + abrir individual. */
+function PaymentLinkModal({
+  url, parts, gateway, onClose,
+}: {
+  url: string;
+  parts?: Array<{ url: string; sessionId: string; value: number }>;
+  gateway: 'mp' | 'asaas';
+  onClose: () => void;
+}) {
+  const [copiedIdx, setCopiedIdx] = useState<number | null>(null);
   const gatewayLabel = gateway === 'mp' ? 'Mercado Pago' : 'ASAAS';
   const validade     = gateway === 'mp' ? '3 dias' : '24 horas';
-  function copy() {
-    navigator.clipboard.writeText(url).then(() => {
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
+  const isSplit = !!(parts && parts.length > 1);
+
+  function copy(target: string, idx: number) {
+    navigator.clipboard.writeText(target).then(() => {
+      setCopiedIdx(idx);
+      setTimeout(() => setCopiedIdx(null), 2000);
     });
   }
+
   return (
     <Overlay onClose={onClose}>
       <div className="flex items-center gap-3 mb-4">
@@ -819,31 +885,211 @@ function PaymentLinkModal({ url, gateway, onClose }: { url: string; gateway: 'mp
           <Link2 size={18} className="text-white" />
         </div>
         <div>
-          <h2 className="text-base font-bold text-[#352D39]">Link de Pagamento</h2>
-          <p className="text-xs text-gray-500">Válido por {validade} · {gatewayLabel}</p>
+          <h2 className="text-base font-bold text-[#352D39]">
+            {isSplit ? `${parts!.length} Links de Pagamento` : 'Link de Pagamento'}
+          </h2>
+          <p className="text-xs text-gray-500">Válido por {validade} · {gatewayLabel}{isSplit && ' · cada link é individual'}</p>
         </div>
       </div>
 
-      <div className="bg-gray-50 border border-gray-200 rounded-xl px-4 py-3 mb-4 break-all text-xs text-gray-700 font-mono select-all">
-        {url}
+      {isSplit ? (
+        <div className="space-y-3 mb-4 max-h-[60vh] overflow-y-auto">
+          {parts!.map((p, idx) => (
+            <div key={p.sessionId} className="border border-gray-200 rounded-xl p-3">
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-xs font-semibold text-[#7a3f8f] uppercase tracking-wide">
+                  Pagador {idx + 1}
+                </span>
+                <span className="text-sm font-bold text-[#352D39]">
+                  R$ {p.value.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                </span>
+              </div>
+              <div className="bg-gray-50 border border-gray-100 rounded-lg px-3 py-2 mb-2 break-all text-[10px] text-gray-600 font-mono select-all">
+                {p.url}
+              </div>
+              <div className="flex gap-2">
+                <button
+                  onClick={() => copy(p.url, idx)}
+                  className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg border border-[#7a3f8f] text-[#7a3f8f] text-xs font-semibold hover:bg-purple-50 transition-colors"
+                >
+                  {copiedIdx === idx ? <Check size={12} /> : <Copy size={12} />}
+                  {copiedIdx === idx ? 'Copiado!' : 'Copiar'}
+                </button>
+                <a
+                  href={p.url} target="_blank" rel="noopener noreferrer"
+                  className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg text-white text-xs font-semibold transition-opacity hover:opacity-90"
+                  style={{ background: 'linear-gradient(135deg,#7a3f8f,#e87060)' }}
+                >
+                  <Link2 size={12} /> Abrir
+                </a>
+              </div>
+            </div>
+          ))}
+        </div>
+      ) : (
+        <>
+          <div className="bg-gray-50 border border-gray-200 rounded-xl px-4 py-3 mb-4 break-all text-xs text-gray-700 font-mono select-all">
+            {url}
+          </div>
+          <div className="flex gap-3 mb-2">
+            <button
+              onClick={() => copy(url, 0)}
+              className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-lg border border-[#7a3f8f] text-[#7a3f8f] text-sm font-semibold hover:bg-purple-50 transition-colors"
+            >
+              {copiedIdx === 0 ? <Check size={14} /> : <Copy size={14} />}
+              {copiedIdx === 0 ? 'Copiado!' : 'Copiar link'}
+            </button>
+            <a
+              href={url} target="_blank" rel="noopener noreferrer"
+              className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-lg text-white text-sm font-semibold transition-opacity hover:opacity-90"
+              style={{ background: 'linear-gradient(135deg,#7a3f8f,#e87060)' }}
+            >
+              <Link2 size={14} /> Abrir
+            </a>
+          </div>
+        </>
+      )}
+    </Overlay>
+  );
+}
+
+/* ─────────────── Split Details Modal (multi-pagador) ──────────
+ * Mostra o status de cada pagador do split. Pro pagador que ainda não pagou,
+ * permite regerar o link individual (caso o anterior tenha expirado/sumido).
+ */
+function SplitDetailsModal({
+  booking, onClose, onRegenerate, regenerating,
+}: {
+  booking: Booking;
+  onClose: () => void;
+  onRegenerate: (oldSessionId: string, gateway: 'mp' | 'asaas') => Promise<{ url: string; sessionId: string } | null>;
+  regenerating: string | null;  // sessionId em curso de regen
+}) {
+  const sessions = booking.stripeSessions ?? [];
+  const paidSet  = new Set(booking.paidSessions ?? []);
+  const total    = sessions.length;
+  const paid     = booking.paidCount ?? 0;
+  // Valor por pagador (igual ao backend: floor 2 casas pros N-1 primeiros,
+  // o último absorve o resto pra fechar exatamente em booking.price)
+  const totalValue = Number(booking.price) || 0;
+  const perLink    = total > 1 ? Math.floor((totalValue / total) * 100) / 100 : totalValue;
+  const lastLink   = total > 1 ? Number((totalValue - perLink * (total - 1)).toFixed(2)) : totalValue;
+
+  // Cache dos links recém-regerados — Mari precisa copiar antes de fechar modal
+  const [regenerated, setRegenerated] = useState<Record<string, string>>({});
+  const [copiedId,    setCopiedId]    = useState<string | null>(null);
+  const [gateway,     setGateway]     = useState<'mp' | 'asaas'>('asaas');
+
+  function copy(url: string, sessionId: string) {
+    navigator.clipboard.writeText(url).then(() => {
+      setCopiedId(sessionId);
+      setTimeout(() => setCopiedId(null), 2000);
+    });
+  }
+
+  async function handleRegen(oldId: string) {
+    const result = await onRegenerate(oldId, gateway);
+    if (result) {
+      setRegenerated(prev => ({ ...prev, [result.sessionId]: result.url }));
+    }
+  }
+
+  return (
+    <Overlay onClose={onClose}>
+      <div className="flex items-center gap-3 mb-4">
+        <div className="w-10 h-10 rounded-full flex items-center justify-center shrink-0"
+             style={{ background: 'linear-gradient(135deg,#7a3f8f,#e87060)' }}>
+          <Link2 size={18} className="text-white" />
+        </div>
+        <div>
+          <h2 className="text-base font-bold text-[#352D39]">Pagadores · {booking.name}</h2>
+          <p className="text-xs text-gray-500">{paid}/{total} pagaram · R$ {totalValue.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} total</p>
+        </div>
       </div>
 
-      <div className="flex gap-3">
-        <button
-          onClick={copy}
-          className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-lg border border-[#7a3f8f] text-[#7a3f8f] text-sm font-semibold hover:bg-purple-50 transition-colors"
-        >
-          {copied ? <Check size={14} /> : <Copy size={14} />}
-          {copied ? 'Copiado!' : 'Copiar link'}
-        </button>
-        <a
-          href={url} target="_blank" rel="noopener noreferrer"
-          className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-lg text-white text-sm font-semibold transition-opacity hover:opacity-90"
-          style={{ background: 'linear-gradient(135deg,#7a3f8f,#e87060)' }}
-        >
-          <Link2 size={14} /> Abrir
-        </a>
+      {/* Gateway pra regen — só relevante se vai regerar algum */}
+      {paid < total && (
+        <div className="mb-3 bg-purple-50 border border-purple-200 rounded-lg p-2">
+          <p className="text-[10px] font-bold text-purple-700 uppercase tracking-wide mb-1">Gateway para regerar</p>
+          <div className="flex gap-2">
+            <button
+              onClick={() => setGateway('asaas')}
+              className={`flex-1 py-1.5 text-xs rounded border ${gateway === 'asaas' ? 'border-[#7a3f8f] bg-white text-[#7a3f8f] font-semibold' : 'border-gray-200 text-gray-500'}`}
+            >ASAAS</button>
+            <button
+              onClick={() => setGateway('mp')}
+              className={`flex-1 py-1.5 text-xs rounded border ${gateway === 'mp' ? 'border-[#7a3f8f] bg-white text-[#7a3f8f] font-semibold' : 'border-gray-200 text-gray-500'}`}
+            >Mercado Pago</button>
+          </div>
+        </div>
+      )}
+
+      <div className="space-y-2 max-h-[60vh] overflow-y-auto">
+        {sessions.map((sessId, idx) => {
+          const isPaid       = paidSet.has(sessId);
+          const value        = idx === total - 1 ? lastLink : perLink;
+          const newUrl       = regenerated[sessId];
+          const isRegenerating = regenerating === sessId;
+          return (
+            <div key={sessId} className={`border rounded-xl p-3 ${isPaid ? 'border-green-200 bg-green-50/50' : 'border-gray-200'}`}>
+              <div className="flex items-center justify-between mb-1.5">
+                <div className="flex items-center gap-2">
+                  <span className="text-xs font-bold text-[#352D39]">Pagador {idx + 1}</span>
+                  <span className="text-xs font-semibold text-[#7a3f8f]">
+                    R$ {value.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  </span>
+                </div>
+                {isPaid ? (
+                  <span className="text-[10px] font-bold text-green-700 bg-green-100 px-2 py-0.5 rounded">✓ PAGO</span>
+                ) : (
+                  <span className="text-[10px] font-bold text-amber-700 bg-amber-100 px-2 py-0.5 rounded">⏳ AGUARDANDO</span>
+                )}
+              </div>
+              <p className="text-[9px] text-gray-400 font-mono mb-2 truncate" title={sessId}>
+                ID: {sessId}
+              </p>
+              {newUrl && (
+                <>
+                  <div className="bg-purple-50 border border-purple-200 rounded px-2 py-1.5 mb-2 break-all text-[10px] text-purple-900 font-mono select-all">
+                    {newUrl}
+                  </div>
+                  <div className="flex gap-1.5 mb-2">
+                    <button
+                      onClick={() => copy(newUrl, sessId)}
+                      className="flex-1 flex items-center justify-center gap-1 py-1.5 rounded border border-purple-300 text-purple-700 text-[11px] font-semibold hover:bg-purple-50"
+                    >
+                      {copiedId === sessId ? <Check size={11} /> : <Copy size={11} />}
+                      {copiedId === sessId ? 'Copiado!' : 'Copiar novo link'}
+                    </button>
+                    <a
+                      href={newUrl} target="_blank" rel="noopener noreferrer"
+                      className="flex-1 flex items-center justify-center gap-1 py-1.5 rounded bg-[#7a3f8f] text-white text-[11px] font-semibold"
+                    >
+                      <Link2 size={11} /> Abrir
+                    </a>
+                  </div>
+                </>
+              )}
+              {!isPaid && (
+                <button
+                  onClick={() => handleRegen(sessId)}
+                  disabled={isRegenerating || !!newUrl}
+                  className="w-full flex items-center justify-center gap-1.5 py-1.5 rounded border border-[#7a3f8f] text-[#7a3f8f] text-[11px] font-semibold hover:bg-purple-50 disabled:opacity-50"
+                >
+                  {isRegenerating ? <><Loader2 size={11} className="animate-spin" />Regerando…</> :
+                   newUrl ? '✓ Novo link gerado' :
+                   <>↻ Regerar link</>}
+                </button>
+              )}
+            </div>
+          );
+        })}
       </div>
+
+      <button
+        onClick={onClose}
+        className="w-full mt-4 py-2 text-sm text-gray-500 border border-gray-200 rounded-lg hover:bg-gray-50"
+      >Fechar</button>
     </Overlay>
   );
 }
@@ -929,7 +1175,7 @@ function Toast({ msg, type, onDone }: { msg: string; type: 'ok' | 'err'; onDone:
 
 /* ─────────────────── Timeline View ─────────────────────────── */
 function TimelineView({
-  bookings, onCancel, onReschedule, onGetPaymentLink, onConfirmPayment, onEdit, onResendEmail,
+  bookings, onCancel, onReschedule, onGetPaymentLink, onConfirmPayment, onEdit, onResendEmail, onShowSplit,
 }: {
   bookings: Booking[];
   onCancel: (b: Booking) => void;
@@ -938,6 +1184,7 @@ function TimelineView({
   onConfirmPayment: (b: Booking) => void;
   onEdit: (b: Booking) => void;
   onResendEmail: (b: Booking) => void;
+  onShowSplit: (b: Booking) => void;
 }) {
   const [sel, setSel]       = useState<Booking | null>(null);
   const [slotPx, setSlotPx] = useState(SLOT_PX);
@@ -1063,7 +1310,12 @@ function TimelineView({
               <p className="text-xs text-purple-600 mt-0.5">👯 Nº Bailarinas: <strong>{sel.numBailarinas ?? 1}</strong></p>
               {sel.price != null && (
                 <p className="text-xs font-medium text-[#352D39] mt-1">
-                  R$ {Number(sel.price).toFixed(2).replace('.', ',')}
+                  R$ {Number(sel.price).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                </p>
+              )}
+              {(sel.splitCount ?? 1) > 1 && (
+                <p className="text-xs font-semibold text-blue-600 mt-1">
+                  💳 Split: {sel.paidCount ?? 0}/{sel.splitCount} pagaram
                 </p>
               )}
             </div>
@@ -1071,12 +1323,19 @@ function TimelineView({
               <X size={14} />
             </button>
           </div>
-          {sel.status === 'Pendente' && (
+          {(sel.status === 'Pendente' || sel.status === 'Pago Parcial') && (
             <div className="flex gap-2 mt-3">
-              <button onClick={() => { onGetPaymentLink(sel); setSel(null); }}
-                      className="flex-1 text-xs py-1.5 rounded-lg border border-[#7a3f8f] text-[#7a3f8f] hover:bg-purple-50 font-medium flex items-center justify-center gap-1">
-                <Link2 size={11} /> Link pgmto
-              </button>
+              {(sel.splitCount ?? 1) > 1 ? (
+                <button onClick={() => { onShowSplit(sel); setSel(null); }}
+                        className="flex-1 text-xs py-1.5 rounded-lg border border-[#7a3f8f] text-[#7a3f8f] hover:bg-purple-50 font-medium flex items-center justify-center gap-1">
+                  <Link2 size={11} /> Ver pagadores ({sel.paidCount ?? 0}/{sel.splitCount})
+                </button>
+              ) : (
+                <button onClick={() => { onGetPaymentLink(sel); setSel(null); }}
+                        className="flex-1 text-xs py-1.5 rounded-lg border border-[#7a3f8f] text-[#7a3f8f] hover:bg-purple-50 font-medium flex items-center justify-center gap-1">
+                  <Link2 size={11} /> Link pgmto
+                </button>
+              )}
               <button onClick={() => { onConfirmPayment(sel); setSel(null); }}
                       className="flex-1 text-xs py-1.5 rounded-lg border border-green-300 text-green-600 hover:bg-green-50 font-medium flex items-center justify-center gap-1">
                 <CheckCircle size={11} /> Confirmar pgmto
@@ -1113,7 +1372,7 @@ function TimelineView({
 
 /* ─────────────────── BookingCard ───────────────────────────── */
 function BookingCard({
-  booking, onCancel, onReschedule, onGetPaymentLink, onConfirmPayment, onEdit, onResendEmail,
+  booking, onCancel, onReschedule, onGetPaymentLink, onConfirmPayment, onEdit, onResendEmail, onShowSplit,
 }: {
   booking: Booking;
   onCancel: (b: Booking) => void;
@@ -1122,10 +1381,14 @@ function BookingCard({
   onConfirmPayment: (b: Booking) => void;
   onEdit: (b: Booking) => void;
   onResendEmail: (b: Booking) => void;
+  onShowSplit: (b: Booking) => void;
 }) {
   const active    = booking.status !== 'Cancelado';
-  const pending   = booking.status === 'Pendente';
+  // Multi-pagador: trata "Pago Parcial" tipo "Pendente" pros botões de ação
+  // (admin precisa poder confirmar/regerar links enquanto o split não fecha).
+  const pending   = booking.status === 'Pendente' || booking.status === 'Pago Parcial';
   const confirmed = booking.status === 'Confirmado';
+  const isSplit   = (booking.splitCount ?? 1) > 1;
   return (
     <div className={`rounded-xl border p-4 ${STATUS_COLOR[booking.status] ?? 'bg-gray-50 border-gray-200'}`}>
       <div className="flex items-start justify-between gap-2">
@@ -1141,6 +1404,11 @@ function BookingCard({
           {booking.price != null && (
             <p className="text-xs font-medium text-[#352D39] mt-1">R$ {Number(booking.price).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
           )}
+          {isSplit && (
+            <p className="text-xs font-semibold text-blue-700 mt-1">
+              💳 Split: {booking.paidCount ?? 0}/{booking.splitCount} pagaram
+            </p>
+          )}
         </div>
         <span className={`text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full border ${STATUS_COLOR[booking.status] ?? ''}`}>
           {booking.status}
@@ -1148,10 +1416,17 @@ function BookingCard({
       </div>
       {pending && (
         <div className="flex gap-2 mt-3">
-          <button
-            onClick={() => onGetPaymentLink(booking)}
-            className="flex-1 text-xs py-1.5 rounded-lg border border-[#7a3f8f] text-[#7a3f8f] font-semibold hover:bg-white/60 transition-colors flex items-center justify-center gap-1"
-          ><Link2 size={11} /> Link pgmto</button>
+          {isSplit ? (
+            <button
+              onClick={() => onShowSplit(booking)}
+              className="flex-1 text-xs py-1.5 rounded-lg border border-[#7a3f8f] text-[#7a3f8f] font-semibold hover:bg-white/60 transition-colors flex items-center justify-center gap-1"
+            ><Link2 size={11} /> Pagadores ({booking.paidCount ?? 0}/{booking.splitCount})</button>
+          ) : (
+            <button
+              onClick={() => onGetPaymentLink(booking)}
+              className="flex-1 text-xs py-1.5 rounded-lg border border-[#7a3f8f] text-[#7a3f8f] font-semibold hover:bg-white/60 transition-colors flex items-center justify-center gap-1"
+            ><Link2 size={11} /> Link pgmto</button>
+          )}
           <button
             onClick={() => onConfirmPayment(booking)}
             className="flex-1 text-xs py-1.5 rounded-lg border border-green-400 text-green-600 font-semibold hover:bg-green-50 transition-colors flex items-center justify-center gap-1"
@@ -1193,6 +1468,7 @@ function BookingList({
   onConfirmPayment,
   onEdit,
   onResendEmail,
+  onShowSplit,
 }: {
   bookings: Booking[];
   onCancel: (b: Booking) => void;
@@ -1201,6 +1477,7 @@ function BookingList({
   onConfirmPayment: (b: Booking) => void;
   onEdit: (b: Booking) => void;
   onResendEmail: (b: Booking) => void;
+  onShowSplit: (b: Booking) => void;
 }) {
   const [search, setSearch] = useState('');
   const [status, setStatus] = useState('');
@@ -1290,11 +1567,18 @@ function BookingList({
                 <td className="px-4 py-3">
                   {b.status !== 'Cancelado' && (
                     <div className="flex flex-wrap gap-1.5 justify-end">
-                      {b.status === 'Pendente' && (<>
-                        <button
-                          onClick={() => onGetPaymentLink(b)}
-                          className="text-xs px-2.5 py-1.5 rounded-lg border border-[#7a3f8f] text-[#7a3f8f] hover:bg-purple-50 font-medium flex items-center gap-1"
-                        ><Link2 size={11} /> Link pgmto</button>
+                      {(b.status === 'Pendente' || b.status === 'Pago Parcial') && (<>
+                        {(b.splitCount ?? 1) > 1 ? (
+                          <button
+                            onClick={() => onShowSplit(b)}
+                            className="text-xs px-2.5 py-1.5 rounded-lg border border-[#7a3f8f] text-[#7a3f8f] hover:bg-purple-50 font-medium flex items-center gap-1"
+                          ><Link2 size={11} /> Pagadores ({b.paidCount ?? 0}/{b.splitCount})</button>
+                        ) : (
+                          <button
+                            onClick={() => onGetPaymentLink(b)}
+                            className="text-xs px-2.5 py-1.5 rounded-lg border border-[#7a3f8f] text-[#7a3f8f] hover:bg-purple-50 font-medium flex items-center gap-1"
+                          ><Link2 size={11} /> Link pgmto</button>
+                        )}
                         <button
                           onClick={() => onConfirmPayment(b)}
                           className="text-xs px-2.5 py-1.5 rounded-lg border border-green-300 text-green-600 hover:bg-green-50 font-medium flex items-center gap-1"
@@ -1339,7 +1623,7 @@ function BookingList({
         {filtered.map(b => (
           <BookingCard key={b.id} booking={b} onCancel={onCancel} onReschedule={onReschedule}
                        onGetPaymentLink={onGetPaymentLink} onConfirmPayment={onConfirmPayment} onEdit={onEdit}
-                       onResendEmail={onResendEmail} />
+                       onResendEmail={onResendEmail} onShowSplit={onShowSplit} />
         ))}
         {filtered.length === 0 && (
           <p className="text-center text-sm text-gray-400 py-8">Nenhum agendamento encontrado</p>
@@ -1367,8 +1651,18 @@ function Dashboard({
   const [editTarget,       setEditTarget]       = useState<Booking | null>(null);
   const [actionLoading,    setActionLoading]    = useState(false);
   const [toast,            setToast]            = useState<{ msg: string; type: 'ok' | 'err' } | null>(null);
-  const [paymentLink,      setPaymentLink]      = useState<{ url: string; gateway: 'mp' | 'asaas' } | null>(null);
+  // Multi-pagador: `urls`/`parts` só preenchidos em splits (N > 1).
+  // Single-pagador usa só `url` (compat).
+  const [paymentLink,      setPaymentLink]      = useState<{
+    url:     string;
+    urls?:   string[];
+    parts?:  Array<{ url: string; sessionId: string; value: number }>;
+    gateway: 'mp' | 'asaas';
+  } | null>(null);
   const [gatewayPicker,    setGatewayPicker]    = useState<Booking | null>(null);
+  // Multi-pagador: modal de detalhes do split + sessionId atualmente em regen
+  const [splitTarget,      setSplitTarget]      = useState<Booking | null>(null);
+  const [regenSession,     setRegenSession]     = useState<string | null>(null);
   const [showNewBooking,   setShowNewBooking]   = useState(false);
 
   const headers = { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` };
@@ -1500,7 +1794,7 @@ function Dashboard({
   }
 
   async function handleCreateBooking(
-    data: { name: string; email: string; whatsapp: string; instagram: string; instagramBailarina: string; nomeBailarina: string; numBailarinas: number; date: string; time: string; packageKey: string; customValue?: number },
+    data: { name: string; email: string; whatsapp: string; instagram: string; instagramBailarina: string; nomeBailarina: string; numBailarinas: number; date: string; time: string; packageKey: string; customValue?: number; splitCount?: number },
     confirm: boolean,
     gateway?: 'mp' | 'asaas',
   ) {
@@ -1510,11 +1804,20 @@ function Dashboard({
         method: 'POST', headers,
         body: JSON.stringify({ action: 'create', ...data, confirm, gateway }),
       });
-      const json = await r.json();
+      const json = await r.json() as {
+        bookingId?: string; paymentUrl?: string; paymentUrls?: string[];
+        paymentParts?: Array<{ url: string; sessionId: string; value: number }>;
+        splitCount?: number; error?: string;
+      };
       if (!r.ok) throw new Error(json.error || 'Erro');
       setShowNewBooking(false);
       if (!confirm && json.paymentUrl) {
-        setPaymentLink({ url: json.paymentUrl, gateway: gateway ?? 'asaas' });
+        setPaymentLink({
+          url:    json.paymentUrl,
+          urls:   json.paymentUrls && json.paymentUrls.length > 1 ? json.paymentUrls : undefined,
+          parts:  json.paymentParts && json.paymentParts.length > 1 ? json.paymentParts : undefined,
+          gateway: gateway ?? 'asaas',
+        });
       } else {
         setToast({ msg: `Agendamento de ${data.name} criado e confirmado`, type: 'ok' });
       }
@@ -1587,6 +1890,56 @@ function Dashboard({
       setToast({ msg: e instanceof Error ? e.message : 'Erro ao gerar link', type: 'err' });
     } finally {
       setActionLoading(false);
+    }
+  }
+
+  /**
+   * Multi-pagador: regera UM link de um split. Mari clica "Regerar" no
+   * SplitDetailsModal; aqui chamamos a API que cancela o antigo no gateway e
+   * cria um novo com mesmo valor. UI fica responsável de exibir/copiar o novo URL.
+   */
+  async function handleRegenerateSplitLink(
+    booking: Booking,
+    oldSessionId: string,
+    gateway: 'mp' | 'asaas',
+  ): Promise<{ url: string; sessionId: string } | null> {
+    const total = booking.splitCount ?? 1;
+    const totalValue = Number(booking.price) || 0;
+    // Mesma fórmula do backend (floor 2 casas; o último absorve o resto)
+    const perLink = total > 1 ? Math.floor((totalValue / total) * 100) / 100 : totalValue;
+    const idx = (booking.stripeSessions ?? []).indexOf(oldSessionId);
+    const partValue = idx === total - 1
+      ? Number((totalValue - perLink * (total - 1)).toFixed(2))
+      : perLink;
+
+    setRegenSession(oldSessionId);
+    try {
+      const r = await fetch(`${API}/api/admin-bookings`, {
+        method: 'POST', headers,
+        body: JSON.stringify({
+          action:           'regenerateSplitLink',
+          bookingId:        booking.id,
+          oldStripeSession: oldSessionId,
+          gateway,
+          partValue,
+          date:             booking.date,
+          time:             booking.start,
+          packageKey:       PKG_KEY[booking.package] ?? 'lembranca',
+          numBailarinas:    booking.numBailarinas ?? 1,
+          name:             booking.name,
+          email:            booking.email ?? '',
+          whatsapp:         booking.whatsapp ?? '',
+        }),
+      });
+      const json = await r.json() as { url?: string; sessionId?: string; error?: string };
+      if (!r.ok || !json.url || !json.sessionId) throw new Error(json.error || 'Erro');
+      await fetchBookings();   // refresh pra sumir o sessionId antigo da lista
+      return { url: json.url, sessionId: json.sessionId };
+    } catch (e) {
+      setToast({ msg: e instanceof Error ? e.message : 'Erro ao regerar link', type: 'err' });
+      return null;
+    } finally {
+      setRegenSession(null);
     }
   }
 
@@ -1743,10 +2096,10 @@ function Dashboard({
               {view === 'timeline'
                 ? <TimelineView bookings={bookings} onCancel={setCancelTarget} onReschedule={setRescheduleTarget}
                                 onGetPaymentLink={handleGetPaymentLink} onConfirmPayment={handleConfirmPayment} onEdit={setEditTarget}
-                                onResendEmail={handleResendEmail} />
+                                onResendEmail={handleResendEmail} onShowSplit={setSplitTarget} />
                 : <BookingList  bookings={bookings} onCancel={setCancelTarget} onReschedule={setRescheduleTarget}
                                 onGetPaymentLink={handleGetPaymentLink} onConfirmPayment={handleConfirmPayment} onEdit={setEditTarget}
-                                onResendEmail={handleResendEmail} />
+                                onResendEmail={handleResendEmail} onShowSplit={setSplitTarget} />
               }
             </div>
           )}
@@ -1795,12 +2148,23 @@ function Dashboard({
         />
       )}
 
-      {/* Payment link modal */}
+      {/* Payment link modal — single ou multi-pagador (split) */}
       {paymentLink && (
         <PaymentLinkModal
           url={paymentLink.url}
+          parts={paymentLink.parts}
           gateway={paymentLink.gateway}
           onClose={() => setPaymentLink(null)}
+        />
+      )}
+
+      {/* Split details modal — Mari vê status de cada pagador + regera unpaid */}
+      {splitTarget && (
+        <SplitDetailsModal
+          booking={splitTarget}
+          onClose={() => setSplitTarget(null)}
+          regenerating={regenSession}
+          onRegenerate={(oldId, gw) => handleRegenerateSplitLink(splitTarget, oldId, gw)}
         />
       )}
 

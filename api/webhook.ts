@@ -137,6 +137,7 @@ type NormalizedPayment = {
   externalRef:    string;          // JSON com meta do booking
   installments:   number;
   billingType?:   string;          // PIX | CREDIT_CARD | BOLETO | UNDEFINED (ASAAS); ausente em MP
+  amount:         number;          // valor desse pagamento específico em REAIS
 };
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
@@ -199,6 +200,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       externalRef:    pay.externalReference || '',
       installments:   pay.installmentCount || 1,
       billingType:    pay.billingType,
+      amount:         Number(pay.value) || 0,
     };
   } else if (isMp) {
     const paymentId = body.data?.id;
@@ -207,6 +209,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     let payment: {
       status: string; preference_id: string; id: number;
       external_reference?: string; installments?: number;
+      transaction_amount?: number;
     };
     try {
       const r = await fetch(`https://api.mercadopago.com/v1/payments/${paymentId}`, {
@@ -228,6 +231,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       paymentId:      String(payment.id),
       externalRef:    payment.external_reference || '',
       installments:   payment.installments || 1,
+      amount:         Number(payment.transaction_amount) || 0,
     };
   } else {
     // payload desconhecido — ack pra evitar retries infinitos do gateway
@@ -267,6 +271,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   let bookingId = '';
   let confirmFailed: string | null = null;
   let alreadyConfirmed = false;
+  // Multi-pagador: tracks partial vs full confirm. Se este pagamento NÃO fechou
+  // o split (fullyConfirmed=false), webhook segura os e-mails de "Reserva
+  // confirmada" e dispara só notificação interna pra Mari (X/N pagos).
+  let fullyConfirmed = true;  // default true pra compat (single-pagador sempre fecha)
+  let paidCount     = 1;
+  let totalSessions = 1;
   for (let attempt = 1; attempt <= 3; attempt++) {
     try {
       const r = await fetch(SCRIPT_URL, {
@@ -281,12 +291,18 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       });
       if (!r.ok) throw new Error(`HTTP ${r.status}`);
       const json = await r.json() as {
-        bookingId?: string; alreadyConfirmed?: boolean;
+        bookingId?: string; alreadyConfirmed?: boolean; fullyConfirmed?: boolean;
+        paidCount?: number; totalSessions?: number;
         date?: string; start?: string; name?: string; email?: string;
         whatsapp?: string; package?: string; numBailarinas?: number; valor?: number;
       };
       bookingId        = json.bookingId || '';
       alreadyConfirmed = json.alreadyConfirmed === true;
+      // fullyConfirmed undefined → assume true (compat com Apps Script antigo
+      // que não retornava esse campo — sempre fechava na 1ª session).
+      fullyConfirmed   = json.fullyConfirmed !== false;
+      paidCount        = json.paidCount     || 1;
+      totalSessions    = json.totalSessions || 1;
       // confirmBooking lê a linha da planilha — fonte autoritativa da meta.
       // Sobrescreve o fallback (essencial pro Checkout ASAAS, que vem sem ref).
       if (json.date)          meta.date          = json.date;
@@ -348,6 +364,39 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (!confirmFailed && alreadyConfirmed) {
     console.log(`[webhook] booking ${bookingId} já confirmado — pula e-mails (${normalized.gateway}/${normalized.paymentId})`);
     return res.status(200).json({ received: true, alreadyConfirmed: true });
+  }
+
+  // ── Pagamento PARCIAL (multi-pagador) ──
+  // Algum split-link pagou mas ainda falta(m) pagador(es). Notifica só Mari
+  // (sem mandar "Reserva confirmada" pro cliente — esse vai sair quando o
+  // último pagador fechar). André recebe quando fecha 100% pra não inflar
+  // inbox com pings parciais.
+  if (!confirmFailed && !fullyConfirmed) {
+    console.log(`[webhook] booking ${bookingId} pagamento PARCIAL ${paidCount}/${totalSessions} — só notifica Mari`);
+    try {
+      const valorPago = (Number(normalized.amount) || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+      await resend.emails.send({
+        from:    FROM_EMAIL,
+        to:      MARIANE_EMAIL,
+        subject: `💰 Pagamento parcial recebido — ${name} (${paidCount}/${totalSessions}) · ${pkg.name}`,
+        html: `<div style="font-family:Arial,sans-serif;font-size:14px;line-height:1.6;color:#1a1a1a;">
+<h2 style="color:#7a3f8f;margin:0 0 12px;">Pagamento parcial recebido</h2>
+<p>Um dos pagadores do split fechou. Reserva ainda <strong>não está confirmada</strong> — falta ${totalSessions - paidCount} pagador(es).</p>
+<p><strong>Cliente:</strong> ${name}<br>
+<strong>E-mail:</strong> ${email}<br>
+<strong>WhatsApp:</strong> ${whatsapp || '—'}<br>
+<strong>Data:</strong> ${fmtDate(date)} · ${time}–${endTime}<br>
+<strong>Pacote:</strong> ${pkg.name}<br>
+<strong>Status do split:</strong> <span style="font-weight:700;color:#7a3f8f;">${paidCount}/${totalSessions} pagos</span><br>
+<strong>Valor recebido agora:</strong> R$ ${valorPago}<br>
+<strong>Gateway:</strong> ${normalized.gateway.toUpperCase()} · Payment: ${normalized.paymentId}</p>
+<p style="font-size:12px;color:#6b7280;">O e-mail final "Reserva confirmada" só vai pro cliente quando todos os pagadores fecharem.</p>
+</div>`,
+      });
+    } catch (e) {
+      console.error('[webhook] Resend Mari (partial) error', e);
+    }
+    return res.status(200).json({ received: true, partial: true, paidCount, totalSessions });
   }
 
   // 2. Send confirmation email to client

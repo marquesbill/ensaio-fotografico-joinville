@@ -52,7 +52,13 @@ const CFG = {
 // ID, Data, Início, Fim, Pacote, Duração (min), Valor (R$),
 // Nome, E-mail, WhatsApp, Instagram Cliente, Instagram Bailarina, Nome Bailarina, Nº Bailarinas,
 // Stripe Session, Stripe Payment, Status, Criado em, Atualizado em,
-// Rem1Sent, Rem2Sent, Rem3Sent, AndreNotified, ExpiryWarnSent, Source
+// Rem1Sent, Rem2Sent, Rem3Sent, AndreNotified, ExpiryWarnSent, Source, Sessões Pagas
+//
+// Multi-pagador (split): "Stripe Session" pode conter N session IDs comma-separated
+// (ex: "sess_abc,sess_def,sess_ghi" pra 3 pagadores). "Sessões Pagas" rastreia os
+// IDs que já confirmaram pagamento (subset de "Stripe Session"). Status fica como
+// "Pago Parcial" enquanto faltar e vai pra "Confirmado" quando o último pagar.
+// "Stripe Payment" também vira comma-separated com os payment IDs correspondentes.
 
 // ── Helpers de tempo ──────────────────────────────────────────
 function timeToMin(hhmm) {
@@ -130,7 +136,7 @@ function initSheets() {
     'ID','Data','Início','Fim','Pacote','Duração (min)','Valor (R$)',
     'Nome','E-mail','WhatsApp','Instagram Cliente','Instagram Bailarina','Nome Bailarina','Nº Bailarinas',
     'Stripe Session','Stripe Payment','Status','Criado em','Atualizado em',
-    'Rem1Sent','Rem2Sent','Rem3Sent','AndreNotified','ExpiryWarnSent','Source'
+    'Rem1Sent','Rem2Sent','Rem3Sent','AndreNotified','ExpiryWarnSent','Source','Sessões Pagas'
   ];
   ensureSheet('Agendamentos', agHeaders, '#4CAF50');
   ensureSheet('Bloqueios',    ['Data','Início','Fim','Motivo'],                '#FF9800');
@@ -280,7 +286,9 @@ function getBookingsForDate(dateStr) {
                     ? dRaw
                     : Utilities.formatDate(dRaw, 'America/Sao_Paulo', 'yyyy-MM-dd')) : '';
     if (d !== dateStr) return false;
-    if (status === 'Confirmado') return true;
+    // Status "Pago Parcial" também bloqueia slot — agendamento já tem dinheiro
+    // entrando, só falta um ou mais pagadores fecharem o split.
+    if (status === 'Confirmado' || status === 'Pago Parcial') return true;
     if (status === 'Pendente') {
       const criadoEm = _val(row, cm, 'Criado em');
       const ageH     = criadoEm ? (now - new Date(criadoEm).getTime()) / 3600000 : 0;
@@ -667,6 +675,23 @@ function processReminders() {
 }
 
 // ── Booking CRUD ──────────────────────────────────────────────
+/**
+ * Self-healing: garante que uma coluna existe na aba. Adiciona no fim se faltar.
+ * Usado pra evoluir schema sem rodar initSheets manual (multi-pagador é o caso).
+ * Retorna o índice 0-based da coluna.
+ */
+function _ensureColumn(sa, headerName) {
+  const lastCol = sa.getLastColumn();
+  const hdrs = sa.getRange(1, 1, 1, lastCol).getValues()[0];
+  for (let i = 0; i < hdrs.length; i++) {
+    if (String(hdrs[i]).trim() === headerName) return i;
+  }
+  // Falta — append
+  sa.getRange(1, lastCol + 1).setValue(headerName)
+    .setFontWeight('bold').setBackground('#1a1a2e').setFontColor('#ffffff');
+  return lastCol; // 0-based do novo header
+}
+
 function createPending(data) {
   const { date, start, packageKey, name, email, whatsapp,
           instagram, instagramBailarina, nomeBailarina, numBailarinas,
@@ -752,11 +777,24 @@ function confirmBooking(data) {
   const sa = getSheet('Agendamentos');
   if (!sa || sa.getLastRow() < 2) throw new Error('Planilha vazia');
 
+  // Self-healing: garante coluna "Sessões Pagas" (multi-pagador). Auto-migra
+  // sheets antigas sem precisar rodar initSheets manualmente.
+  _ensureColumn(sa, 'Sessões Pagas');
+
   const cm      = _colMap(sa);
   const numCols = sa.getLastColumn();
   const rows    = sa.getRange(2, 1, sa.getLastRow() - 1, numCols).getValues();
   const iSes    = cm['Stripe Session'] !== undefined ? cm['Stripe Session'] : 13;
-  const idx     = rows.findIndex(r => r[iSes] === stripeSession);
+
+  // Multi-pagador: o campo "Stripe Session" pode ser "sess1,sess2,sess3" pra
+  // splits. Match por inclusão na lista de IDs (split por vírgula) — preserva
+  // backward compat com bookings single-session (lista com 1 elemento).
+  const splitCsv = function(v) {
+    return String(v || '').split(',').map(function(s) { return s.trim(); }).filter(function(s) { return !!s; });
+  };
+  const idx = rows.findIndex(function(r) {
+    return splitCsv(r[iSes]).indexOf(stripeSession) !== -1;
+  });
   if (idx < 0) throw new Error('Session não encontrada: ' + stripeSession);
 
   const row     = rows[idx];
@@ -770,28 +808,42 @@ function confirmBooking(data) {
   const thisStart  = timeToMin(_toHHMM(_val(row, cm, 'Início', 2)));
   const thisEnd    = timeToMin(_toHHMM(_val(row, cm, 'Fim',    3)));
 
+  // Snapshot das listas de sessions (total e pagas) ANTES de aplicar este evento
+  const totalSessions = splitCsv(_val(row, cm, 'Stripe Session', 13));
+  const prevPaidList  = splitCsv(_val(row, cm, 'Sessões Pagas'));
+  const prevPaidSet   = {};
+  prevPaidList.forEach(function(s) { prevPaidSet[s] = true; });
+  const totalCount    = totalSessions.length || 1;
+  const wasAlreadyPaid = !!prevPaidSet[stripeSession];
+
+  // Resposta-base reusada nos retornos abaixo
+  const baseReturn = {
+    bookingId:        thisId,
+    date:             dateStr,
+    start:            _toHHMM(_val(row, cm, 'Início', 2)),
+    end:              _toHHMM(_val(row, cm, 'Fim',    3)),
+    name:             _val(row, cm, 'Nome',     7),
+    email:            _val(row, cm, 'E-mail',   8),
+    whatsapp:         _val(row, cm, 'WhatsApp', 9),
+    package:          _val(row, cm, 'Pacote',   4),
+    numBailarinas:    Number(_val(row, cm, 'Nº Bailarinas')) || 1,
+    valor:            parseFloat(_val(row, cm, 'Valor (R$)', 6)) || 0,
+    totalSessions:    totalCount,
+  };
+
   // ── Idempotência ─────────────────────────────────────────────
-  // Se a reserva já está Confirmada, outro evento de webhook já confirmou
-  // (ex: PAYMENT_CONFIRMED seguido de PAYMENT_RECEIVED pro mesmo cartão, ou
-  // retry da ASAAS). Retorna sem reescrever a linha, redisparar a detecção de
-  // conflito ou reenviar e-mail de conflito. O webhook lê `alreadyConfirmed`
-  // pra pular o reenvio dos e-mails de confirmação ao cliente.
-  if (prevStatus === 'Confirmado') {
-    return {
+  // (a) Booking já está "Confirmado" — webhook anterior fechou tudo. Pula tudo.
+  // (b) Este session específico já estava em "Sessões Pagas" — retry pro mesmo
+  //     pagamento (ASAAS dispara PAYMENT_CONFIRMED + PAYMENT_RECEIVED).
+  // Em ambos, webhook lê `alreadyConfirmed=true` e não reenvia e-mails.
+  if (prevStatus === 'Confirmado' || wasAlreadyPaid) {
+    return Object.assign({
       ok:               true,
       alreadyConfirmed: true,
-      bookingId:        thisId,
-      date:             dateStr,
-      start:            _toHHMM(_val(row, cm, 'Início', 2)),
-      end:              _toHHMM(_val(row, cm, 'Fim',    3)),
-      name:             _val(row, cm, 'Nome',     7),
-      email:            _val(row, cm, 'E-mail',   8),
-      whatsapp:         _val(row, cm, 'WhatsApp', 9),
-      package:          _val(row, cm, 'Pacote',   4),
-      numBailarinas:    Number(_val(row, cm, 'Nº Bailarinas')) || 1,
-      valor:            parseFloat(_val(row, cm, 'Valor (R$)', 6)) || 0,
+      fullyConfirmed:   prevStatus === 'Confirmado',
+      paidCount:        prevPaidList.length,
       conflict:         false,
-    };
+    }, baseReturn);
   }
 
   // ── Revalidação anti-conflito (boleto pago tardiamente) ──────
@@ -802,7 +854,7 @@ function confirmBooking(data) {
   const conflicting = rows.filter((r, i) => {
     if (i === idx) return false;
     const st = String(_val(r, cm, 'Status') || '').trim();
-    if (st !== 'Confirmado' && st !== 'Pendente') return false;
+    if (st !== 'Confirmado' && st !== 'Pendente' && st !== 'Pago Parcial') return false;
     const rDateRaw = _val(r, cm, 'Data');
     const rDate    = rDateRaw ? (typeof rDateRaw === 'string'
                        ? rDateRaw
@@ -828,19 +880,42 @@ function confirmBooking(data) {
       'Pago: ' + thisId + ' (estava ' + prevStatus + ') | Slot já ocupado por: ' + conflictIds, 'webhook');
   }
 
-  sa.getRange(shRow, _col1(cm, 'Stripe Payment', 15)).setValue(stripePayment || '');
-  sa.getRange(shRow, _col1(cm, 'Status',         16)).setValue('Confirmado');
-  sa.getRange(shRow, _col1(cm, 'Atualizado em',  18)).setValue(nowIso());
+  // ── Aplica o pagamento à lista de "Sessões Pagas" ────────────
+  // Acumula esse session no set de pagos (+1) e decide o status final.
+  const newPaidList = prevPaidList.slice();
+  newPaidList.push(stripeSession);
+  const newPaidCount = newPaidList.length;
+  const fullyConfirmed = newPaidCount >= totalCount;
+  const finalStatus = fullyConfirmed ? 'Confirmado' : 'Pago Parcial';
 
-  buildClientesSheet();
-  addLog('PAGAMENTO_CONFIRMADO', thisId,
+  // "Stripe Payment" também vira lista (1 payment por session, mesma ordem
+  // dos pagamentos chegando). Mantém o último valor por compat com leitura legacy.
+  const prevPayments = splitCsv(_val(row, cm, 'Stripe Payment', 15));
+  const newPayments  = prevPayments.slice();
+  newPayments.push(stripePayment || '');
+
+  sa.getRange(shRow, _col1(cm, 'Stripe Payment', 15)).setValue(newPayments.join(','));
+  sa.getRange(shRow, _col1(cm, 'Status',         16)).setValue(finalStatus);
+  sa.getRange(shRow, _col1(cm, 'Atualizado em',  18)).setValue(nowIso());
+  // "Sessões Pagas" pode não existir em planilhas antigas — defensivo
+  if (cm['Sessões Pagas'] !== undefined) {
+    sa.getRange(shRow, cm['Sessões Pagas'] + 1).setValue(newPaidList.join(','));
+  }
+
+  // Só rebuilda Clientes quando fecha 100% (otimização — buildClientesSheet é
+  // pesado e não precisa rodar a cada pagamento parcial).
+  if (fullyConfirmed) buildClientesSheet();
+  addLog(fullyConfirmed ? 'PAGAMENTO_CONFIRMADO' : 'PAGAMENTO_PARCIAL', thisId,
     'Stripe session: ' + stripeSession + ' | payment: ' + stripePayment +
+    ' | ' + newPaidCount + '/' + totalCount + ' pagos' +
     (conflictAlert ? ' | ⚠️ CONFLITO com ' + conflictAlert.conflictIds : ''),
     'webhook');
 
-  // Dispara email de conflito DEPOIS de marcar Confirmado (o cliente já
-  // pagou, recebe email normal; vocês recebem alerta separado pra resolver)
-  if (conflictAlert) {
+  // Dispara email de conflito DEPOIS de marcar Confirmado/Parcial (o cliente já
+  // pagou, recebe email normal; vocês recebem alerta separado pra resolver).
+  // Só vale a pena alertar se o booking fechou 100% — parcial ainda pode ser
+  // cancelado por estorno antes de fechar.
+  if (conflictAlert && fullyConfirmed) {
     try {
       const subj = '🚨 CONFLITO DE AGENDA — pagamento recebido em slot já ocupado';
       const lines = conflictAlert.conflictRows.map(r =>
@@ -869,21 +944,13 @@ function confirmBooking(data) {
     }
   }
 
-  return {
+  return Object.assign({
     ok: true,
     alreadyConfirmed: false,
-    bookingId: thisId,
-    date:      dateStr,
-    start:     _toHHMM(_val(row, cm, 'Início', 2)),
-    end:       _toHHMM(_val(row, cm, 'Fim',    3)),
-    name:      _val(row, cm, 'Nome',     7),
-    email:     _val(row, cm, 'E-mail',   8),
-    whatsapp:  _val(row, cm, 'WhatsApp', 9),
-    package:   _val(row, cm, 'Pacote',   4),
-    numBailarinas: Number(_val(row, cm, 'Nº Bailarinas')) || 1,
-    valor:     parseFloat(_val(row, cm, 'Valor (R$)', 6)) || 0,
-    conflict:  !!conflictAlert,
-  };
+    fullyConfirmed:   fullyConfirmed,
+    paidCount:        newPaidCount,
+    conflict:         fullyConfirmed && !!conflictAlert,
+  }, baseReturn);
 }
 
 function cancelBooking(data) {
@@ -905,6 +972,52 @@ function cancelBooking(data) {
   try { buildClientesSheet(); } catch (e) { addLog('CLIENTES_REBUILD_ERRO', bookingId, String(e), 'sistema'); }
   addLog('CANCELADO', bookingId, reason || 'sem motivo', origin || 'painel');
   return { ok: true };
+}
+
+/**
+ * Multi-pagador: substitui UMA das sessions do split por uma nova,
+ * mantendo as outras intactas. Usado quando Mari clica "Regerar link
+ * do pagador X" no painel — Vercel já cancelou o link antigo no gateway
+ * e criou um novo, aqui só atualizamos o ID na Sheet.
+ *
+ * Falha (defensivamente) se a session antiga já está em "Sessões Pagas"
+ * (não faz sentido regerar um link que já foi pago).
+ */
+function regenerateSplitLink(data) {
+  const { bookingId, oldStripeSession, newStripeSession } = data;
+  if (!bookingId || !oldStripeSession || !newStripeSession) {
+    throw new Error('Parâmetros faltando: bookingId/oldStripeSession/newStripeSession');
+  }
+  const sa = getSheet('Agendamentos');
+  if (!sa || sa.getLastRow() < 2) throw new Error('Planilha vazia');
+
+  const cm      = _colMap(sa);
+  const numCols = sa.getLastColumn();
+  const rows    = sa.getRange(2, 1, sa.getLastRow() - 1, numCols).getValues();
+  const iId     = cm['ID'] !== undefined ? cm['ID'] : 0;
+  const idx     = rows.findIndex(function(r) { return r[iId] === bookingId; });
+  if (idx < 0) throw new Error('Booking não encontrado: ' + bookingId);
+
+  const row   = rows[idx];
+  const shRow = idx + 2;
+  const splitCsv = function(v) {
+    return String(v || '').split(',').map(function(s) { return s.trim(); }).filter(function(s) { return !!s; });
+  };
+  const sessions = splitCsv(_val(row, cm, 'Stripe Session', 13));
+  const paidSet  = {};
+  splitCsv(_val(row, cm, 'Sessões Pagas')).forEach(function(s) { paidSet[s] = true; });
+
+  const pos = sessions.indexOf(oldStripeSession);
+  if (pos < 0) throw new Error('Session antiga não está nessa reserva: ' + oldStripeSession);
+  if (paidSet[oldStripeSession]) throw new Error('Esta parte já foi paga — não pode regerar');
+
+  sessions[pos] = newStripeSession;
+  sa.getRange(shRow, _col1(cm, 'Stripe Session', 13)).setValue(sessions.join(','));
+  sa.getRange(shRow, _col1(cm, 'Atualizado em',  18)).setValue(nowIso());
+  addLog('LINK_REGERADO', bookingId,
+    'Pagador ' + (pos + 1) + '/' + sessions.length + ' — ' + oldStripeSession + ' → ' + newStripeSession,
+    'painel');
+  return { ok: true, sessions: sessions, position: pos };
 }
 
 function editBooking(data) {
@@ -1742,10 +1855,18 @@ function doGet(e) {
         const iSession  = ci['Stripe Session']       ?? (iInsta === -1 ? 10 : 13);
         const iStatus   = ci['Status']               ?? (iInsta === -1 ? 12 : 15);
         const iCreated  = ci['Criado em']            ?? (iInsta === -1 ? 13 : 16);
+        const iPaidSes  = ci['Sessões Pagas']        ?? -1;
+        const splitCsv  = function(v) {
+          return String(v || '').split(',').map(function(s) { return s.trim(); }).filter(function(s) { return !!s; });
+        };
         result = sa.getRange(2, 1, sa.getLastRow() - 1, numCols).getValues().map(function(r) {
           var fmtDate = function(v) { return v ? (typeof v === 'string' ? v : Utilities.formatDate(v, TZ, 'yyyy-MM-dd')) : ''; };
           var fmtTime = function(v) { return v ? (typeof v === 'string' ? v : Utilities.formatDate(v, TZ, 'HH:mm')) : ''; };
           var fmtIso  = function(v) { return v ? (typeof v === 'string' ? v : v.toISOString()) : ''; };
+          // Multi-pagador: expõe lista de sessions + lista pagas pra UI mostrar
+          // "2/4 pagos" e botão "regerar" por pagador.
+          var sessions  = splitCsv(r[iSession]);
+          var paidList  = iPaidSes >= 0 ? splitCsv(r[iPaidSes]) : [];
           return {
             id:                  r[iId],
             date:                fmtDate(r[iDate]),
@@ -1761,6 +1882,10 @@ function doGet(e) {
             nomeBailarina:       iNomeB  >= 0 ? r[iNomeB]  : '',
             numBailarinas:       iNumB   >= 0 ? Number(r[iNumB]) || 1 : 1,
             stripeSession:       r[iSession],
+            stripeSessions:      sessions,       // array (1 ou N elementos)
+            paidSessions:        paidList,       // array (subset de stripeSessions)
+            splitCount:          sessions.length,
+            paidCount:           paidList.length,
             status:              r[iStatus],
             createdAt:           fmtIso(r[iCreated]),
           };
@@ -1831,10 +1956,11 @@ function doPost(e) {
     body = JSON.parse(e.postData.contents);
     const action = body.action;
 
-    if      (action === 'createPending')   result = createPending(body);
-    else if (action === 'confirmBooking')  result = confirmBooking(body);
-    else if (action === 'cancelBooking')   result = cancelBooking(body);
-    else if (action === 'editBooking')     result = editBooking(body);
+    if      (action === 'createPending')        result = createPending(body);
+    else if (action === 'confirmBooking')       result = confirmBooking(body);
+    else if (action === 'cancelBooking')        result = cancelBooking(body);
+    else if (action === 'editBooking')          result = editBooking(body);
+    else if (action === 'regenerateSplitLink')  result = regenerateSplitLink(body);
     else if (action === 'resendConfirmation') result = resendBookingConfirmationEmail(body.bookingId, body.extraCc);
     else if (action === 'releasePending')  result = releasePendingSlots();
     else if (action === 'initSheets')      { initSheets(); result = { ok: true }; }

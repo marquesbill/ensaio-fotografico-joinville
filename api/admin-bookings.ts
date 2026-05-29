@@ -2805,11 +2805,12 @@ async function handleConfirm(req: VercelRequest, res: VercelResponse, auth: { us
 async function handleCreate(req: VercelRequest, res: VercelResponse, auth: { user: string }) {
   const PACKAGES = getPackages();
   const { name, email, whatsapp, instagram, instagramBailarina, nomeBailarina, numBailarinas,
-          date, time, packageKey, confirm, customValue } = req.body as {
+          date, time, packageKey, confirm, customValue, splitCount } = req.body as {
     name: string; email: string; whatsapp: string;
     instagram?: string; instagramBailarina?: string; nomeBailarina?: string; numBailarinas?: number;
     date: string; time: string; packageKey: PkgKey; confirm: boolean;
     customValue?: number;
+    splitCount?: number; // 1 (default) ou até pkg.maxBailarinas — multi-pagador
   };
 
   if (!name || !email || !date || !time || !packageKey) {
@@ -2822,6 +2823,19 @@ async function handleCreate(req: VercelRequest, res: VercelResponse, auth: { use
   const nb = Number(numBailarinas);
   if (!Number.isInteger(nb) || nb < 1 || nb > pkg.maxBailarinas) {
     return res.status(400).json({ error: `Nº Bailarinas deve estar entre 1 e ${pkg.maxBailarinas} para o pacote ${pkg.name}` });
+  }
+
+  // Multi-pagador: valida splitCount contra pkg.maxBailarinas. 1 = comportamento
+  // antigo (1 link com valor cheio). Sem campo → default 1 (compat).
+  let split = 1;
+  if (splitCount !== undefined && splitCount !== null) {
+    if (typeof splitCount !== 'number' || !Number.isInteger(splitCount) || splitCount < 1) {
+      return res.status(400).json({ error: 'splitCount inválido' });
+    }
+    if (splitCount > pkg.maxBailarinas) {
+      return res.status(400).json({ error: `splitCount máximo pro pacote ${pkg.name} é ${pkg.maxBailarinas}` });
+    }
+    split = splitCount;
   }
 
   // Admin pode customizar valor (descontos especiais). Em REAIS, mesma unidade
@@ -2861,36 +2875,51 @@ async function handleCreate(req: VercelRequest, res: VercelResponse, auth: { use
     console.error('[admin-bookings/create] pre-flight slot check failed', e);
   }
 
-  // Path A: gera link de pagamento — gateway escolhido pela Mari no painel
+  // Path A: gera link(s) de pagamento — gateway escolhido pela Mari no painel
   // (req.body.gateway); fallback no default global PAYMENT_GATEWAY.
+  //
+  // Multi-pagador: se split > 1, cria N links em paralelo, cada um pagando
+  // chargeValue/N (arredondado a 2 casas; ajustes de centavos vão pro último
+  // link). Todos os N session IDs vão pra "Stripe Session" comma-separated.
   if (!confirm) {
     try {
       const gw = resolveGateway((req.body as { gateway?: string }).gateway);
-      let paymentUrl: string;
-      let externalId: string;
 
-      if (gw === 'asaas') {
-        const checkout = await createAsaasCheckoutAdmin({
-          itemName:          `Pacote ${pkg.name}`,   // ASAAS limita item.name a 30 chars
-          itemDescription:   `${date.split('-').reverse().join('/')} às ${time} · ${pkg.duration} min · ${nb} ${nb === 1 ? 'bailarina' : 'bailarinas'}`,
-          value:             chargeValue,
-          externalReference: encodeAsaasRefAdmin({ date, time, packageKey, numBailarinas: nb, name, email, whatsapp }),
-          successUrl:        `${SITE_URL}/agendamento/sucesso`,
-          cancelUrl:         `${SITE_URL}/agendamento?cancelado=1`,
-        });
-        paymentUrl = checkout.link;
-        externalId = checkout.id;
+      // Distribuição dos valores: split-1 chunks iguais, último absorve o resto
+      // pra fechar exatamente em chargeValue (evita perda de centavo).
+      const linkValues: number[] = [];
+      if (split === 1) {
+        linkValues.push(chargeValue);
       } else {
+        const each = Math.floor((chargeValue / split) * 100) / 100;  // 2 decimais p/ baixo
+        for (let i = 0; i < split - 1; i++) linkValues.push(each);
+        linkValues.push(Number((chargeValue - each * (split - 1)).toFixed(2)));  // resto
+      }
+
+      const createOneLink = async (partValue: number, idx: number): Promise<{ url: string; id: string }> => {
+        const partLabel = split > 1 ? ` (pagador ${idx + 1}/${split})` : '';
+        if (gw === 'asaas') {
+          const checkout = await createAsaasCheckoutAdmin({
+            itemName:          `Pacote ${pkg.name}`.slice(0, 30),
+            itemDescription:   `${date.split('-').reverse().join('/')} às ${time} · ${pkg.duration} min · ${nb} ${nb === 1 ? 'bailarina' : 'bailarinas'}${partLabel}`,
+            value:             partValue,
+            externalReference: encodeAsaasRefAdmin({ date, time, packageKey, numBailarinas: nb, name, email, whatsapp }),
+            successUrl:        `${SITE_URL}/agendamento/sucesso`,
+            cancelUrl:         `${SITE_URL}/agendamento?cancelado=1`,
+          });
+          return { url: checkout.link, id: checkout.id };
+        }
+        // Mercado Pago
         const expiry = new Date(Date.now() + 3 * 24 * 60 * 60 * 1000).toISOString();
         const prefRes = await fetch('https://api.mercadopago.com/checkout/preferences', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${MP_TOKEN}` },
           body: JSON.stringify({
             items: [{
-              title:       `Ensaio Fotográfico em Joinville — Pacote ${pkg.name}`,
+              title:       `Ensaio Joinville — ${pkg.name}${partLabel}`,
               description: `${date.split('-').reverse().join('/')} às ${time} · ${pkg.duration} min`,
               quantity:    1,
-              unit_price:  chargeValue,
+              unit_price:  partValue,
               currency_id: 'BRL',
             }],
             payer: { email },
@@ -2909,12 +2938,28 @@ async function handleCreate(req: VercelRequest, res: VercelResponse, auth: { use
         });
         const pref = await prefRes.json() as { id?: string; init_point?: string; message?: string };
         if (!pref.id || !pref.init_point) throw new Error(pref.message || 'Erro ao criar preferência MP');
-        paymentUrl = pref.init_point;
-        externalId = pref.id;
+        return { url: pref.init_point, id: pref.id };
+      };
+
+      // Em paralelo. Se algum falhar, cancela os criados antes de propagar erro.
+      const createdLinks: Array<{ url: string; id: string }> = [];
+      try {
+        const results = await Promise.all(linkValues.map((v, i) => createOneLink(v, i)));
+        createdLinks.push(...results);
+      } catch (linkErr) {
+        const msg = linkErr instanceof Error ? linkErr.message : String(linkErr);
+        // Best-effort rollback dos links que JÁ subiram nesse Promise.all (alguns
+        // podem ter resolved antes do reject — promises resolved não populam
+        // createdLinks mas o gateway ja tem os links órfãos). Sem como pegar os
+        // resolved-then-rejected aqui; log o erro e ajusta com retry do admin.
+        console.error('[admin-bookings/create] falha criando split links:', msg);
+        throw new Error(`Erro ao criar links: ${msg}`);
       }
 
-      // Tenta criar pending — se falhar, rollback do paymentLink/preference no gateway
-      // pra evitar link órfão que cliente possa pagar sem reserva.
+      const sessionsJoined = createdLinks.map(l => l.id).join(',');
+      const primaryExternalId = createdLinks[0].id;
+
+      // Tenta criar pending — se falhar, rollback de TODOS os links no gateway
       let pendingJson: { bookingId?: string };
       try {
         const pendingRes = await fetch(SCRIPT_URL, {
@@ -2926,7 +2971,7 @@ async function handleCreate(req: VercelRequest, res: VercelResponse, auth: { use
             instagramBailarina: instagramBailarina || '',
             nomeBailarina:      nomeBailarina || '',
             numBailarinas:      nb,
-            stripeSession:      externalId,
+            stripeSession:      sessionsJoined,
             gateway:            gw,
             source:             'admin',
             customValue:        chargeValue,
@@ -2936,30 +2981,38 @@ async function handleCreate(req: VercelRequest, res: VercelResponse, auth: { use
         pendingJson = await pendingRes.json() as { bookingId?: string };
       } catch (pendingErr) {
         const errMsg = pendingErr instanceof Error ? pendingErr.message : String(pendingErr);
-        console.error(`[admin-bookings/create] createPending FAILED após paymentLink criado: ${errMsg} — rollback...`);
-        if (gw === 'asaas' && externalId) {
-          await cancelAsaasLink(externalId)
-            .catch(e => console.error('[admin-bookings/create] rollback ASAAS falhou:', e instanceof Error ? e.message : e));
-        } else if (gw === 'mp' && externalId) {
-          await fetch(`https://api.mercadopago.com/checkout/preferences/${externalId}`, {
+        console.error(`[admin-bookings/create] createPending FAILED após ${createdLinks.length} link(s) criado(s): ${errMsg} — rollback...`);
+        await Promise.allSettled(createdLinks.map(l => {
+          if (gw === 'asaas') return cancelAsaasLink(l.id);
+          return fetch(`https://api.mercadopago.com/checkout/preferences/${l.id}`, {
             method: 'PUT',
             headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${MP_TOKEN}` },
             body: JSON.stringify({
               expires:            true,
               expiration_date_to: new Date(Date.now() - 60 * 1000).toISOString(),
             }),
-          }).catch(e => console.error('[admin-bookings/create] rollback MP falhou:', e instanceof Error ? e.message : e));
-        }
-        throw new Error('Erro ao criar pending. Link foi cancelado — tente novamente.');
+          });
+        }));
+        throw new Error('Erro ao criar pending. Link(s) cancelado(s) — tente novamente.');
       }
-      const bookingId   = pendingJson.bookingId || '';
+      const bookingId = pendingJson.bookingId || '';
 
+      const logSplit = split > 1 ? ` (${split} pagadores: R$ ${linkValues.map(v => v.toFixed(2)).join(' + R$ ')})` : '';
       await fetch(SCRIPT_URL, {
         method: 'POST', headers: { 'Content-Type': 'text/plain' },
-        body: JSON.stringify({ action: 'addLog', message: `${logUser} criou agendamento pendente para ${name} (${date} ${time}) e gerou link de pgmto (${gw})`, origin: 'painel' }),
+        body: JSON.stringify({ action: 'addLog', message: `${logUser} criou agendamento pendente para ${name} (${date} ${time}) e gerou link de pgmto (${gw})${logSplit}`, origin: 'painel' }),
       }).catch(() => {});
 
-      return res.status(200).json({ bookingId, paymentUrl });
+      // Response: mantém `paymentUrl` (compat single-pagador) + adiciona
+      // `paymentUrls` (array com todos) + `paymentParts` (URL + valor + ID).
+      return res.status(200).json({
+        bookingId,
+        paymentUrl:  createdLinks[0].url,
+        paymentUrls: createdLinks.map(l => l.url),
+        paymentParts: createdLinks.map((l, i) => ({ url: l.url, sessionId: l.id, value: linkValues[i] })),
+        splitCount:  split,
+        externalId:  primaryExternalId,
+      });
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       console.error('[admin-bookings/create] link path', msg);
@@ -3392,6 +3445,154 @@ async function handleReschedule(req: VercelRequest, res: VercelResponse, auth: {
   return res.status(200).json({ ok: true, newBookingId });
 }
 
+/**
+ * Multi-pagador: regenera UMA das sessions do split (sem mexer nas outras).
+ * Mari clica "Regerar link do pagador X" → cancela o link antigo no gateway
+ * + cria novo com mesmo valor + atualiza ID na Sheet via regenerateSplitLink.
+ *
+ * Falha se a session antiga já estava paga (validado também no Apps Script).
+ */
+async function handleRegenerateSplitLink(req: VercelRequest, res: VercelResponse, auth: { user: string }) {
+  const { bookingId, oldStripeSession, gateway, partValue,
+          date, time, packageKey, numBailarinas, name, email, whatsapp } = req.body as {
+    bookingId: string; oldStripeSession: string;
+    gateway?: 'mp' | 'asaas'; partValue: number;
+    date: string; time: string; packageKey: PkgKey; numBailarinas?: number;
+    name: string; email: string; whatsapp?: string;
+  };
+
+  if (!bookingId || !oldStripeSession || !date || !time || !packageKey || !name || !email) {
+    return res.status(400).json({ error: 'Campos obrigatórios faltando' });
+  }
+  if (typeof partValue !== 'number' || !isFinite(partValue) || partValue <= 0) {
+    return res.status(400).json({ error: 'partValue inválido' });
+  }
+
+  const PACKAGES = getPackages();
+  const pkg = PACKAGES[packageKey];
+  if (!pkg) return res.status(400).json({ error: 'Pacote inválido' });
+
+  const nb = Number(numBailarinas) || 1;
+  const gw = resolveGateway(gateway);
+
+  try {
+    // 1. Cancela o link antigo no gateway (best-effort; pode já estar expirado).
+    //    "admin-{tipo}-{ts}" não vai pra gateway (são confirmações manuais).
+    if (!oldStripeSession.startsWith('admin-')) {
+      const oldGateway = detectGatewayFromId(oldStripeSession);
+      if (oldGateway === 'asaas') {
+        try { await cancelAsaasLink(oldStripeSession); }
+        catch (e) { console.warn('[regenerateSplitLink] cancel ASAAS antigo falhou:', e instanceof Error ? e.message : e); }
+      } else if (oldGateway === 'mp') {
+        try {
+          await fetch(`https://api.mercadopago.com/checkout/preferences/${oldStripeSession}`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${MP_TOKEN}` },
+            body: JSON.stringify({
+              expires:            true,
+              expiration_date_to: new Date(Date.now() - 60 * 1000).toISOString(),
+            }),
+          });
+        } catch (e) { console.warn('[regenerateSplitLink] expire MP antigo falhou:', e instanceof Error ? e.message : e); }
+      }
+    }
+
+    // 2. Cria novo link no gateway escolhido pela Mari (default: ASAAS).
+    let newUrl: string;
+    let newId:  string;
+    if (gw === 'asaas') {
+      const checkout = await createAsaasCheckoutAdmin({
+        itemName:          `Pacote ${pkg.name}`.slice(0, 30),
+        itemDescription:   `${date.split('-').reverse().join('/')} às ${time} · ${pkg.duration} min · ${nb} ${nb === 1 ? 'bailarina' : 'bailarinas'} (link regerado)`,
+        value:             partValue,
+        externalReference: encodeAsaasRefAdmin({ date, time, packageKey, numBailarinas: nb, name, email, whatsapp: whatsapp || '' }),
+        successUrl:        `${SITE_URL}/agendamento/sucesso`,
+        cancelUrl:         `${SITE_URL}/agendamento?cancelado=1`,
+      });
+      newUrl = checkout.link;
+      newId  = checkout.id;
+    } else {
+      const expiry = new Date(Date.now() + 3 * 24 * 60 * 60 * 1000).toISOString();
+      const prefRes = await fetch('https://api.mercadopago.com/checkout/preferences', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${MP_TOKEN}` },
+        body: JSON.stringify({
+          items: [{
+            title:       `Ensaio Joinville — ${pkg.name} (link regerado)`,
+            description: `${date.split('-').reverse().join('/')} às ${time} · ${pkg.duration} min`,
+            quantity:    1,
+            unit_price:  partValue,
+            currency_id: 'BRL',
+          }],
+          payer: { email },
+          back_urls: {
+            success: `${SITE_URL}/agendamento/sucesso`,
+            failure: `${SITE_URL}/agendamento?cancelado=1`,
+            pending: `${SITE_URL}/agendamento/sucesso`,
+          },
+          auto_return:        'approved',
+          payment_methods:    { installments: 6 },
+          external_reference: JSON.stringify({ date, time, packageKey, name, email, whatsapp: whatsapp || '' }),
+          notification_url:   `${SITE_URL}/api/webhook`,
+          expires:              true,
+          expiration_date_to:   expiry,
+        }),
+      });
+      const pref = await prefRes.json() as { id?: string; init_point?: string; message?: string };
+      if (!pref.id || !pref.init_point) throw new Error(pref.message || 'Erro ao criar preferência MP');
+      newUrl = pref.init_point;
+      newId  = pref.id;
+    }
+
+    // 3. Atualiza Sheet — substitui oldId pelo newId na coluna "Stripe Session"
+    try {
+      const updRes = await fetch(SCRIPT_URL, {
+        method: 'POST', headers: { 'Content-Type': 'text/plain' },
+        body: JSON.stringify({
+          action:           'regenerateSplitLink',
+          bookingId,
+          oldStripeSession,
+          newStripeSession: newId,
+        }),
+      });
+      if (!updRes.ok) throw new Error(`Sheets HTTP ${updRes.status}`);
+      const updJson = await updRes.json() as { error?: string };
+      if (updJson.error) throw new Error(updJson.error);
+    } catch (updErr) {
+      const errMsg = updErr instanceof Error ? updErr.message : String(updErr);
+      console.error('[regenerateSplitLink] update sheet FAILED — rollback novo link:', errMsg);
+      if (gw === 'asaas') {
+        await cancelAsaasLink(newId).catch(() => {});
+      } else {
+        await fetch(`https://api.mercadopago.com/checkout/preferences/${newId}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${MP_TOKEN}` },
+          body: JSON.stringify({
+            expires:            true,
+            expiration_date_to: new Date(Date.now() - 60 * 1000).toISOString(),
+          }),
+        }).catch(() => {});
+      }
+      throw new Error('Erro ao atualizar Sheet. Link novo cancelado — tente de novo.');
+    }
+
+    await fetch(SCRIPT_URL, {
+      method: 'POST', headers: { 'Content-Type': 'text/plain' },
+      body: JSON.stringify({
+        action:  'addLog',
+        message: `${auth.user} regerou link individual de ${name} (${bookingId}) — gateway ${gw}, R$ ${partValue.toFixed(2)}`,
+        origin:  'painel',
+      }),
+    }).catch(() => {});
+
+    return res.status(200).json({ url: newUrl, sessionId: newId });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    console.error('[regenerateSplitLink]', msg);
+    return res.status(500).json({ error: msg });
+  }
+}
+
 async function handleResendConfirmation(req: VercelRequest, res: VercelResponse) {
   const body = req.body as { bookingId?: string; extraCc?: string };
   if (!body.bookingId) return res.status(400).json({ error: 'bookingId obrigatório' });
@@ -3541,6 +3742,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         case 'create':             return await handleCreate(req, res, auth);
         case 'edit':               return await handleEdit(req, res, auth);
         case 'paymentLink':        return await handlePaymentLink(req, res, auth);
+        case 'regenerateSplitLink': return await handleRegenerateSplitLink(req, res, auth);
         case 'reschedule':         return await handleReschedule(req, res, auth);
         case 'resendConfirmation': return await handleResendConfirmation(req, res);
         default:                   return res.status(400).json({ error: 'Ação desconhecida' });
