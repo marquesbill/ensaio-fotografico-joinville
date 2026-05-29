@@ -211,7 +211,7 @@ function connectionType(): string {
 function currentPriceTier(): string {
   const now = Date.now();
   const LOTE1 = new Date('2026-05-16T00:00:00-03:00').getTime();
-  const LOTE2 = new Date('2026-07-01T00:00:00-03:00').getTime();
+  const LOTE2 = new Date('2026-06-01T00:00:00-03:00').getTime();
   if (now >= LOTE2) return 'lote2';
   if (now >= LOTE1) return 'lote1';
   return 'lote0';

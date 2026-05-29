@@ -3,7 +3,7 @@ import { Resend } from 'resend';
 
 
 const LOTE1_START_MS = new Date('2026-05-16T00:00:00-03:00').getTime();
-const LOTE2_START_MS = new Date('2026-07-01T00:00:00-03:00').getTime();
+const LOTE2_START_MS = new Date('2026-06-01T00:00:00-03:00').getTime();
 function getPackages() {
   const now = Date.now();
   if (now >= LOTE2_START_MS) {

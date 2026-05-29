@@ -86,10 +86,10 @@ function useCountdown(targetDate: Date) {
 
 // Tiers de preço com troca automática:
 //   lote 0 (pré-venda curta): até 15/05 23:59 → 1400 / 1900 / 2200
-//   lote 1: 16/05 → 30/06        → 1600 / 2100 / 2600
-//   lote 2: 01/07 em diante      → 1800 / 2400 / 2800 (preço cheio)
+//   lote 1: 16/05 → 31/05        → 1600 / 2100 / 2600
+//   lote 2: 01/06 em diante      → 1800 / 2400 / 2800 (preço cheio)
 const LOTE1_START_MS = new Date('2026-05-16T00:00:00-03:00').getTime();
-const LOTE2_START_MS = new Date('2026-07-01T00:00:00-03:00').getTime();
+const LOTE2_START_MS = new Date('2026-06-01T00:00:00-03:00').getTime();
 function getPrices() {
   const now = Date.now();
   if (now >= LOTE2_START_MS) {

@@ -7,7 +7,7 @@ import { track, initSessionContext, trackScrollDepth, trackTimeOnPage } from '..
 // ── Constants ─────────────────────────────────────────────────
 // Troca automática de preço entre lotes
 const LOTE1_START_MS = new Date('2026-05-16T00:00:00-03:00').getTime();
-const LOTE2_START_MS = new Date('2026-07-01T00:00:00-03:00').getTime();
+const LOTE2_START_MS = new Date('2026-06-01T00:00:00-03:00').getTime();
 function getPackages() {
   const now = Date.now();
   let prices: { lembranca: number; economico: number; completo: number };

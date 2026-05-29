@@ -210,7 +210,7 @@ function verifyToken(authHeader?: string): { user: string; iat: number } | null 
 /* ───────── Packages (tier por lote) ───────── */
 
 const LOTE1_START_MS = new Date('2026-05-16T00:00:00-03:00').getTime();
-const LOTE2_START_MS = new Date('2026-07-01T00:00:00-03:00').getTime();
+const LOTE2_START_MS = new Date('2026-06-01T00:00:00-03:00').getTime();
 type PkgKey = 'lembranca' | 'economico' | 'completo';
 type PackageDef = { name: string; duration: number; price: number; maxBailarinas: number };
 

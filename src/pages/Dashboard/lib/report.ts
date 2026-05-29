@@ -670,7 +670,7 @@ function buildMonteCarloSection(mc: MonteCarloResult): string {
     totalTable,
     '',
     `> **Método:** Bootstrap dos últimos ${mc.historyDays} dias da série diária de ensaios confirmados (\`sheets-bookings.daily\`). Cada uma das ${fmtInt(mc.iterations)} iterações sorteia ${mc.daysRemaining} dias com reposição e soma. Receita = nº ensaios × ticket médio atual.`,
-    `> **Limitação:** assume estabilidade de conversão e mix. Não modela sazonalidade explícita, lotes de preço futuros (LOTE2 em 2026-07-01), nem efeito de campanhas em curso.`,
+    `> **Limitação:** assume estabilidade de conversão e mix. Não modela sazonalidade explícita, lotes de preço futuros (LOTE2 em 2026-06-01), nem efeito de campanhas em curso.`,
   ].join('\n');
 }
 

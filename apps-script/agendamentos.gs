@@ -9,8 +9,8 @@
 
 // Preço em centavos. Tiers de venda:
 //   lote 0 (pré-venda curta): até 15/05 23:59  → 140000 / 190000 / 220000
-//   lote 1: 16/05 → 30/06                     → 160000 / 210000 / 260000
-//   lote 2: 01/07 em diante (preço cheio)     → 180000 / 240000 / 280000
+//   lote 1: 16/05 → 31/05                     → 160000 / 210000 / 260000
+//   lote 2: 01/06 em diante (preço cheio)     → 180000 / 240000 / 280000
 // Planilha de produção. Recriada limpa em 2026-05-21: a original ficou lenta
 // (cada acesso via SpreadsheetApp levava ~25s — provável bloat de histórico de
 // revisões). O script abre a planilha por ID (openById) em vez de
@@ -18,7 +18,7 @@
 const SHEET_ID = '1e8PA6anb12YRD5jn-0Ei0mM1SkaB9RkZhfsz-7qlqQA';
 
 const LOTE1_START_MS = new Date('2026-05-16T00:00:00-03:00').getTime();
-const LOTE2_START_MS = new Date('2026-07-01T00:00:00-03:00').getTime();
+const LOTE2_START_MS = new Date('2026-06-01T00:00:00-03:00').getTime();
 
 const CFG = {
   WORK_START_H: 9,
