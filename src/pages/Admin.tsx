@@ -371,11 +371,16 @@ function Overlay({ children, onClose }: { children: React.ReactNode; onClose: ()
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4"
          style={{ background: 'rgba(0,0,0,0.45)' }}
          onClick={e => e.target === e.currentTarget && onClose()}>
-      <div className="bg-white rounded-2xl shadow-2xl p-8 w-full max-w-md relative">
-        <button onClick={onClose} className="absolute top-4 right-4 text-gray-400 hover:text-gray-600">
+      {/* Card limita altura a 90vh; o conteúdo rola internamente quando é maior
+          que a tela (ex: form com vários pagadores). O X fica fixo no topo do
+          card (fora da área rolável) pra sempre estar acessível. */}
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md relative max-h-[90vh] flex flex-col">
+        <button onClick={onClose} className="absolute top-4 right-4 z-10 text-gray-400 hover:text-gray-600 bg-white/80 rounded-full p-0.5">
           <X size={18} />
         </button>
-        {children}
+        <div className="overflow-y-auto p-8">
+          {children}
+        </div>
       </div>
     </div>
   );
