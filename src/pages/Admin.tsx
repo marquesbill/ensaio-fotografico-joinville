@@ -637,8 +637,11 @@ function NewBookingModal({
               </select>
               {effectiveSplit > 1 && (
                 <p className="mt-1 text-xs text-purple-700 font-medium">
-                  {effectiveSplit - 1}× R$ {perLink.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                  {remainder !== perLink ? ` + 1× R$ ${remainder.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : ''}
+                  {remainder === perLink
+                    // Divisão exata: todos os N links têm o mesmo valor.
+                    ? `${effectiveSplit}× R$ ${perLink.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+                    // Divisão com sobra de centavo: N-1 iguais + 1 com o resto.
+                    : `${effectiveSplit - 1}× R$ ${perLink.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} + 1× R$ ${remainder.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
                   {' '}= R$ {customValue.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} total
                 </p>
               )}
