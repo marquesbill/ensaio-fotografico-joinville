@@ -1003,7 +1003,7 @@ function PaymentLinkModal({
  * permite regerar o link individual (caso o anterior tenha expirado/sumido).
  */
 function SplitDetailsModal({
-  booking, onClose, onRegenerate, regenerating, onConfirmAll, confirming,
+  booking, onClose, onRegenerate, regenerating, onConfirmAll, confirming, onConfirmPart, confirmingPart,
 }: {
   booking: Booking;
   onClose: () => void;
@@ -1011,6 +1011,8 @@ function SplitDetailsModal({
   regenerating: string | null;  // sessionId em curso de regen
   onConfirmAll: (b: Booking) => void;  // confirma a reserva inteira (pagamento manual)
   confirming: boolean;
+  onConfirmPart: (b: Booking, sessionId: string, payerName: string) => Promise<void>;  // confirma 1 pagador
+  confirmingPart: string | null;  // sessionId em curso de confirmação individual
 }) {
   const sessions = booking.stripeSessions ?? [];
   const paidSet  = new Set(booking.paidSessions ?? []);
@@ -1119,15 +1121,26 @@ function SplitDetailsModal({
                 </>
               )}
               {!isPaid && (
-                <button
-                  onClick={() => handleRegen(sessId)}
-                  disabled={isRegenerating || !!newUrl}
-                  className="w-full flex items-center justify-center gap-1.5 py-1.5 rounded border border-[#7a3f8f] text-[#7a3f8f] text-[11px] font-semibold hover:bg-purple-50 disabled:opacity-50"
-                >
-                  {isRegenerating ? <><Loader2 size={11} className="animate-spin" />Regerando…</> :
-                   newUrl ? '✓ Novo link gerado' :
-                   <>↻ Regerar link</>}
-                </button>
+                <div className="flex gap-1.5">
+                  <button
+                    onClick={() => onConfirmPart(booking, sessId, payerName)}
+                    disabled={confirmingPart === sessId}
+                    className="flex-1 flex items-center justify-center gap-1.5 py-1.5 rounded border border-green-400 text-green-700 text-[11px] font-semibold hover:bg-green-50 disabled:opacity-50"
+                  >
+                    {confirmingPart === sessId
+                      ? <><Loader2 size={11} className="animate-spin" />Confirmando…</>
+                      : <><CheckCircle size={11} /> Confirmar pago</>}
+                  </button>
+                  <button
+                    onClick={() => handleRegen(sessId)}
+                    disabled={isRegenerating || !!newUrl}
+                    className="flex-1 flex items-center justify-center gap-1.5 py-1.5 rounded border border-[#7a3f8f] text-[#7a3f8f] text-[11px] font-semibold hover:bg-purple-50 disabled:opacity-50"
+                  >
+                    {isRegenerating ? <><Loader2 size={11} className="animate-spin" />Regerando…</> :
+                     newUrl ? '✓ Novo link' :
+                     <>↻ Regerar link</>}
+                  </button>
+                </div>
               )}
             </div>
           );
@@ -1149,8 +1162,9 @@ function SplitDetailsModal({
         </button>
       )}
       <p className="text-[10px] text-center text-gray-400 mt-2">
-        Use "Confirmar pagamento manual" quando o cliente pagar por fora do link.
-        Confirma a reserva inteira de uma vez.
+        <strong>Confirmar pago</strong> (em cada pagador) fecha só aquela parte.
+        <strong> Confirmar pagamento manual (tudo)</strong> fecha a reserva inteira de uma vez.
+        Use quando o cliente pagar por fora do link.
       </p>
 
       <button
@@ -1730,11 +1744,12 @@ function Dashboard({
   // Multi-pagador: modal de detalhes do split + sessionId atualmente em regen
   const [splitTarget,      setSplitTarget]      = useState<Booking | null>(null);
   const [regenSession,     setRegenSession]     = useState<string | null>(null);
+  const [confirmPartSession, setConfirmPartSession] = useState<string | null>(null);
   const [showNewBooking,   setShowNewBooking]   = useState(false);
 
   const headers = { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` };
 
-  const fetchBookings = useCallback(async () => {
+  const fetchBookings = useCallback(async (): Promise<Booking[] | null> => {
     setLoading(true); setError('');
     try {
       const r    = await fetch(`${API}/api/admin-bookings`, { headers: { Authorization: `Bearer ${token}` } });
@@ -1742,14 +1757,17 @@ function Dashboard({
       if (!r.ok) throw new Error(json.error || 'Erro ao carregar');
       // Normalize date/time fields from ISO strings returned by Sheets
       const raw: Booking[] = Array.isArray(json) ? json : (json.bookings ?? []);
-      setBookings(raw.map(b => ({
+      const normalized = raw.map(b => ({
         ...b,
         date:  b.date?.includes('T')  ? b.date.split('T')[0]           : (b.date  ?? ''),
         start: b.start?.includes('T') ? b.start.split('T')[1].slice(0,5) : (b.start ?? ''),
         end:   b.end?.includes('T')   ? b.end.split('T')[1].slice(0,5)   : (b.end   ?? ''),
-      })));
+      }));
+      setBookings(normalized);
+      return normalized;
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Erro de conexão');
+      return null;
     } finally {
       setLoading(false);
     }
@@ -2013,6 +2031,43 @@ function Dashboard({
     }
   }
 
+  // Confirma manualmente UM pagador do split (cliente pagou por fora do link).
+  // Marca só aquela parte; quando o último paga, a reserva fecha e dispara os
+  // e-mails finais. O modal reflete o novo status (X/N) via fetchBookings.
+  async function handleConfirmSplitPart(booking: Booking, sessionId: string, payerName: string) {
+    setConfirmPartSession(sessionId);
+    try {
+      const r = await fetch(`${API}/api/admin-bookings`, {
+        method: 'POST', headers,
+        body: JSON.stringify({
+          action:        'confirmPart',
+          bookingId:     booking.id,
+          stripeSession: sessionId,
+          payerName,
+        }),
+      });
+      const json = await r.json() as { ok?: boolean; fullyConfirmed?: boolean; paidCount?: number; totalSessions?: number; error?: string };
+      if (!r.ok) throw new Error(json.error || 'Erro');
+      const who = payerName || 'Pagador';
+      if (json.fullyConfirmed) {
+        setToast({ msg: `${who} pago — split fechado, reserva confirmada!`, type: 'ok' });
+        setSplitTarget(null);  // fecha o modal: reserva 100% paga
+      } else {
+        setToast({ msg: `${who} confirmado (${json.paidCount}/${json.totalSessions} pagos)`, type: 'ok' });
+      }
+      const updated = await fetchBookings();
+      // Mantém o modal aberto no booking atualizado (pra confirmar o próximo)
+      if (!json.fullyConfirmed && updated) {
+        const fresh = updated.find(b => b.id === booking.id);
+        if (fresh) setSplitTarget(fresh);
+      }
+    } catch (e) {
+      setToast({ msg: e instanceof Error ? e.message : 'Erro ao confirmar pagador', type: 'err' });
+    } finally {
+      setConfirmPartSession(null);
+    }
+  }
+
   async function handleConfirmPayment(booking: Booking) {
     setActionLoading(true);
     try {
@@ -2237,6 +2292,8 @@ function Dashboard({
           onRegenerate={(oldId, gw) => handleRegenerateSplitLink(splitTarget, oldId, gw)}
           confirming={actionLoading}
           onConfirmAll={async (b) => { await handleConfirmPayment(b); setSplitTarget(null); }}
+          confirmingPart={confirmPartSession}
+          onConfirmPart={handleConfirmSplitPart}
         />
       )}
 

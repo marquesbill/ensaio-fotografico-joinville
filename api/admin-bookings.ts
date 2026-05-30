@@ -2852,6 +2852,136 @@ async function handleConfirm(req: VercelRequest, res: VercelResponse, auth: { us
   return res.status(200).json({ ok: true, bookingId: confirmedId });
 }
 
+// Confirmação manual de UM pagador do split (action: 'confirmPart').
+// Mari marca um pagador específico como pago (ex: Dara pagou por fora, Débora
+// não). Reusa confirmBooking (idempotente por session, faz tracking parcial):
+//   - parcial  → notifica só a Mari (X/N pago · falta quem)
+//   - completa → dispara os e-mails finais (cliente + André + Mari)
+async function handleConfirmPart(req: VercelRequest, res: VercelResponse, auth: { user: string }) {
+  const PACKAGES = getPackages();
+  const { bookingId, stripeSession, payerName } = req.body as {
+    bookingId: string; stripeSession: string; payerName?: string;
+  };
+  if (!bookingId || !stripeSession) {
+    return res.status(400).json({ error: 'bookingId e stripeSession são obrigatórios' });
+  }
+
+  type ConfirmMeta = {
+    error?: string;
+    bookingId?: string; alreadyConfirmed?: boolean; fullyConfirmed?: boolean;
+    paidCount?: number; totalSessions?: number;
+    paidPayerName?: string; pendingPayerNames?: string[];
+    date?: string; start?: string; end?: string; name?: string; email?: string;
+    whatsapp?: string; package?: string; numBailarinas?: number; valor?: number;
+  };
+  let meta: ConfirmMeta;
+  try {
+    const r = await fetch(SCRIPT_URL, {
+      method: 'POST', headers: { 'Content-Type': 'text/plain' },
+      body: JSON.stringify({
+        action:        'confirmBooking',
+        stripeSession,
+        stripePayment: `admin-manual-${Date.now()}`,
+      }),
+    });
+    if (!r.ok) throw new Error(`Sheets HTTP ${r.status}`);
+    meta = await r.json() as ConfirmMeta;
+    if (meta.error) throw new Error(meta.error);
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    console.error('[admin-bookings/confirmPart]', msg);
+    return res.status(500).json({ error: `Erro ao confirmar parcela: ${msg}` });
+  }
+
+  const fullyConfirmed   = meta.fullyConfirmed === true;
+  const alreadyConfirmed = meta.alreadyConfirmed === true;
+  const paidCount        = meta.paidCount     || 1;
+  const totalSessions    = meta.totalSessions || 1;
+  const pName            = (payerName || meta.paidPayerName || '').trim();
+
+  const pkg          = PACKAGES[(meta.package || '') as PkgKey] || { name: meta.package || '—', duration: 0, price: 0 };
+  const finalName    = meta.name  || '';
+  const finalEmail   = meta.email || '';
+  const finalDate    = meta.date  || '';
+  const finalTime    = meta.start || '';
+  const finalEnd     = meta.end   || calcEnd(finalTime, pkg.duration);
+  const finalNb      = Number(meta.numBailarinas) || 1;
+  const finalPrice   = (meta.valor && meta.valor > 0) ? meta.valor : (pkg.price || 0);
+  const priceStr     = finalPrice.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  const pendentes    = Array.isArray(meta.pendingPayerNames) && meta.pendingPayerNames.length > 0
+    ? meta.pendingPayerNames.map(n => n || '(sem nome)').join(', ')
+    : `${totalSessions - paidCount} pagador(es)`;
+
+  const logMsg = `${auth.user} confirmou manualmente o pagador ${pName || stripeSession.slice(0, 8)} de ${finalName} (${paidCount}/${totalSessions})`;
+  await fetch(SCRIPT_URL, {
+    method: 'POST', headers: { 'Content-Type': 'text/plain' },
+    body: JSON.stringify({ action: 'addLog', message: logMsg, origin: 'painel' }),
+  }).catch(() => {});
+
+  // Já estava paga essa parte (ou booking já confirmado) — nada de e-mail.
+  if (alreadyConfirmed) {
+    return res.status(200).json({ ok: true, alreadyConfirmed: true, fullyConfirmed, paidCount, totalSessions });
+  }
+
+  if (fullyConfirmed) {
+    // Último pagador → reserva fechada. E-mails finais: cliente + André + Mari.
+    const clientHtml = buildBookingEmailHtml({
+      name: finalName, date: finalDate, time: finalTime, endTime: finalEnd,
+      packageName: pkg.name, duration: pkg.duration, price: priceStr,
+      bookingId: meta.bookingId || bookingId, numBailarinas: finalNb,
+    }, 'confirmed');
+    const internalHtml = `<div style="font-family:Arial,sans-serif;font-size:14px;line-height:1.6;color:#1a1a1a;">
+<h2 style="color:#16a34a;margin:0 0 12px;">✅ Split fechado — reserva confirmada</h2>
+<p>${auth.user} confirmou o último pagador (${pName || '—'}). Todos os ${totalSessions} pagadores pagaram.</p>
+<p><strong>Cliente:</strong> ${finalName}<br>
+<strong>E-mail:</strong> ${finalEmail || '—'}<br>
+<strong>WhatsApp:</strong> ${meta.whatsapp || '—'}<br>
+<strong>Data:</strong> ${fmtDate(finalDate)} · ${finalTime}–${finalEnd}<br>
+<strong>Pacote:</strong> ${pkg.name}<br>
+<strong>Valor total:</strong> R$ ${priceStr}<br>
+<strong>Booking ID:</strong> ${meta.bookingId || bookingId}</p></div>`;
+    const sends = [];
+    if (finalEmail) {
+      sends.push(resend.emails.send({
+        from: FROM_EMAIL, to: finalEmail,
+        subject: `Reserva confirmada — ${pkg.name} · ${fmtDate(finalDate)} às ${finalTime}`,
+        html: clientHtml,
+      }));
+    }
+    sends.push(resend.emails.send({
+      from: FROM_EMAIL, to: ANDRE_EMAIL,
+      subject: `[Admin] Split fechado: ${finalName} — ${fmtDate(finalDate)} ${finalTime}`,
+      html: internalHtml,
+    }));
+    sends.push(resend.emails.send({
+      from: FROM_EMAIL, to: MARIANE_EMAIL,
+      subject: `✅ Split fechado: ${finalName} — ${pkg.name} · ${fmtDate(finalDate)} às ${finalTime}`,
+      html: internalHtml,
+    }));
+    await Promise.allSettled(sends);
+  } else {
+    // Parcial → notifica só a Mari quem pagou e quem falta.
+    const partialHtml = `<div style="font-family:Arial,sans-serif;font-size:14px;line-height:1.6;color:#1a1a1a;">
+<h2 style="color:#7a3f8f;margin:0 0 12px;">Pagamento parcial confirmado (manual)</h2>
+<p>${auth.user} confirmou <strong>${pName || 'um pagador'}</strong> como pago. Reserva ainda <strong>não está fechada</strong>.</p>
+<p style="background:#fef3c7;border-radius:8px;padding:10px 12px;margin:12px 0;">
+  <strong>Ainda falta(m) pagar:</strong> ${pendentes}
+</p>
+<p><strong>Cliente:</strong> ${finalName}<br>
+<strong>Data:</strong> ${fmtDate(finalDate)} · ${finalTime}–${finalEnd}<br>
+<strong>Pacote:</strong> ${pkg.name}<br>
+<strong>Status do split:</strong> <span style="font-weight:700;color:#7a3f8f;">${paidCount}/${totalSessions} pagos</span><br>
+<strong>Booking ID:</strong> ${meta.bookingId || bookingId}</p></div>`;
+    await resend.emails.send({
+      from: FROM_EMAIL, to: MARIANE_EMAIL,
+      subject: `💰 ${pName || 'Pagador'} confirmado — ${finalName} (${paidCount}/${totalSessions}) · ${pkg.name}`,
+      html: partialHtml,
+    }).catch(e => console.error('[admin-bookings/confirmPart] Resend Mari error', e));
+  }
+
+  return res.status(200).json({ ok: true, fullyConfirmed, paidCount, totalSessions });
+}
+
 async function handleCreate(req: VercelRequest, res: VercelResponse, auth: { user: string }) {
   const PACKAGES = getPackages();
   const { name, email, whatsapp, instagram, instagramBailarina, nomeBailarina, numBailarinas,
@@ -3816,6 +3946,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       switch (body?.action) {
         case 'cancel':             return await handleCancel(req, res, auth);
         case 'confirm':            return await handleConfirm(req, res, auth);
+        case 'confirmPart':        return await handleConfirmPart(req, res, auth);
         case 'create':             return await handleCreate(req, res, auth);
         case 'edit':               return await handleEdit(req, res, auth);
         case 'paymentLink':        return await handlePaymentLink(req, res, auth);
