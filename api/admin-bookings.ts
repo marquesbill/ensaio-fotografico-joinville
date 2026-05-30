@@ -2882,6 +2882,7 @@ async function handleConfirmPart(req: VercelRequest, res: VercelResponse, auth: 
         action:        'confirmBooking',
         stripeSession,
         stripePayment: `admin-manual-${Date.now()}`,
+        origin:        'painel',   // confirmação manual — log mostra origem real
       }),
     });
     if (!r.ok) throw new Error(`Sheets HTTP ${r.status}`);

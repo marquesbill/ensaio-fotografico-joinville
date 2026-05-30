@@ -2035,6 +2035,8 @@ function Dashboard({
   // Marca só aquela parte; quando o último paga, a reserva fecha e dispara os
   // e-mails finais. O modal reflete o novo status (X/N) via fetchBookings.
   async function handleConfirmSplitPart(booking: Booking, sessionId: string, payerName: string) {
+    const quem = payerName || 'este pagador';
+    if (!confirm(`Confirmar que ${quem} JÁ PAGOU?\n\nMarca só essa parte do split como paga.`)) return;
     setConfirmPartSession(sessionId);
     try {
       const r = await fetch(`${API}/api/admin-bookings`, {
@@ -2068,7 +2070,9 @@ function Dashboard({
     }
   }
 
-  async function handleConfirmPayment(booking: Booking) {
+  async function handleConfirmPayment(booking: Booking): Promise<boolean> {
+    // Guarda contra clique acidental: confirmar marca a reserva como PAGA na hora.
+    if (!confirm(`Confirmar que ${booking.name} JÁ PAGOU?\n\nIsso marca a reserva inteira como Confirmada. Use só quando tiver certeza do pagamento.`)) return false;
     setActionLoading(true);
     try {
       const r = await fetch(`${API}/api/admin-bookings`, {
@@ -2090,8 +2094,10 @@ function Dashboard({
       if (!r.ok) throw new Error(json.error || 'Erro');
       setToast({ msg: `Pagamento de ${booking.name} confirmado manualmente`, type: 'ok' });
       await fetchBookings();
+      return true;
     } catch (e) {
       setToast({ msg: e instanceof Error ? e.message : 'Erro ao confirmar', type: 'err' });
+      return false;
     } finally {
       setActionLoading(false);
     }
@@ -2291,7 +2297,7 @@ function Dashboard({
           regenerating={regenSession}
           onRegenerate={(oldId, gw) => handleRegenerateSplitLink(splitTarget, oldId, gw)}
           confirming={actionLoading}
-          onConfirmAll={async (b) => { await handleConfirmPayment(b); setSplitTarget(null); }}
+          onConfirmAll={async (b) => { const ok = await handleConfirmPayment(b); if (ok) setSplitTarget(null); }}
           confirmingPart={confirmPartSession}
           onConfirmPart={handleConfirmSplitPart}
         />

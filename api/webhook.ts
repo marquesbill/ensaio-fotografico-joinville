@@ -289,6 +289,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           stripeSession: normalized.externalSlotId,
           stripePayment: normalized.paymentId,
           gateway:       normalized.gateway,
+          origin:        'webhook',   // pagamento via gateway — log mostra origem real
         }),
       });
       if (!r.ok) throw new Error(`HTTP ${r.status}`);

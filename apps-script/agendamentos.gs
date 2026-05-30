@@ -784,6 +784,10 @@ function createPending(data) {
 
 function confirmBooking(data) {
   const { stripeSession, stripePayment } = data;
+  // Origem real do log: 'webhook' (pagamento via gateway) ou 'painel'
+  // (confirmação manual via confirmPart). Antes era chumbado 'webhook' sempre,
+  // o que escondia confirmações manuais nos logs.
+  const logOrigin = data.origin || 'webhook';
   const sa = getSheet('Agendamentos');
   if (!sa || sa.getLastRow() < 2) throw new Error('Planilha vazia');
 
@@ -848,6 +852,46 @@ function confirmBooking(data) {
     totalSessions:    totalCount,
     paidPayerName:    thisPayerName,
   };
+
+  // ── Guarda: booking CANCELADO ────────────────────────────────
+  // Cenário: a Mari regerou o link → este booking virou "Cancelado" e um novo
+  // pending nasceu. Se um webhook ATRASADO/duplicado chegar para a sessão
+  // antiga, NÃO re-confirma o cancelado (era o bug latente). Em vez disso,
+  // alerta o André — pode ser um pagamento real num link que foi invalidado,
+  // o que exige atenção humana (reembolso ou remarcação).
+  if (prevStatus === 'Cancelado') {
+    addLog('PAGAMENTO_EM_CANCELADO', thisId,
+      'Confirmação chegou para booking CANCELADO (origem ' + logOrigin + '). Session: ' +
+      stripeSession + ' | payment: ' + stripePayment + ' — IGNORADO (não re-confirma).', logOrigin);
+    // Só alerta o André se foi pagamento de GATEWAY (webhook) — confirmação
+    // manual num cancelado é ação consciente da Mari, não precisa alarme.
+    if (logOrigin === 'webhook') {
+      try {
+        MailApp.sendEmail({
+          to:       CFG.ANDRE_EMAIL,
+          subject:  '⚠️ Pagamento recebido em reserva CANCELADA — ' + (_val(row, cm, 'Nome', 7) || ''),
+          htmlBody: '<div style="font-family:Arial,sans-serif;font-size:14px;line-height:1.6;">' +
+            '<h2 style="color:#b91c1c;">Pagamento em reserva cancelada</h2>' +
+            '<p>Um pagamento (webhook) chegou para uma reserva que já estava <strong>Cancelada</strong> ' +
+            '(provavelmente o link foi regerado depois). O sistema NÃO re-confirmou.</p>' +
+            '<p><strong>Cliente:</strong> ' + (_val(row, cm, 'Nome', 7) || '') + '<br>' +
+            '<strong>Booking:</strong> ' + thisId + '<br>' +
+            '<strong>Data:</strong> ' + formatDateBR(dateStr) + ' ' + _toHHMM(_val(row, cm, 'Início', 2)) + '<br>' +
+            '<strong>Session:</strong> ' + stripeSession + '<br>' +
+            '<strong>Payment:</strong> ' + stripePayment + '</p>' +
+            '<p><strong>Ação:</strong> verifique no gateway se há pagamento real. Se sim, decida reembolso ou remarcação.</p></div>',
+        });
+      } catch (e) { addLog('CANCELADO_ALERT_ERRO', thisId, String(e), logOrigin); }
+    }
+    return Object.assign({
+      ok:               true,
+      alreadyConfirmed: true,   // webhook lê isso e não dispara e-mail de "confirmado"
+      fullyConfirmed:   false,
+      wasCancelled:     true,
+      paidCount:        prevPaidList.length,
+      conflict:         false,
+    }, baseReturn);
+  }
 
   // ── Idempotência ─────────────────────────────────────────────
   // (a) Booking já está "Confirmado" — webhook anterior fechou tudo. Pula tudo.
@@ -927,7 +971,7 @@ function confirmBooking(data) {
     'Stripe session: ' + stripeSession + ' | payment: ' + stripePayment +
     ' | ' + newPaidCount + '/' + totalCount + ' pagos' +
     (conflictAlert ? ' | ⚠️ CONFLITO com ' + conflictAlert.conflictIds : ''),
-    'webhook');
+    logOrigin);
 
   // Dispara email de conflito DEPOIS de marcar Confirmado/Parcial (o cliente já
   // pagou, recebe email normal; vocês recebem alerta separado pra resolver).
