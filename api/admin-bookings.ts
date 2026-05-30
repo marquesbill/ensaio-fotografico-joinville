@@ -185,6 +185,8 @@ async function createAsaasCheckoutAdmin(opts: {
 
 /* ───────── fim ASAAS helpers ───────── */
 const ANDRE_EMAIL     = 'andreffotografia@gmail.com';
+const MARIANE_EMAIL   = 'mariane.sslourenco@gmail.com';
+const FROM_EMAIL      = 'Ensaio Joinville <confirmacao@ensaiofotograficoemjoinville.com>';
 const resend          = new Resend(process.env.RESEND_API_KEY!);
 
 /* ───────── Auth (HMAC token) ───────── */
@@ -2736,68 +2738,116 @@ async function handleCancel(req: VercelRequest, res: VercelResponse, auth: { use
 
 async function handleConfirm(req: VercelRequest, res: VercelResponse, auth: { user: string }) {
   const PACKAGES = getPackages();
-  const { bookingId, stripeSession, name, email, date, time, packageKey, numBailarinas } = req.body as {
-    bookingId:      string; stripeSession: string;
+  const { bookingId, name, email, date, time, packageKey, numBailarinas } = req.body as {
+    bookingId:      string; stripeSession?: string;
     name:           string; email: string; whatsapp?: string;
     date:           string; time:  string;
     packageKey:     string; numBailarinas?: number;
   };
 
-  if (!bookingId || !stripeSession) {
-    return res.status(400).json({ error: 'bookingId e stripeSession são obrigatórios' });
+  if (!bookingId) {
+    return res.status(400).json({ error: 'bookingId é obrigatório' });
   }
 
-  const pkg     = PACKAGES[packageKey as PkgKey] || { name: packageKey, duration: 0, price: 0 };
-  const endTime = calcEnd(time, pkg.duration);
+  const pkg = PACKAGES[packageKey as PkgKey] || { name: packageKey, duration: 0, price: 0 };
 
-  let confirmedId = bookingId;
+  // Confirmação manual pela Mari: confirma a reserva INTEIRA pelo bookingId
+  // (funciona em single E split — antes casava por session, o que quebrava
+  // em splits porque o front mandava "sess1,sess2,sess3" junto). O Apps
+  // Script marca todas as sessions como pagas + status Confirmado e devolve
+  // a meta da linha (inclusive o valor real, que pode ser custom/split).
+  let meta: {
+    bookingId?: string; alreadyConfirmed?: boolean;
+    date?: string; start?: string; end?: string; name?: string; email?: string;
+    whatsapp?: string; package?: string; numBailarinas?: number; valor?: number;
+  };
   try {
     const r = await fetch(SCRIPT_URL, {
       method: 'POST', headers: { 'Content-Type': 'text/plain' },
       body: JSON.stringify({
-        action:        'confirmBooking',
-        stripeSession,
+        action:        'forceConfirmBooking',
+        bookingId,
         stripePayment: `admin-manual-${Date.now()}`,
       }),
     });
-    const json = await r.json();
-    confirmedId = json.bookingId || bookingId;
+    if (!r.ok) throw new Error(`Sheets HTTP ${r.status}`);
+    meta = await r.json() as typeof meta;
+    if ((meta as { error?: string }).error) throw new Error((meta as { error?: string }).error);
   } catch (e) {
-    console.error('[admin-bookings/confirm] confirmBooking error', e);
-    return res.status(500).json({ error: 'Erro ao confirmar na planilha' });
+    const msg = e instanceof Error ? e.message : String(e);
+    console.error('[admin-bookings/confirm] forceConfirmBooking error', msg);
+    return res.status(500).json({ error: `Erro ao confirmar na planilha: ${msg}` });
   }
 
-  const logMsg = `${auth.user} confirmou manualmente o pagamento de ${name} — ${fmtDate(date)} ${time} (${pkg.name})`;
+  const confirmedId   = meta.bookingId || bookingId;
+  const finalName     = meta.name      || name;
+  const finalEmail    = meta.email     || email;
+  const finalDate     = meta.date      || date;
+  const finalTime     = meta.start     || time;
+  const finalEnd      = meta.end       || calcEnd(finalTime, pkg.duration);
+  const finalNb       = Number(meta.numBailarinas) || Number(numBailarinas) || 1;
+  // Valor real da reserva (custom/split-total lido do Sheet); fallback pro catálogo.
+  const finalPrice    = (meta.valor && meta.valor > 0) ? meta.valor : (pkg.price || 0);
+  const priceStr      = finalPrice.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+  const logMsg = `${auth.user} confirmou manualmente o pagamento de ${finalName} — ${fmtDate(finalDate)} ${finalTime} (${pkg.name})`;
   await fetch(SCRIPT_URL, {
     method: 'POST', headers: { 'Content-Type': 'text/plain' },
     body: JSON.stringify({ action: 'addLog', message: logMsg, origin: 'painel' }),
   }).catch(() => {});
 
-  if (email) {
-    const html = buildBookingEmailHtml({
-      name, date, time, endTime,
-      packageName: pkg.name,
-      duration:    pkg.duration,
-      price:       (pkg.price || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }),
-      bookingId:   confirmedId,
-      numBailarinas: Number(numBailarinas) || 1,
-    }, 'confirmed');
-
-    await Promise.allSettled([
-      resend.emails.send({
-        from:    'Ensaio Joinville <confirmacao@ensaiofotograficoemjoinville.com>',
-        to:      email,
-        subject: `Reserva confirmada — ${pkg.name} · ${fmtDate(date)} às ${time}`,
-        html,
-      }),
-      resend.emails.send({
-        from:    'Ensaio Joinville <confirmacao@ensaiofotograficoemjoinville.com>',
-        to:      ANDRE_EMAIL,
-        subject: `[Admin] Confirmação manual: ${name} — ${fmtDate(date)} ${time}`,
-        html:    `<p>${logMsg}</p>`,
-      }),
-    ]);
+  // Se já estava confirmado, não reenvia e-mails (idempotente — evita spam
+  // se a Mari clicar duas vezes ou o gateway já tiver fechado).
+  if (meta.alreadyConfirmed) {
+    return res.status(200).json({ ok: true, bookingId: confirmedId, alreadyConfirmed: true });
   }
+
+  // E-mails: cliente + André + MARI (Mari não recebia nada na confirmação
+  // manual — só o webhook do gateway a notificava).
+  const clientHtml = buildBookingEmailHtml({
+    name: finalName, date: finalDate, time: finalTime, endTime: finalEnd,
+    packageName: pkg.name,
+    duration:    pkg.duration,
+    price:       priceStr,
+    bookingId:   confirmedId,
+    numBailarinas: finalNb,
+  }, 'confirmed');
+
+  const internalHtml = `<div style="font-family:Arial,sans-serif;font-size:14px;line-height:1.6;color:#1a1a1a;">
+<h2 style="color:#7a3f8f;margin:0 0 12px;">✅ Pagamento confirmado (manual)</h2>
+<p>${auth.user} confirmou o pagamento manualmente no painel.</p>
+<p><strong>Cliente:</strong> ${finalName}<br>
+<strong>E-mail:</strong> ${finalEmail || '—'}<br>
+<strong>WhatsApp:</strong> ${meta.whatsapp || '—'}<br>
+<strong>Data:</strong> ${fmtDate(finalDate)} · ${finalTime}–${finalEnd}<br>
+<strong>Pacote:</strong> ${pkg.name}<br>
+<strong>Nº Bailarinas:</strong> ${finalNb}<br>
+<strong>Valor:</strong> R$ ${priceStr}<br>
+<strong>Booking ID:</strong> ${confirmedId}</p>
+</div>`;
+
+  const sends = [];
+  if (finalEmail) {
+    sends.push(resend.emails.send({
+      from:    FROM_EMAIL,
+      to:      finalEmail,
+      subject: `Reserva confirmada — ${pkg.name} · ${fmtDate(finalDate)} às ${finalTime}`,
+      html:    clientHtml,
+    }));
+  }
+  sends.push(resend.emails.send({
+    from:    FROM_EMAIL,
+    to:      ANDRE_EMAIL,
+    subject: `[Admin] Pagamento confirmado: ${finalName} — ${fmtDate(finalDate)} ${finalTime}`,
+    html:    internalHtml,
+  }));
+  sends.push(resend.emails.send({
+    from:    FROM_EMAIL,
+    to:      MARIANE_EMAIL,
+    subject: `✅ Pagamento confirmado: ${finalName} — ${pkg.name} · ${fmtDate(finalDate)} às ${finalTime}`,
+    html:    internalHtml,
+  }));
+  await Promise.allSettled(sends);
 
   return res.status(200).json({ ok: true, bookingId: confirmedId });
 }

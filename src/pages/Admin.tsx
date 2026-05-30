@@ -1003,12 +1003,14 @@ function PaymentLinkModal({
  * permite regerar o link individual (caso o anterior tenha expirado/sumido).
  */
 function SplitDetailsModal({
-  booking, onClose, onRegenerate, regenerating,
+  booking, onClose, onRegenerate, regenerating, onConfirmAll, confirming,
 }: {
   booking: Booking;
   onClose: () => void;
   onRegenerate: (oldSessionId: string, gateway: 'mp' | 'asaas') => Promise<{ url: string; sessionId: string } | null>;
   regenerating: string | null;  // sessionId em curso de regen
+  onConfirmAll: (b: Booking) => void;  // confirma a reserva inteira (pagamento manual)
+  confirming: boolean;
 }) {
   const sessions = booking.stripeSessions ?? [];
   const paidSet  = new Set(booking.paidSessions ?? []);
@@ -1132,9 +1134,28 @@ function SplitDetailsModal({
         })}
       </div>
 
+      {/* Confirmação manual da reserva inteira — pra quando o cliente paga por
+          fora do link (PIX direto, dinheiro, etc) e a Mari precisa fechar na mão.
+          Marca TODAS as sessions como pagas → Confirmado. */}
+      {paid < total && (
+        <button
+          onClick={() => onConfirmAll(booking)}
+          disabled={confirming}
+          className="w-full mt-4 py-2.5 text-sm font-semibold text-white rounded-lg disabled:opacity-50 flex items-center justify-center gap-2"
+          style={{ background: 'linear-gradient(135deg,#16a34a,#22c55e)' }}
+        >
+          {confirming ? <Loader2 size={14} className="animate-spin" /> : <CheckCircle size={14} />}
+          Confirmar pagamento manual (tudo)
+        </button>
+      )}
+      <p className="text-[10px] text-center text-gray-400 mt-2">
+        Use "Confirmar pagamento manual" quando o cliente pagar por fora do link.
+        Confirma a reserva inteira de uma vez.
+      </p>
+
       <button
         onClick={onClose}
-        className="w-full mt-4 py-2 text-sm text-gray-500 border border-gray-200 rounded-lg hover:bg-gray-50"
+        className="w-full mt-3 py-2 text-sm text-gray-500 border border-gray-200 rounded-lg hover:bg-gray-50"
       >Fechar</button>
     </Overlay>
   );
@@ -2214,6 +2235,8 @@ function Dashboard({
           onClose={() => setSplitTarget(null)}
           regenerating={regenSession}
           onRegenerate={(oldId, gw) => handleRegenerateSplitLink(splitTarget, oldId, gw)}
+          confirming={actionLoading}
+          onConfirmAll={async (b) => { await handleConfirmPayment(b); setSplitTarget(null); }}
         />
       )}
 

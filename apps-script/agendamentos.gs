@@ -983,6 +983,72 @@ function confirmBooking(data) {
   }, baseReturn);
 }
 
+// ── Confirmação manual (admin) ────────────────────────────────
+// Diferente de confirmBooking (que casa por session e faz tracking parcial),
+// esta confirma a reserva INTEIRA pelo bookingId — marca TODAS as sessions
+// como pagas e status 'Confirmado' de uma vez. Usada quando a Mari confirma
+// pagamento na mão (cliente pagou fora do link, ou pra fechar um split que
+// recebeu por outro meio). Funciona em single e split. Idempotente.
+function forceConfirmBooking(data) {
+  const { bookingId, stripePayment } = data;
+  const sa = getSheet('Agendamentos');
+  if (!sa || sa.getLastRow() < 2) throw new Error('Planilha vazia');
+
+  _ensureColumn(sa, 'Sessões Pagas');
+  _ensureColumn(sa, 'Nomes Pagadores');
+
+  const cm      = _colMap(sa);
+  const numCols = sa.getLastColumn();
+  const rows    = sa.getRange(2, 1, sa.getLastRow() - 1, numCols).getValues();
+  const iId     = cm['ID'] !== undefined ? cm['ID'] : 0;
+  const idx     = rows.findIndex(function(r) { return r[iId] === bookingId; });
+  if (idx < 0) throw new Error('Booking não encontrado: ' + bookingId);
+
+  const row   = rows[idx];
+  const shRow = idx + 2;
+  const splitCsv = function(v) {
+    return String(v || '').split(',').map(function(s) { return s.trim(); }).filter(function(s) { return !!s; });
+  };
+  const dataRaw = _val(row, cm, 'Data', 1);
+  const dateStr = dataRaw ? (typeof dataRaw === 'string'
+                    ? dataRaw
+                    : Utilities.formatDate(dataRaw, 'America/Sao_Paulo', 'yyyy-MM-dd')) : '';
+  const prevStatus = String(_val(row, cm, 'Status') || '').trim();
+
+  const baseReturn = {
+    bookingId:     _val(row, cm, 'ID', 0),
+    date:          dateStr,
+    start:         _toHHMM(_val(row, cm, 'Início', 2)),
+    end:           _toHHMM(_val(row, cm, 'Fim',    3)),
+    name:          _val(row, cm, 'Nome',     7),
+    email:         _val(row, cm, 'E-mail',   8),
+    whatsapp:      _val(row, cm, 'WhatsApp', 9),
+    package:       _val(row, cm, 'Pacote',   4),
+    numBailarinas: Number(_val(row, cm, 'Nº Bailarinas')) || 1,
+    valor:         parseFloat(_val(row, cm, 'Valor (R$)', 6)) || 0,
+  };
+
+  // Idempotência — já confirmado, não reescreve nem redispara nada.
+  if (prevStatus === 'Confirmado') {
+    return Object.assign({ ok: true, alreadyConfirmed: true }, baseReturn);
+  }
+
+  const allSessions = splitCsv(_val(row, cm, 'Stripe Session', 13));
+  sa.getRange(shRow, _col1(cm, 'Stripe Payment', 15)).setValue(stripePayment || ('admin-manual-' + Date.now()));
+  sa.getRange(shRow, _col1(cm, 'Status',         16)).setValue('Confirmado');
+  sa.getRange(shRow, _col1(cm, 'Atualizado em',  18)).setValue(nowIso());
+  // Marca todas as sessions como pagas (pra UI do split refletir 100% pago).
+  if (cm['Sessões Pagas'] !== undefined && allSessions.length > 0) {
+    sa.getRange(shRow, cm['Sessões Pagas'] + 1).setValue(allSessions.join(','));
+  }
+
+  buildClientesSheet();
+  addLog('CONFIRMACAO_MANUAL', baseReturn.bookingId,
+    'Admin confirmou manualmente (estava ' + prevStatus + ', ' + (allSessions.length || 1) + ' pagador(es))', 'painel');
+
+  return Object.assign({ ok: true, alreadyConfirmed: false }, baseReturn);
+}
+
 function cancelBooking(data) {
   const { bookingId, reason, origin } = data;
   const sa = getSheet('Agendamentos');
@@ -1995,6 +2061,7 @@ function doPost(e) {
 
     if      (action === 'createPending')        result = createPending(body);
     else if (action === 'confirmBooking')       result = confirmBooking(body);
+    else if (action === 'forceConfirmBooking')  result = forceConfirmBooking(body);
     else if (action === 'cancelBooking')        result = cancelBooking(body);
     else if (action === 'editBooking')          result = editBooking(body);
     else if (action === 'regenerateSplitLink')  result = regenerateSplitLink(body);
