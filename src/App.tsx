@@ -443,9 +443,9 @@ export default function App() {
           >
             <div className="-mx-10 -mt-10 mb-6 pt-7 pb-4 px-6 rounded-t-3xl border-b border-white/20" style={{ background: 'linear-gradient(135deg, #7a3f8f, #e87060)' }}>
               <h3 className="font-headline text-3xl md:text-4xl text-center text-white font-black drop-shadow-lg uppercase leading-tight tracking-tight">
-                Aproveite os<br/><span className="text-white/90">Preços do Lote 1</span>
+                Ensaios<br/><span className="text-white/90">Exclusivos</span>
               </h3>
-              <p className="text-white/80 text-center text-sm mt-2 font-medium tracking-wide">Vagas limitadas · Preço especial por tempo limitado</p>
+              <p className="text-white/80 text-center text-sm mt-2 font-medium tracking-wide">Vagas limitadas • Atendimento personalizado • Reserve seu horário</p>
             </div>
             {heroStatus === 'success' ? (
               <div
@@ -497,20 +497,31 @@ export default function App() {
                   />
                 </div>
                 <div>
-                  <input
-                    className={`w-full bg-white/90 border focus:ring-2 focus:ring-primary focus:bg-white rounded-xl px-4 py-4 placeholder:text-gray-400 placeholder:text-sm placeholder:font-thin placeholder:italic text-gray-900 font-bold shadow-inner transition-colors ${heroPhoneError ? 'border-red-500 ring-2 ring-red-300' : 'border-white/80'}`}
-                    placeholder="WhatsApp com DDD — ex: (47) 99123-4567"
-                    type="tel"
-                    inputMode="numeric"
-                    autoComplete="tel"
-                    maxLength={16}
-                    required
-                    value={heroForm.whatsapp}
-                    onChange={(e) => {
-                      setHeroForm(f => ({ ...f, whatsapp: formatPhoneBR(e.target.value) }));
-                      if (heroPhoneError) setHeroPhoneError(false);
-                    }}
-                  />
+                  <div className="relative">
+                    <input
+                      className={`w-full bg-white/90 border focus:ring-2 focus:ring-primary focus:bg-white rounded-xl px-4 py-4 text-gray-900 font-bold shadow-inner transition-colors ${heroPhoneError ? 'border-red-500 ring-2 ring-red-300' : 'border-white/80'}`}
+                      placeholder=""
+                      aria-label="WhatsApp com DDD"
+                      type="tel"
+                      inputMode="numeric"
+                      autoComplete="tel"
+                      maxLength={16}
+                      required
+                      value={heroForm.whatsapp}
+                      onChange={(e) => {
+                        setHeroForm(f => ({ ...f, whatsapp: formatPhoneBR(e.target.value) }));
+                        if (heroPhoneError) setHeroPhoneError(false);
+                      }}
+                    />
+                    {/* Hint de duas cores (placeholder não aceita 2 estilos):
+                        label igual aos outros campos + exemplo suave. */}
+                    {!heroForm.whatsapp && (
+                      <span className="pointer-events-none absolute inset-0 flex items-center px-4 whitespace-nowrap overflow-hidden">
+                        <span className="font-bold text-gray-600">WhatsApp com DDD</span>
+                        <span className="ml-1.5 text-sm font-thin italic text-gray-400">— ex: (47) 99123-4567</span>
+                      </span>
+                    )}
+                  </div>
                   {heroPhoneError && (
                     <p className="text-xs font-semibold text-red-200 mt-1.5 px-1">
                       Digite um WhatsApp válido com DDD (ex: (47) 99123-4567).
@@ -984,20 +995,29 @@ export default function App() {
                       onChange={(e) => setFooterForm(f => ({ ...f, nome: e.target.value }))}
                     />
                     <div>
-                      <input
-                        className={`w-full bg-white/80 border rounded-xl px-4 py-4 placeholder:text-gray-400 placeholder:text-sm placeholder:font-thin placeholder:italic focus:ring-2 focus:ring-primary focus:bg-white text-gray-900 font-medium shadow-inner transition-colors ${footerPhoneError ? 'border-red-500 ring-2 ring-red-300' : 'border-white/50'}`}
-                        placeholder="WhatsApp com DDD — ex: (47) 99123-4567"
-                        type="tel"
-                        inputMode="numeric"
-                        autoComplete="tel"
-                        maxLength={16}
-                        required
-                        value={footerForm.whatsapp}
-                        onChange={(e) => {
-                          setFooterForm(f => ({ ...f, whatsapp: formatPhoneBR(e.target.value) }));
-                          if (footerPhoneError) setFooterPhoneError(false);
-                        }}
-                      />
+                      <div className="relative">
+                        <input
+                          className={`w-full bg-white/80 border rounded-xl px-4 py-4 focus:ring-2 focus:ring-primary focus:bg-white text-gray-900 font-medium shadow-inner transition-colors ${footerPhoneError ? 'border-red-500 ring-2 ring-red-300' : 'border-white/50'}`}
+                          placeholder=""
+                          aria-label="WhatsApp com DDD"
+                          type="tel"
+                          inputMode="numeric"
+                          autoComplete="tel"
+                          maxLength={16}
+                          required
+                          value={footerForm.whatsapp}
+                          onChange={(e) => {
+                            setFooterForm(f => ({ ...f, whatsapp: formatPhoneBR(e.target.value) }));
+                            if (footerPhoneError) setFooterPhoneError(false);
+                          }}
+                        />
+                        {!footerForm.whatsapp && (
+                          <span className="pointer-events-none absolute inset-0 flex items-center px-4 whitespace-nowrap overflow-hidden">
+                            <span className="font-medium text-gray-500">WhatsApp com DDD</span>
+                            <span className="ml-1.5 text-sm font-thin italic text-gray-400">— ex: (47) 99123-4567</span>
+                          </span>
+                        )}
+                      </div>
                       {footerPhoneError && (
                         <p className="text-xs font-semibold text-red-300 mt-1.5 px-1">
                           Digite um WhatsApp válido com DDD (ex: (47) 99123-4567).
