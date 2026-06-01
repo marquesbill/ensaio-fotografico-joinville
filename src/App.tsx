@@ -498,7 +498,7 @@ export default function App() {
                 </div>
                 <div>
                   <input
-                    className={`w-full bg-white/90 border focus:ring-2 focus:ring-primary focus:bg-white rounded-xl px-4 py-4 placeholder:text-gray-600 text-gray-900 font-bold shadow-inner transition-colors ${heroPhoneError ? 'border-red-500 ring-2 ring-red-300' : 'border-white/80'}`}
+                    className={`w-full bg-white/90 border focus:ring-2 focus:ring-primary focus:bg-white rounded-xl px-4 py-4 placeholder:text-gray-400 placeholder:text-sm placeholder:font-thin placeholder:italic text-gray-900 font-bold shadow-inner transition-colors ${heroPhoneError ? 'border-red-500 ring-2 ring-red-300' : 'border-white/80'}`}
                     placeholder="WhatsApp com DDD — ex: (47) 99123-4567"
                     type="tel"
                     inputMode="numeric"
@@ -985,7 +985,7 @@ export default function App() {
                     />
                     <div>
                       <input
-                        className={`w-full bg-white/80 border rounded-xl px-4 py-4 placeholder:text-gray-500 focus:ring-2 focus:ring-primary focus:bg-white text-gray-900 font-medium shadow-inner transition-colors ${footerPhoneError ? 'border-red-500 ring-2 ring-red-300' : 'border-white/50'}`}
+                        className={`w-full bg-white/80 border rounded-xl px-4 py-4 placeholder:text-gray-400 placeholder:text-sm placeholder:font-thin placeholder:italic focus:ring-2 focus:ring-primary focus:bg-white text-gray-900 font-medium shadow-inner transition-colors ${footerPhoneError ? 'border-red-500 ring-2 ring-red-300' : 'border-white/50'}`}
                         placeholder="WhatsApp com DDD — ex: (47) 99123-4567"
                         type="tel"
                         inputMode="numeric"
