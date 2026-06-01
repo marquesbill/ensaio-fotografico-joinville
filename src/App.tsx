@@ -21,6 +21,7 @@ import {
 } from "lucide-react";
 import { useState, useRef, useEffect } from "react";
 import { track, initSessionContext, trackScrollDepth, trackTimeOnPage, trackInView } from "./lib/analytics";
+import { formatPhoneBR, isValidPhoneBR } from "./lib/phone";
 
 const fadeIn = {
   initial: { opacity: 0, y: 20 },
@@ -246,12 +247,14 @@ export default function App() {
   // Hero form
   const [heroForm, setHeroForm] = useState<FormState>({ nome: '', whatsapp: '', email: '', vaiJoinville: '' });
   const [heroStatus, setHeroStatus] = useState<FormStatus>('idle');
+  const [heroPhoneError, setHeroPhoneError] = useState(false);
   const heroFormStartedRef = useRef(false);
   const footerFormStartedRef = useRef(false);
 
   // Footer form
   const [footerForm, setFooterForm] = useState<FormState>({ nome: '', whatsapp: '', email: '', vaiJoinville: '' });
   const [footerStatus, setFooterStatus] = useState<FormStatus>('idle');
+  const [footerPhoneError, setFooterPhoneError] = useState(false);
 
   const handleHeroSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -259,6 +262,13 @@ export default function App() {
       track.event('hero_form_submit_blocked_validation');
       return;
     }
+    // Bloqueia número de WhatsApp inválido (DDD/celular incorretos).
+    if (!isValidPhoneBR(heroForm.whatsapp)) {
+      setHeroPhoneError(true);
+      track.event('hero_form_submit_blocked_phone');
+      return;
+    }
+    setHeroPhoneError(false);
     track.event('hero_form_submit_attempt');
     track.tag('vai_joinville_answer', heroForm.vaiJoinville || 'none');
     setHeroStatus('sending');
@@ -284,6 +294,12 @@ export default function App() {
       track.event('footer_form_submit_blocked_validation');
       return;
     }
+    if (!isValidPhoneBR(footerForm.whatsapp)) {
+      setFooterPhoneError(true);
+      track.event('footer_form_submit_blocked_phone');
+      return;
+    }
+    setFooterPhoneError(false);
     track.event('footer_form_submit_attempt');
     track.tag('vai_joinville_answer', footerForm.vaiJoinville || 'none');
     setFooterStatus('sending');
@@ -482,13 +498,24 @@ export default function App() {
                 </div>
                 <div>
                   <input
-                    className="w-full bg-white/90 border border-white/80 focus:ring-2 focus:ring-primary focus:bg-white rounded-xl px-4 py-4 placeholder:text-gray-600 text-gray-900 font-bold shadow-inner transition-colors"
-                    placeholder="WhatsApp (DDD)"
+                    className={`w-full bg-white/90 border focus:ring-2 focus:ring-primary focus:bg-white rounded-xl px-4 py-4 placeholder:text-gray-600 text-gray-900 font-bold shadow-inner transition-colors ${heroPhoneError ? 'border-red-500 ring-2 ring-red-300' : 'border-white/80'}`}
+                    placeholder="WhatsApp com DDD — ex: (47) 99123-4567"
                     type="tel"
+                    inputMode="numeric"
+                    autoComplete="tel"
+                    maxLength={16}
                     required
                     value={heroForm.whatsapp}
-                    onChange={(e) => setHeroForm(f => ({ ...f, whatsapp: e.target.value }))}
+                    onChange={(e) => {
+                      setHeroForm(f => ({ ...f, whatsapp: formatPhoneBR(e.target.value) }));
+                      if (heroPhoneError) setHeroPhoneError(false);
+                    }}
                   />
+                  {heroPhoneError && (
+                    <p className="text-xs font-semibold text-red-200 mt-1.5 px-1">
+                      Digite um WhatsApp válido com DDD (ex: (47) 99123-4567).
+                    </p>
+                  )}
                 </div>
                 <div>
                   <input
@@ -956,14 +983,27 @@ export default function App() {
                       }}
                       onChange={(e) => setFooterForm(f => ({ ...f, nome: e.target.value }))}
                     />
-                    <input
-                      className="w-full bg-white/80 border border-white/50 rounded-xl px-4 py-4 placeholder:text-gray-500 focus:ring-2 focus:ring-primary focus:bg-white text-gray-900 font-medium shadow-inner transition-colors"
-                      placeholder="WhatsApp"
-                      type="tel"
-                      required
-                      value={footerForm.whatsapp}
-                      onChange={(e) => setFooterForm(f => ({ ...f, whatsapp: e.target.value }))}
-                    />
+                    <div>
+                      <input
+                        className={`w-full bg-white/80 border rounded-xl px-4 py-4 placeholder:text-gray-500 focus:ring-2 focus:ring-primary focus:bg-white text-gray-900 font-medium shadow-inner transition-colors ${footerPhoneError ? 'border-red-500 ring-2 ring-red-300' : 'border-white/50'}`}
+                        placeholder="WhatsApp com DDD — ex: (47) 99123-4567"
+                        type="tel"
+                        inputMode="numeric"
+                        autoComplete="tel"
+                        maxLength={16}
+                        required
+                        value={footerForm.whatsapp}
+                        onChange={(e) => {
+                          setFooterForm(f => ({ ...f, whatsapp: formatPhoneBR(e.target.value) }));
+                          if (footerPhoneError) setFooterPhoneError(false);
+                        }}
+                      />
+                      {footerPhoneError && (
+                        <p className="text-xs font-semibold text-red-300 mt-1.5 px-1">
+                          Digite um WhatsApp válido com DDD (ex: (47) 99123-4567).
+                        </p>
+                      )}
+                    </div>
                     <input
                       className="w-full bg-white/80 border border-white/50 rounded-xl px-4 py-4 placeholder:text-gray-500 focus:ring-2 focus:ring-primary focus:bg-white text-gray-900 font-medium shadow-inner transition-colors"
                       placeholder="Melhor E-mail"
