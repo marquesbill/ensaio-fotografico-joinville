@@ -442,10 +442,10 @@ export default function App() {
             }}
           >
             <div className="-mx-10 -mt-10 mb-6 pt-7 pb-4 px-6 rounded-t-3xl border-b border-white/20" style={{ background: 'linear-gradient(135deg, #7a3f8f, #e87060)' }}>
-              <h3 className="font-headline text-3xl md:text-4xl text-center text-white font-black drop-shadow-lg uppercase leading-tight tracking-tight">
-                Ensaios<br/><span className="text-white/90">Exclusivos</span>
+              <h3 className="font-headline text-[26px] sm:text-3xl md:text-4xl text-center text-white font-black drop-shadow-lg uppercase leading-tight tracking-tight whitespace-nowrap">
+                Ensaios <span className="text-white/90">Exclusivos</span>
               </h3>
-              <p className="text-white/80 text-center text-sm mt-2 font-medium tracking-wide">Vagas limitadas • Atendimento personalizado • Reserve seu horário</p>
+              <p className="text-white/80 text-center text-[13px] mt-2 font-medium tracking-tight whitespace-normal md:whitespace-nowrap">Vagas limitadas • Atendimento personalizado • Reserve seu horário</p>
             </div>
             {heroStatus === 'success' ? (
               <div
