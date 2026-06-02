@@ -22,7 +22,15 @@ OAuth resolve: o backend autentica como **você** (André) e usa seu acesso pra 
    - Developer contact email: `marquesbill@gmail.com`
    - **Salvar e continuar** nas próximas telas (pode deixar tudo default)
    - Na tela "Test users", adicionar `marquesbill@gmail.com` (você é o "tester")
-   - **Publish app** (no canto superior) — torna o app utilizável fora do modo teste. Como vai usar só você, fica em "Testing" mode também funciona.
+   - **⚠️ OBRIGATÓRIO: Publish app → "In production"** (Audience → Publish app → Confirm).
+     **NÃO deixe em "Testing".** No modo Testing o Google **expira o refresh token em 7 dias**,
+     e o dashboard quebra com `invalid_grant` toda semana. Em produção (mesmo sem verificação,
+     já que só você usa) o token não expira. O aviso "app não verificado" no consent é normal —
+     clica em Advanced → Go to (unsafe).
+
+> **Sintoma de que voltou pro modo Testing / token expirou:** dashboard mostra
+> `400 ... invalid_grant`. Solução: confirmar que Audience está "In production"
+> e refazer os passos 3–5 (gerar token novo, atualizar `GA4_OAUTH_REFRESH_TOKEN`, redeploy).
 
 4. De volta em **Credentials**, clicar **+ CREATE CREDENTIALS** → **OAuth client ID**
 5. Application type: **Web application**
