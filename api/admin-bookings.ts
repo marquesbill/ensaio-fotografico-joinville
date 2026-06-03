@@ -1477,6 +1477,12 @@ async function handleMetaAds(req: VercelRequest, res: VercelResponse) {
   const fields   = [
     'spend', 'impressions', 'clicks', 'actions',
     'ctr', 'cpc', 'cpm', 'reach', 'frequency',
+    // Variantes de clique-no-LINK. Pra lead-gen o que importa é o clique no
+    // link (que leva pra landing), não os cliques "all" — que a Meta infla com
+    // curtidas, comentários, compartilhamentos, cliques no perfil/foto, etc.
+    // Por isso `clicks`/`ctr`/`cpc` "all" ficam mais altos que o Gerenciador.
+    // Usamos estes nos KPIs de Cliques / CTR / CPC pra bater com o Gerenciador.
+    'inline_link_clicks', 'inline_link_click_ctr', 'cost_per_inline_link_click',
   ].join(',');
 
   // Parser de actions array.
@@ -1598,14 +1604,14 @@ async function handleMetaAds(req: VercelRequest, res: VercelResponse) {
   const prevSpendGross = prevSpendNet * (1 + TAX_RATE);
   const prevCpl = prevLeads > 0 ? prevSpendGross / prevLeads : 0;
   const prevCpm = (Number(acctPrev.cpm) || 0) * taxMultiplier;
-  const prevCpc = (Number(acctPrev.cpc) || 0) * taxMultiplier;
-  const prevCtr = Number(acctPrev.ctr) || 0;
+  const prevCpc = (Number(acctPrev.cost_per_inline_link_click) || 0) * taxMultiplier;
+  const prevCtr = Number(acctPrev.inline_link_click_ctr) || 0;
   const prevImpressions = Number(acctPrev.impressions) || 0;
 
   const curCpl = acctLeads > 0 ? acctSpendGross / acctLeads : 0;
   const curCpm = (Number(acct.cpm) || 0) * taxMultiplier;
-  const curCpc = (Number(acct.cpc) || 0) * taxMultiplier;
-  const curCtr = Number(acct.ctr) || 0;
+  const curCpc = (Number(acct.cost_per_inline_link_click) || 0) * taxMultiplier;
+  const curCtr = Number(acct.inline_link_click_ctr) || 0;
   const curImpressions = Number(acct.impressions) || 0;
 
   const accountSummary = {
@@ -1613,9 +1619,9 @@ async function handleMetaAds(req: VercelRequest, res: VercelResponse) {
     spend_net:   acctSpendNet,                          // sem imposto (Meta gerenciador)
     tax_rate:    TAX_RATE,                              // 0..1
     impressions: curImpressions,
-    clicks:      Number(acct.clicks)      || 0,
-    ctr:         curCtr,                                // %
-    cpc:         curCpc,                                // ajustado com tax
+    clicks:      Number(acct.inline_link_clicks) || 0, // cliques no LINK (não "all")
+    ctr:         curCtr,                                // % (CTR de link)
+    cpc:         curCpc,                                // custo por clique no link (com tax)
     cpm:         curCpm,
     reach:       Number(acct.reach)       || 0,
     frequency:   Number(acct.frequency)   || 0,
@@ -1648,9 +1654,9 @@ async function handleMetaAds(req: VercelRequest, res: VercelResponse) {
         spend:       cSpendGross,                              // gross (com imposto)
         spend_net:   cSpendNet,
         impressions: Number(c.impressions) || 0,
-        clicks:      Number(c.clicks)      || 0,
-        ctr:         Number(c.ctr)         || 0,
-        cpc:         (Number(c.cpc) || 0) * taxMultiplier,
+        clicks:      Number(c.inline_link_clicks) || 0,
+        ctr:         Number(c.inline_link_click_ctr) || 0,
+        cpc:         (Number(c.cost_per_inline_link_click) || 0) * taxMultiplier,
         cpm:         (Number(c.cpm) || 0) * taxMultiplier,
         leads:       cLeads,
         purchases:   cPurchases,
@@ -1676,9 +1682,9 @@ async function handleMetaAds(req: VercelRequest, res: VercelResponse) {
         spend:        aSpendGross,
         spend_net:    aSpendNet,
         impressions:  Number(a.impressions) || 0,
-        clicks:       Number(a.clicks)      || 0,
-        ctr:          Number(a.ctr)         || 0,
-        cpc:          (Number(a.cpc) || 0) * taxMultiplier,
+        clicks:       Number(a.inline_link_clicks)        || 0,
+        ctr:          Number(a.inline_link_click_ctr)     || 0,
+        cpc:          (Number(a.cost_per_inline_link_click) || 0) * taxMultiplier,
         cpm:          (Number(a.cpm) || 0) * taxMultiplier,
         leads:        aLeads,
         purchases:    aPurchases,
@@ -1729,9 +1735,9 @@ async function handleMetaAds(req: VercelRequest, res: VercelResponse) {
         spend:        adSpendGross,
         spend_net:    adSpendNet,
         impressions:  Number(a.impressions) || 0,
-        clicks:       Number(a.clicks)      || 0,
-        ctr:          Number(a.ctr)         || 0,
-        cpc:          (Number(a.cpc) || 0) * taxMultiplier,
+        clicks:       Number(a.inline_link_clicks)        || 0,
+        ctr:          Number(a.inline_link_click_ctr)     || 0,
+        cpc:          (Number(a.cost_per_inline_link_click) || 0) * taxMultiplier,
         cpm:          (Number(a.cpm) || 0) * taxMultiplier,
         leads:        adLeads,
         purchases:    adPurchases,

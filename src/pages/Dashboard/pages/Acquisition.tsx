@@ -404,13 +404,13 @@ export function Acquisition({ token }: { token: string }) {
                 <p className="text-[9px] text-white/30 mt-0.5">gross / leads Meta</p>
               </div>
               <div>
-                <p className="text-[10px] uppercase tracking-wider text-white/40 font-semibold">CPM · CTR</p>
+                <p className="text-[10px] uppercase tracking-wider text-white/40 font-semibold" title="CTR de link (cliques no link ÷ impressões) — igual ao Gerenciador. Não inclui curtidas/comentários/compartilhamentos.">CPM · CTR <span className="text-white/30 normal-case">(link)</span></p>
                 <p className="text-white font-black tabular-nums text-2xl mt-0.5 flex items-baseline gap-1.5">
                   R$ {meta.account.cpm.toFixed(2)} · {meta.account.ctr.toFixed(2)}%
                 </p>
                 <p className="text-[9px] text-white/30 mt-0.5 flex items-center gap-1.5">
                   <DeltaBadge value={meta.account.deltas?.cpm ?? null} inverted size="sm" title="CPM (descer = melhor)" />
-                  <DeltaBadge value={meta.account.deltas?.ctr ?? null} size="sm" title="CTR (subir = melhor)" />
+                  <DeltaBadge value={meta.account.deltas?.ctr ?? null} size="sm" title="CTR de link (subir = melhor)" />
                 </p>
               </div>
             </div>
