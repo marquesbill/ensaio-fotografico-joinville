@@ -18,6 +18,26 @@
       })();
     </script>
 
+    <!--
+      Seguro do funil de anúncios: o clique no anúncio deve cair no formulário
+      do TOPO (hero). Se algum link de campanha vier com a âncora do form de
+      baixo (#cadastro-footer), removemos antes do React montar — senão o
+      navegador (sobretudo no celular, que monta mais devagar) rola pro footer
+      depois do carregamento. Só age na home e só quando essa âncora aparece;
+      em qualquer outro caso não faz nada.
+    -->
+    <script>
+      (function () {
+        try {
+          if (window.location.pathname === '/' &&
+              window.location.hash.indexOf('cadastro-footer') !== -1) {
+            history.replaceState(null, '', window.location.pathname + window.location.search);
+            window.addEventListener('load', function () { window.scrollTo(0, 0); });
+          }
+        } catch (e) {}
+      })();
+    </script>
+
     <!-- Google tag (gtag.js) -->
     <script>
       if (!window.__skipAnalytics) {
