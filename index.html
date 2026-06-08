@@ -20,20 +20,35 @@
 
     <!--
       Seguro do funil de anúncios: o clique no anúncio deve cair no formulário
-      do TOPO (hero). Se algum link de campanha vier com a âncora do form de
-      baixo (#cadastro-footer), removemos antes do React montar — senão o
-      navegador (sobretudo no celular, que monta mais devagar) rola pro footer
-      depois do carregamento. Só age na home e só quando essa âncora aparece;
-      em qualquer outro caso não faz nada.
+      do TOPO (hero). Causa raiz (reproduzida): history.scrollRestoration='auto'
+      fazia o navegador RESTAURAR a posição de scroll de uma visita anterior —
+      quem já tinha rolado até o form do footer voltava pra lá ~1s após carregar.
+      Visitante novo cai no topo normalmente (por isso a maioria dos leads é hero).
+      Correção, só na home:
+        1) scrollRestoration='manual' — não restaura mais a posição antiga;
+        2) remove a âncora #cadastro-footer se vier colada num link de campanha;
+        3) rede de segurança: nos primeiros 3s, qualquer rolagem que NÃO venha
+           de ação do usuário (autofill do navegador, etc.) volta pro topo.
+           A rolagem feita pelo próprio usuário (touch/wheel/teclado) é mantida.
     -->
     <script>
       (function () {
         try {
-          if (window.location.pathname === '/' &&
-              window.location.hash.indexOf('cadastro-footer') !== -1) {
+          if (window.location.pathname !== '/') return;
+          if ('scrollRestoration' in history) history.scrollRestoration = 'manual';
+          if (window.location.hash.indexOf('cadastro-footer') !== -1) {
             history.replaceState(null, '', window.location.pathname + window.location.search);
-            window.addEventListener('load', function () { window.scrollTo(0, 0); });
           }
+          var acted = false;
+          var gestures = ['pointerdown', 'mousedown', 'keydown', 'wheel', 'touchstart', 'touchmove'];
+          var mark = function () { acted = true; };
+          gestures.forEach(function (ev) { window.addEventListener(ev, mark, { passive: true, capture: true }); });
+          var onScroll = function () { if (!acted && window.scrollY > 0) window.scrollTo(0, 0); };
+          window.addEventListener('scroll', onScroll, { passive: true });
+          setTimeout(function () {
+            window.removeEventListener('scroll', onScroll);
+            gestures.forEach(function (ev) { window.removeEventListener(ev, mark, { capture: true }); });
+          }, 3000);
         } catch (e) {}
       })();
     </script>
