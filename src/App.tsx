@@ -187,6 +187,14 @@ async function submitToSheets(data: FormState, source: string) {
   });
 }
 
+/**
+ * Teste A/B (André + Elisa): medir cadastros usando SÓ o formulário do topo (hero).
+ * Enquanto `false`, o formulário do footer (perto do mapa) não é renderizado —
+ * o mapa e o texto "Onde estamos" continuam aparecendo normalmente.
+ * Pra religar o form do footer quando o teste acabar: troque para `true`.
+ */
+const SHOW_FOOTER_FORM = false;
+
 export default function App() {
   const [openFaq, setOpenFaq] = useState<number | null>(0);
   const carouselRef = useRef<HTMLDivElement>(null);
@@ -946,6 +954,8 @@ export default function App() {
                 <p className="text-primary font-bold text-xl">Hotel Le Village, Sala Esmeralda</p>
                 <p className="text-on-surface-variant mt-4 leading-relaxed">Localizado no coração de Joinville, nosso estúdio temporário oferece infraestrutura completa para o seu ensaio, com total privacidade e salas preparadas para trocas de figurino e preparação técnica.</p>
               </div>
+              {/* Teste A/B: form do footer oculto via SHOW_FOOTER_FORM (só o form do hero). */}
+              {SHOW_FOOTER_FORM && (
               <div id="cadastro-footer" className="glass-card p-8 rounded-2xl space-y-4 border border-white/40 shadow-[0_8px_32px_0_rgba(255,255,255,0.1)] bg-white/5 backdrop-blur-2xl">
                 {footerStatus === 'success' ? (
                   <div
@@ -1045,6 +1055,7 @@ export default function App() {
                   </form>
                 )}
               </div>
+              )}
             </motion.div>
           </div>
         </div>
