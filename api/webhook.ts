@@ -142,15 +142,28 @@ type NormalizedPayment = {
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   const PACKAGES = getPackages();
-  if (req.method !== 'POST') return res.status(405).end();
+  // GET é aceito porque a IPN do MP pode chegar via GET (e o "simular" do painel).
+  if (req.method !== 'POST' && req.method !== 'GET') return res.status(405).end();
 
   // Detecta o gateway pelo formato do payload:
-  //  - ASAAS envia `{ event, payment }`
-  //  - MP    envia `{ type: 'payment', data: { id } }`
+  //  - ASAAS                 → body JSON `{ event, payment }`
+  //  - MP "Webhook" (painel) → body JSON `{ type: 'payment', data: { id } }`
+  //  - MP "IPN" (disparada pelo notification_url da preference) → query string
+  //    `?topic=payment&id=123` (às vezes `?type=payment&data.id=123`), body vazio.
+  //    Antes só tratávamos o formato Webhook → as IPN do MP caíam em "payload
+  //    desconhecido" e o pagamento NUNCA confirmava sozinho (reserva ficava
+  //    pending → 30min → confirmação manual). Agora tratamos os dois.
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const body = req.body as any;
-  const isAsaas = typeof body?.event === 'string' && body?.payment;
-  const isMp    = body?.type === 'payment';
+  const q = (req.query || {}) as Record<string, string | string[]>;
+  const qStr = (k: string): string => {
+    const v = q[k];
+    return Array.isArray(v) ? String(v[0] ?? '') : (v != null ? String(v) : '');
+  };
+  const mpTopic   = qStr('topic') || qStr('type');
+  const mpQueryId = qStr('id') || qStr('data.id');
+  const isAsaas   = typeof body?.event === 'string' && body?.payment;
+  const isMp      = body?.type === 'payment' || (mpTopic === 'payment' && !!mpQueryId);
 
   let normalized: NormalizedPayment;
 
@@ -203,8 +216,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       amount:         Number(pay.value) || 0,
     };
   } else if (isMp) {
-    const paymentId = body.data?.id;
-    if (!paymentId) return res.status(400).json({ error: 'Missing payment id' });
+    // Webhook → body.data.id · IPN → id na query string.
+    const paymentId = body?.data?.id || mpQueryId;
+    if (!paymentId) {
+      // Ex.: IPN com topic=merchant_order (sem id de pagamento). Ack e ignora —
+      // o MP também manda a notificação topic=payment, que traz o id certo.
+      return res.status(200).json({ received: true, ignored: true, reason: 'no payment id' });
+    }
 
     let payment: {
       status: string; preference_id: string; id: number;
@@ -234,7 +252,15 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       amount:         Number(payment.transaction_amount) || 0,
     };
   } else {
-    // payload desconhecido — ack pra evitar retries infinitos do gateway
+    // payload desconhecido — loga a FORMA (sem dados sensíveis) pra diagnóstico
+    // e dá ack pra evitar retries infinitos do gateway.
+    console.warn('[webhook] payload não reconhecido', JSON.stringify({
+      method:    req.method,
+      queryKeys: Object.keys(q),
+      topic:     mpTopic || undefined,
+      bodyType:  typeof body,
+      bodyKeys:  body && typeof body === 'object' ? Object.keys(body).slice(0, 10) : undefined,
+    }));
     return res.status(200).json({ received: true, ignored: true });
   }
 
