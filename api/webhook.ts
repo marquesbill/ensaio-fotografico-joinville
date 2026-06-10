@@ -122,11 +122,30 @@ function buildBookingEmailHtml(data: {
 const MP_TOKEN          = process.env.MERCADOPAGO_ACCESS_TOKEN!;
 const SCRIPT_URL        = process.env.SHEETS_SCRIPT_URL!;
 const ASAAS_WEBHOOK_TOK = process.env.ASAAS_WEBHOOK_TOKEN || '';
+// API key do ASAAS (mesma env que o admin-bookings usa) — permite verificar o
+// pagamento direto na API em vez de depender só do token do header do webhook.
+const ASAAS_API_KEY = process.env.ASAAS_API_KEY || '';
+const ASAAS_BASE    = (process.env.ASAAS_ENV || 'production').toLowerCase() === 'sandbox'
+  ? 'https://api-sandbox.asaas.com/v3'
+  : 'https://api.asaas.com/v3';
 const ANDRE_EMAIL   = 'andreffotografia@gmail.com';
 const MARIANE_EMAIL = 'mariane.sslourenco@gmail.com';
 const FROM_EMAIL    = 'Ensaio Joinville <confirmacao@ensaiofotograficoemjoinville.com>';
 
 const resend = new Resend(process.env.RESEND_API_KEY!);
+
+// Throttle de alertas operacionais (por instância warm): evita email-bomb —
+// um atacante anônimo num endpoint público não pode transformar cada request
+// num email pro André. 1 alerta por tipo a cada 15min é suficiente pra
+// diagnóstico; o resto fica nos logs da Vercel.
+const ALERT_THROTTLE_MS = 15 * 60 * 1000;
+const lastAlertAt: Record<string, number> = {};
+function alertAllowed(kind: string): boolean {
+  const now = Date.now();
+  if (now - (lastAlertAt[kind] || 0) < ALERT_THROTTLE_MS) return false;
+  lastAlertAt[kind] = now;
+  return true;
+}
 
 // ─── Tipo unificado pós-normalização ───────────────────────────
 // Independente do gateway, mapeamos para essa forma antes de continuar.
@@ -168,50 +187,161 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   let normalized: NormalizedPayment;
 
   if (isAsaas) {
-    // Autenticação OBRIGATÓRIA via header asaas-access-token.
-    // Sem token configurado no servidor, qualquer um pode confirmar
-    // pagamentos forjando o payload — não dá pra deixar opcional.
-    if (!ASAAS_WEBHOOK_TOK) {
-      console.error('[webhook] ASAAS_WEBHOOK_TOKEN ausente no servidor — rejeitando');
-      return res.status(503).json({ error: 'Webhook não autorizado: token não configurado no servidor' });
-    }
-    const got = (req.headers['asaas-access-token'] || req.headers['Asaas-Access-Token'] || '') as string;
-    if (got !== ASAAS_WEBHOOK_TOK) {
-      console.warn('[webhook] ASAAS token mismatch');
-      return res.status(401).json({ error: 'Invalid webhook token' });
-    }
-
     const evt = body.event as string;
-    const pay = body.payment as {
-      id: string; status: string; paymentLink?: string; checkoutSession?: string;
+    // Payload bruto do webhook — espelha o GET /v3/payments/{id} (doc ASAAS),
+    // mas sozinho NÃO é fonte de verdade: quem conhece a URL pode forjá-lo.
+    const payloadPay = (body.payment || {}) as {
+      id?: string; status?: string; paymentLink?: string; checkoutSession?: string;
       externalReference?: string; installmentCount?: number; billingType?: string;
+      value?: number;
     };
 
     // Apenas eventos definitivos de confirmação avançam o fluxo:
-    //  - PAYMENT_CONFIRMED → cartão capturado
-    //  - PAYMENT_RECEIVED  → boleto/PIX recebido
-    // Outros eventos (CREATED, AUTHORIZED, PENDING…) são apenas reconhecidos.
+    //  - PAYMENT_CONFIRMED → cartão capturado (PIX NÃO passa por esse evento)
+    //  - PAYMENT_RECEIVED  → PIX/boleto pago (e cartão na liquidação, D+32)
+    // Outros eventos (CREATED, AUTHORIZED, OVERDUE…) são apenas reconhecidos.
     if (evt !== 'PAYMENT_CONFIRMED' && evt !== 'PAYMENT_RECEIVED') {
-      return res.status(200).json({ received: true, event: evt, status: pay?.status });
+      return res.status(200).json({ received: true, event: evt, status: payloadPay?.status });
     }
+
+    const paymentId = String(payloadPay.id || '');
+    // IDs ASAAS são curtos e alfanuméricos (ex.: pay_080225913252). Validar o
+    // formato AQUI bloqueia injeção de HTML em emails/logs e payloads-lixo
+    // antes de gastar qualquer chamada à API.
+    if (!paymentId || !/^[A-Za-z0-9_-]{1,64}$/.test(paymentId)) {
+      console.warn('[webhook] ASAAS event com payment.id ausente/inválido — ignorando');
+      return res.status(200).json({ received: true, ignored: true, reason: 'missing or invalid payment id' });
+    }
+
+    // ── Verificação robusta: a fonte da verdade é a API do ASAAS ──
+    // Antes, o header asaas-access-token PRECISAVA bater com ASAAS_WEBHOOK_TOKEN,
+    // senão 401 — e com o token divergido TODA confirmação era rejeitada (e após
+    // 15 falhas consecutivas a ASAAS interrompe a fila e para de enviar).
+    // Agora o token é só um sinal: o pagamento é re-buscado na API do ASAAS com
+    // a nossa API key. Payload forjado não confirma nada — status e
+    // checkoutSession/paymentLink saem da API, não do payload (id aleatório → 404).
+    const gotTok  = String(req.headers['asaas-access-token'] || '');
+    const tokenOk = !!ASAAS_WEBHOOK_TOK && gotTok === ASAAS_WEBHOOK_TOK;
+    if (!tokenOk) {
+      console.warn(`[webhook] ASAAS token ${ASAAS_WEBHOOK_TOK ? 'mismatch' : 'não configurado no servidor'} — validando via API`);
+    }
+
+    type AsaasPayment = {
+      id?: string; status?: string; value?: number; billingType?: string;
+      checkoutSession?: string | null; paymentLink?: string | null;
+      externalReference?: string | null; installmentNumber?: number;
+    };
+    // verified = objeto veio da API · not_found = 404 (forjado ou ASAAS_ENV errado)
+    // unavailable = API fora do ar / sem API key (token decide o fallback abaixo)
+    let apiPay: AsaasPayment | null = null;
+    let apiState: 'verified' | 'not_found' | 'unavailable' = 'unavailable';
+    let lastVerifyError = ASAAS_API_KEY ? '' : 'ASAAS_API_KEY ausente';
+    if (ASAAS_API_KEY) {
+      // 2 tentativas com timeout curto: sem AbortSignal, uma API pendurada
+      // estouraria o budget da função → não-200 → conta pras 15 falhas que
+      // interrompem a fila da ASAAS (o incidente original, de novo).
+      for (let attempt = 1; attempt <= 2; attempt++) {
+        try {
+          const r = await fetch(`${ASAAS_BASE}/payments/${encodeURIComponent(paymentId)}`, {
+            headers: { access_token: ASAAS_API_KEY, 'User-Agent': 'J26-EnsaioJoinville-Webhook/1.0' },
+            signal:  AbortSignal.timeout(3000),
+          });
+          if (r.status === 404) { apiState = 'not_found'; break; }
+          if (r.status >= 400 && r.status < 500) {
+            // 4xx determinístico (401/403 key errada, 429 rate-limit): retry
+            // imediato não resolve e só amplifica custo — registra e sai.
+            lastVerifyError = `HTTP ${r.status}`;
+            break;
+          }
+          if (!r.ok) throw new Error(`HTTP ${r.status}`);
+          apiPay   = await r.json() as AsaasPayment;
+          apiState = 'verified';
+          lastVerifyError = '';
+          break;
+        } catch (e) {
+          lastVerifyError = e instanceof Error ? e.message : String(e);
+          console.error(`[webhook] ASAAS API verify ${attempt}/2 falhou:`, lastVerifyError);
+          if (attempt < 2) await new Promise(r => setTimeout(r, 400));
+        }
+      }
+    } else {
+      console.error('[webhook] ASAAS_API_KEY ausente — sem verificação via API');
+    }
+
+    if (apiState === 'not_found') {
+      // Payment não existe nessa conta/ambiente: payload forjado OU ASAAS_ENV/
+      // ASAAS_API_KEY apontando pra conta/ambiente errado. Não confirma nada.
+      console.warn(`[webhook] ASAAS payment ${paymentId} não existe na API (tokenOk=${tokenOk}) — ignorando`);
+      if (tokenOk && alertAllowed('not_found_authentic')) {
+        // Token bateu → o evento É da ASAAS, então o 404 é problema NOSSO de
+        // config — sem alerta isso viraria perda silenciosa de TODA confirmação.
+        const { error } = await resend.emails.send({
+          from: FROM_EMAIL, to: ANDRE_EMAIL,
+          subject: `⚠️ Webhook ASAAS autêntico mas payment ${paymentId} não existe na API`,
+          html: `<p>Chegou um webhook ASAAS <strong>autenticado pelo token</strong> (evento ${evt}), mas o GET /payments/${paymentId} retornou 404. Isso indica <strong>ASAAS_ENV ou ASAAS_API_KEY apontando pra conta/ambiente errado</strong> no Vercel — enquanto isso, confirmações reais estão sendo descartadas.</p>
+<p><strong>Ação:</strong> confira ASAAS_ENV (production?) e ASAAS_API_KEY no Vercel. Alertas deste tipo são limitados a 1 a cada 15min; veja os logs da Vercel pra lista completa.</p>`,
+        });
+        if (error) console.error('[webhook] alerta André (not_found) falhou', error);
+      }
+      return res.status(200).json({ received: true, ignored: true, reason: 'payment not found in ASAAS API' });
+    }
+
+    if (apiState === 'unavailable' && !tokenOk) {
+      // Dupla falha: não dá pra autenticar pelo token NEM verificar na API.
+      // 200 (não 5xx) pra não derrubar a fila da ASAAS; o lembrete de 30min é o
+      // backstop natural se essa confirmação se perder. Alerta o André por email
+      // — com throttle, porque este caminho é alcançável por request forjado
+      // (paymentId já passou na validação de formato, então é seguro interpolar).
+      console.error(`[webhook] ASAAS payment ${paymentId}: API indisponível (${lastVerifyError}) E token inválido — evento descartado`);
+      if (alertAllowed('unverifiable')) {
+        const { error } = await resend.emails.send({
+          from: FROM_EMAIL, to: ANDRE_EMAIL,
+          subject: `⚠️ Webhook ASAAS não verificável — payment ${paymentId}`,
+          html: `<p>Chegou um webhook ASAAS (<strong>${evt}</strong>) mas a verificação na API do ASAAS falhou (<code>${lastVerifyError || 'sem detalhe'}</code>) e o token de autenticação não bate — o evento foi descartado por segurança.</p>
+<p><strong>Payment ID:</strong> ${paymentId}<br>
+<strong>Ação:</strong> confira o pagamento no painel ASAAS e, se estiver pago, confirme manualmente no painel admin. Se isso se repetir, confira ASAAS_API_KEY e ASAAS_WEBHOOK_TOKEN no Vercel. Alertas deste tipo são limitados a 1 a cada 15min; veja os logs da Vercel.</p>`,
+        });
+        if (error) console.error('[webhook] alerta André (unverifiable) falhou', error);
+      }
+      return res.status(200).json({ received: true, ignored: true, reason: 'unverifiable: API unavailable and token mismatch' });
+    }
+
+    // Daqui pra baixo: ou a API confirmou o pagamento (verified), ou o token
+    // bateu (gateway autêntico) e a API está fora — usa o payload como fallback.
+    const pay = apiState === 'verified' ? (apiPay as AsaasPayment) : payloadPay;
+
+    if (apiState === 'verified') {
+      // O status REAL na API decide — não o nome do evento (forjável).
+      // CONFIRMED = cartão capturado · RECEIVED = PIX/boleto pago (cartão D+32)
+      // RECEIVED_IN_CASH = baixa manual ("recebido em dinheiro") no painel ASAAS.
+      const PAID = ['CONFIRMED', 'RECEIVED', 'RECEIVED_IN_CASH'];
+      if (!PAID.includes(String(pay.status || ''))) {
+        console.warn(`[webhook] ASAAS payment ${paymentId} status=${pay.status} (não pago) — evento ${evt} ignorado`);
+        return res.status(200).json({ received: true, status: pay.status, ignored: true });
+      }
+    }
+
     // Pareamento com o pending no Sheets (coluna stripeSession):
-    //  - Checkout (atual)      → payment.checkoutSession
+    //  - Checkout (atual)      → payment.checkoutSession (UUID)
     //  - Payment Link (legado) → payment.paymentLink
+    // Quando verificado, vem da API — payload forjado não escolhe o booking.
     // O externalReference do payment NÃO é confiável: o Checkout não o propaga
     // pro payment (vem null) — a meta do booking vem da resposta do confirmBooking.
-    const slotId = pay?.checkoutSession || pay?.paymentLink || '';
+    const slotId = pay.checkoutSession || pay.paymentLink || '';
     if (!slotId) {
-      console.error('[webhook] ASAAS payment sem checkoutSession nem paymentLink', pay);
+      console.error(`[webhook] ASAAS payment ${paymentId} sem checkoutSession nem paymentLink`);
       // 200 (não 400): 4xx repetido faz a ASAAS marcar o webhook como interrompido.
       return res.status(200).json({ received: true, ignored: true, reason: 'no slot id' });
     }
 
     normalized = {
       gateway:        'asaas',
-      externalSlotId: slotId,                     // checkoutSession OU paymentLink
-      paymentId:      pay.id,
+      externalSlotId: String(slotId),             // checkoutSession OU paymentLink
+      paymentId,
       externalRef:    pay.externalReference || '',
-      installments:   pay.installmentCount || 1,
+      // A API não retorna installmentCount (só installmentNumber, nº da parcela);
+      // o payload do webhook pode trazer — melhor esforço, só cosmético no email.
+      installments:   Number(payloadPay.installmentCount) || 1,
       billingType:    pay.billingType,
       amount:         Number(pay.value) || 0,
     };
@@ -233,6 +363,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       const r = await fetch(`https://api.mercadopago.com/v1/payments/${paymentId}`, {
         headers: { Authorization: `Bearer ${MP_TOKEN}` },
       });
+      // Sem essa checagem, um 401/5xx do MP era parseado como JSON de erro,
+      // status ficava undefined ≠ 'approved' e respondíamos 200 — o MP não
+      // refazia o retry e o pagamento nunca confirmava sozinho.
+      if (!r.ok) throw new Error(`MP API ${r.status}`);
       payment = await r.json();
     } catch (err) {
       console.error('[webhook] failed to fetch MP payment', err);
@@ -317,15 +451,23 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           gateway:       normalized.gateway,
           origin:        'webhook',   // pagamento via gateway — log mostra origem real
         }),
+        // Apps Script lento não pode estourar o budget da função (não-200 pra
+        // ASAAS conta pras 15 falhas que interrompem a fila).
+        signal: AbortSignal.timeout(8000),
       });
       if (!r.ok) throw new Error(`HTTP ${r.status}`);
       const json = await r.json() as {
+        error?: string;
         bookingId?: string; alreadyConfirmed?: boolean; fullyConfirmed?: boolean;
         paidCount?: number; totalSessions?: number;
         paidPayerName?: string; pendingPayerNames?: string[];
         date?: string; start?: string; name?: string; email?: string;
         whatsapp?: string; package?: string; numBailarinas?: number; valor?: number;
       };
+      // Apps Script devolve erros como HTTP 200 + {error} (ContentService não
+      // controla o status) — ex.: 'Session não encontrada'. Sem essa checagem,
+      // o fluxo seguia como sucesso com meta vazia.
+      if (json.error) throw new Error(String(json.error));
       bookingId        = json.bookingId || '';
       alreadyConfirmed = json.alreadyConfirmed === true;
       // fullyConfirmed undefined → assume true (compat com Apps Script antigo
@@ -350,6 +492,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     } catch (e) {
       confirmFailed = e instanceof Error ? e.message : String(e);
       console.error(`[webhook] confirmBooking attempt ${attempt}/3 failed:`, confirmFailed);
+      // Erros determinísticos do Apps Script (a linha não existe — ex.: link
+      // de split regenerado, pending apagado) não mudam com retry; insistir só
+      // atrasa a resposta e, no replay pós-reativação da fila, multiplica
+      // chamadas e alertas.
+      if (/Session não encontrada|Planilha vazia/i.test(confirmFailed)) break;
       if (attempt < 3) await new Promise(r => setTimeout(r, 500 * attempt));
     }
   }
@@ -365,14 +512,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   // É essa variável que vai nos e-mails de confirmação ao cliente/admin.
   const priceFinal = (valor && valor > 0) ? valor : pkg.price;
   if (confirmFailed) {
-    // 3 tentativas falharam — alerta urgente pro admin investigar manual.
+    // Tentativas falharam — alerta urgente pro admin investigar manual.
     // Continua o fluxo de emails pra não confundir cliente que JÁ PAGOU.
-    try {
-      await resend.emails.send({
-        from:    FROM_EMAIL,
-        to:      ANDRE_EMAIL,
-        subject: `🚨 URGENTE: pagamento OK mas Sheets não confirmou — ${name} ${date} ${time}`,
-        html: `<p><strong>O cliente já pagou mas o confirmBooking falhou 3x.</strong> Confirme manualmente no Sheets pra evitar duplo agendamento.</p>
+    const { error } = await resend.emails.send({
+      from:    FROM_EMAIL,
+      to:      ANDRE_EMAIL,
+      subject: `🚨 URGENTE: pagamento OK mas Sheets não confirmou — ${name} ${date} ${time}`,
+      html: `<p><strong>O cliente já pagou mas o confirmBooking falhou.</strong> Confirme manualmente no Sheets pra evitar duplo agendamento.</p>
 <p><strong>Cliente:</strong> ${name}<br>
 <strong>Email:</strong> ${email}<br>
 <strong>WhatsApp:</strong> ${whatsapp}<br>
@@ -383,9 +529,15 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 <strong>External Slot ID:</strong> ${normalized.externalSlotId}<br>
 <strong>Último erro:</strong> ${confirmFailed}</p>
 <p>Ação: abre o Sheets de Agendamentos, busca a linha com stripeSession = <code>${normalized.externalSlotId}</code>, muda status pra Confirmado e preenche stripePayment.</p>`,
-      });
-    } catch (e) {
-      console.error('[webhook] CRITICAL: confirmBooking failed AND admin alert failed', e);
+    });
+    if (error) console.error('[webhook] CRITICAL: confirmBooking failed AND admin alert failed', error);
+
+    // Sem meta nenhuma (Checkout ASAAS não tem externalReference de fallback,
+    // então 'Session não encontrada' deixa name/email vazios), os emails de
+    // "Reserva confirmada" abaixo seriam lixo sem destinatário — e no replay
+    // pós-reativação da fila virariam uma rajada. O alerta acima já cobre.
+    if (!email && !name) {
+      return res.status(200).json({ received: true, confirmFailed: true, reason: 'no booking meta' });
     }
   }
 
@@ -413,7 +565,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       const faltam    = pendingPayerNames.length > 0
         ? pendingPayerNames.map(n => n || '(sem nome)').join(', ')
         : `${totalSessions - paidCount} pagador(es)`;
-      await resend.emails.send({
+      const { data: partialSent, error: partialErr } = await resend.emails.send({
         from:    FROM_EMAIL,
         to:      MARIANE_EMAIL,
         subject: `💰 ${paidPayerName || 'Pagamento parcial'} pagou — ${name} (${paidCount}/${totalSessions}) · ${pkg.name}`,
@@ -434,6 +586,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 <p style="font-size:12px;color:#6b7280;">O e-mail final "Reserva confirmada" só vai pro cliente quando todos os pagadores fecharem.</p>
 </div>`,
       });
+      // O SDK do Resend v6 NUNCA lança — falhas voltam em {error}. Sem esse
+      // check, um 422/429 sumia sem deixar rastro nos logs.
+      if (partialErr) console.error('[webhook] Resend Mari (partial) error', partialErr);
+      else console.log(`[webhook] email parcial Mari enviado (${partialSent?.id}) — booking ${bookingId} ${paidCount}/${totalSessions}`);
     } catch (e) {
       console.error('[webhook] Resend Mari (partial) error', e);
     }
@@ -448,20 +604,26 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     bookingId,
     numBailarinas,
   }, 'confirmed');
+  // Resend limita a 2 req/s — os 3 sends abaixo são sequenciais com pausa
+  // pra não tomar 429 (que o SDK devolve em {error}, sem retry automático).
+  const emailLog: Record<string, string> = {};
   try {
-    await resend.emails.send({
+    const { data: sent, error } = await resend.emails.send({
       from:    FROM_EMAIL,
       to:      email,
       subject: `Reserva confirmada — ${pkg.name} · ${date.split('-').reverse().join('/')} às ${time}`,
       html:    htmlBody,
     });
+    emailLog.cliente = error ? `ERRO: ${error.message || error.name}` : (sent?.id || 'ok');
+    if (error) console.error('[webhook] Resend client error', error);
   } catch (e) {
     console.error('[webhook] Resend client error', e);
   }
+  await new Promise(r => setTimeout(r, 600));
 
   // 3. Notify André
   try {
-    await resend.emails.send({
+    const { data: sentAndre, error: errAndre } = await resend.emails.send({
       from:    FROM_EMAIL,
       to:      ANDRE_EMAIL,
       subject: `Nova reserva: ${name} — ${pkg.name} ${date.split('-').reverse().join('/')} ${time}`,
@@ -473,9 +635,12 @@ Parcelas: ${normalized.installments}x<br>
 ${normalized.billingType ? `Método: ${normalized.billingType}<br>` : ''}
 Booking ID: ${bookingId}<br>Gateway: ${normalized.gateway.toUpperCase()} · Payment: ${normalized.paymentId}</p>`,
     });
+    emailLog.andre = errAndre ? `ERRO: ${errAndre.message || errAndre.name}` : (sentAndre?.id || 'ok');
+    if (errAndre) console.error('[webhook] Resend andre error', errAndre);
   } catch (e) {
     console.error('[webhook] Resend andre error', e);
   }
+  await new Promise(r => setTimeout(r, 600));
 
   // 4. Notify Mariane
   try {
@@ -512,15 +677,25 @@ Booking ID: ${bookingId}<br>Gateway: ${normalized.gateway.toUpperCase()} · Paym
 </table>
 </body></html>`;
 
-    await resend.emails.send({
+    const { data: sentMari, error: errMari } = await resend.emails.send({
       from:    FROM_EMAIL,
       to:      MARIANE_EMAIL,
       subject: `✅ ${name} concluiu o pagamento — ${pkg.name} · ${fmtDate(date)} às ${time}`,
       html:    marianeHtml,
     });
+    emailLog.mari = errMari ? `ERRO: ${errMari.message || errMari.name}` : (sentMari?.id || 'ok');
+    if (errMari) console.error('[webhook] Resend mariane error', errMari);
   } catch (e) {
     console.error('[webhook] Resend mariane error', e);
   }
+
+  // Log estruturado do happy path — responde "o evento chegou? confirmou?
+  // enviou os emails?" direto nos logs da Vercel, sem precisar do código.
+  console.log('[webhook] OK', JSON.stringify({
+    gateway: normalized.gateway, paymentId: normalized.paymentId,
+    slotId: normalized.externalSlotId, bookingId,
+    confirmFailed: confirmFailed || false, emails: emailLog,
+  }));
 
   return res.status(200).json({ received: true });
 }

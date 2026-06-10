@@ -3824,6 +3824,61 @@ async function handleResendConfirmation(req: VercelRequest, res: VercelResponse)
   return res.status(200).json(json);
 }
 
+/* ───────── ASAAS webhook repair (reativa fila interrompida) ─────────
+ *
+ * A ASAAS interrompe a fila do webhook após 15 falhas consecutivas (foi o que
+ * aconteceu com os 401 de token divergido) e só volta a entregar eventos
+ * quando alguém reativa — no painel ou via PUT /v3/webhooks/{id}.
+ * Esta action faz só isso: enabled=true + interrupted=false. NÃO altera URL,
+ * eventos nem authToken. Ao reativar, a ASAAS reenvia os eventos represados
+ * (até 14 dias) em ordem — confirmações antigas são absorvidas pela
+ * idempotência do confirmBooking (alreadyConfirmed), sem emails duplicados.
+ */
+async function handleAsaasWebhookRepair(req: VercelRequest, res: VercelResponse, auth: { user: string }) {
+  const { webhookId } = req.body as { webhookId?: string };
+  if (!webhookId || typeof webhookId !== 'string') {
+    return res.status(400).json({ error: 'webhookId é obrigatório' });
+  }
+
+  // Allowlist: só repara webhook que existe na conta E aponta pro NOSSO site —
+  // impede reativar por engano um webhook desabilitado de propósito ou de
+  // outra integração. Também captura o estado anterior pra auditoria.
+  type AsaasWebhookCfg = {
+    id?: string; url?: string; enabled?: boolean; interrupted?: boolean;
+    sendType?: string; events?: string[];
+  };
+  const list = await asaasApi<{ data?: AsaasWebhookCfg[] }>('/webhooks');
+  const target = (list.data || []).find(w => w.id === webhookId);
+  if (!target) return res.status(404).json({ error: 'Webhook não encontrado na conta ASAAS' });
+  if (!String(target.url || '').includes('ensaiofotograficoemjoinville.com')) {
+    return res.status(400).json({ error: `Webhook ${webhookId} não aponta pro nosso domínio (${target.url}) — não vou reativar` });
+  }
+  const before = { enabled: target.enabled === true, interrupted: target.interrupted === true, sendType: target.sendType };
+
+  // sendType SEQUENTIALLY: o confirmBooking do Apps Script faz read-modify-write
+  // sem lock — replay em paralelo poderia perder pagamento de split multi-pagador.
+  const updated = await asaasApi<AsaasWebhookCfg>(
+    `/webhooks/${encodeURIComponent(webhookId)}`,
+    { method: 'PUT', body: { enabled: true, interrupted: false, sendType: 'SEQUENTIALLY' } },
+  );
+  // Sanidade: o PUT é parcial (doc ASAAS), mas se a API zerar url/events isso
+  // quebraria a entrega bem no momento crítico — confere e avisa.
+  const warning = (!updated.url || (updated.events || []).length === 0)
+    ? 'ATENÇÃO: a resposta do PUT veio sem url/events — confira o webhook no painel ASAAS'
+    : null;
+  console.log(`[admin-bookings] ${auth.user} reativou o webhook ASAAS ${webhookId}`, JSON.stringify({ before, after: { enabled: updated.enabled, interrupted: updated.interrupted, sendType: updated.sendType } }));
+  return res.status(200).json({
+    ok:          true,
+    id:          updated.id,
+    before,
+    enabled:     updated.enabled === true,
+    interrupted: updated.interrupted === true,
+    sendType:    updated.sendType,
+    eventCount:  (updated.events || []).length,
+    warning,
+  });
+}
+
 /* ───────── handler principal ───────── */
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
@@ -3945,6 +4000,50 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       return res.status(500).json({ error: msg });
     }
   }
+  // Diagnóstico dos webhooks ASAAS: lista config + estado da fila (enabled/
+  // interrupted). A ASAAS interrompe a fila após 15 falhas consecutivas e para
+  // de entregar eventos — este endpoint mostra isso sem caçar no painel.
+  // Read-only; o authToken NUNCA é exposto (a própria API só retorna hasAuthToken).
+  if (endpoint === 'asaas-webhook-status') {
+    try {
+      type AsaasWebhookCfg = {
+        id?: string; name?: string; url?: string; email?: string;
+        enabled?: boolean; interrupted?: boolean; apiVersion?: number;
+        sendType?: string; hasAuthToken?: boolean; penalizedRequestsCount?: number;
+        events?: string[];
+      };
+      const list = await asaasApi<{ data?: AsaasWebhookCfg[] }>('/webhooks');
+      const webhooks = (list.data || []).map(w => ({
+        id:                     w.id,
+        name:                   w.name,
+        url:                    w.url,
+        email:                  w.email,
+        enabled:                w.enabled === true,
+        interrupted:            w.interrupted === true,
+        apiVersion:             w.apiVersion,
+        sendType:               w.sendType,
+        hasAuthToken:           w.hasAuthToken === true,
+        penalizedRequestsCount: w.penalizedRequestsCount ?? 0,
+        hasConfirmedEvent:      (w.events || []).includes('PAYMENT_CONFIRMED'),
+        hasReceivedEvent:       (w.events || []).includes('PAYMENT_RECEIVED'),
+        eventCount:             (w.events || []).length,
+      }));
+      // Lista vazia NÃO é estado neutro: 0 webhooks = nenhum evento será
+      // entregue nunca (pior que interrupted).
+      const healthy = webhooks.some(w => w.enabled && !w.interrupted && w.hasConfirmedEvent && w.hasReceivedEvent);
+      return res.status(200).json({
+        webhooks,
+        healthy,
+        hint: webhooks.length === 0
+          ? 'Nenhum webhook cadastrado na conta ASAAS — pagamentos nunca serão notificados.'
+          : (healthy ? null : 'Nenhum webhook saudável (ativo + fila ok + eventos PAYMENT_CONFIRMED/RECEIVED).'),
+      });
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      console.error('[admin-bookings/asaas-webhook-status]', msg);
+      return res.status(500).json({ error: msg });
+    }
+  }
 
   // ── POST: roteador por body.action ──
   if (req.method === 'POST') {
@@ -3957,6 +4056,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         case 'create':             return await handleCreate(req, res, auth);
         case 'edit':               return await handleEdit(req, res, auth);
         case 'paymentLink':        return await handlePaymentLink(req, res, auth);
+        case 'asaasWebhookRepair': return await handleAsaasWebhookRepair(req, res, auth);
         case 'regenerateSplitLink': return await handleRegenerateSplitLink(req, res, auth);
         case 'reschedule':         return await handleReschedule(req, res, auth);
         case 'resendConfirmation': return await handleResendConfirmation(req, res);
