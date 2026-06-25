@@ -2522,8 +2522,11 @@ const BR_STATE_NAME_TO_UF: Record<string, string> = {
 
 function nameToUF(raw: string): string | null {
   if (!raw) return null;
-  // Strip "State of ", lowercase, trim
-  const cleaned = raw.toLowerCase().replace(/^state of /, '').trim();
+  // Fold acentos (a Meta manda "São Paulo" com ã decomposto/NFD → não casava e
+  // dropava SP), tira "State of ", lowercase, trim. As chaves ASCII do dict bastam.
+  const cleaned = raw.toLowerCase()
+    .normalize('NFD').replace(/[̀-ͯ]/g, '')
+    .replace(/^state of /, '').trim();
   if (BR_STATE_NAME_TO_UF[cleaned]) return BR_STATE_NAME_TO_UF[cleaned];
   // Talvez já seja UF de 2 letras
   if (/^[A-Z]{2}$/.test(raw.toUpperCase())) return raw.toUpperCase();
