@@ -1865,6 +1865,7 @@ function Dashboard({
           newTime,
           packageKey:    pkgKey,
           numBailarinas: booking.numBailarinas ?? 1,
+          paidValue:     booking.price,   // preserva o valor pago no lote original
         }),
       });
       if (!r.ok) throw new Error((await r.json()).error || 'Erro');

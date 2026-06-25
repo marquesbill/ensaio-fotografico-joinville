@@ -3557,11 +3557,14 @@ async function handlePaymentLink(req: VercelRequest, res: VercelResponse, auth: 
 
 async function handleReschedule(req: VercelRequest, res: VercelResponse, auth: { user: string }) {
   const PACKAGES = getPackages();
-  const { bookingId, name, email, whatsapp, oldDate, oldTime, newDate, newTime, packageKey, numBailarinas } = req.body as {
+  const { bookingId, name, email, whatsapp, oldDate, oldTime, newDate, newTime, packageKey, numBailarinas, paidValue } = req.body as {
     bookingId: string; name: string; email: string; whatsapp: string;
     oldDate: string; oldTime: string; newDate: string; newTime: string;
-    numBailarinas?: number; packageKey: string;
+    numBailarinas?: number; packageKey: string; paidValue?: number;
   };
+  // Valor já pago no agendamento original (REAIS) — preserva o preço do lote
+  // em que a pessoa comprou, em vez de recobrar o preço do lote atual.
+  const origValor = Number(paidValue) > 0 ? Number(paidValue) : undefined;
 
   if (!bookingId || !newDate || !newTime || !packageKey) {
     return res.status(400).json({ error: 'Campos obrigatórios faltando' });
@@ -3593,6 +3596,8 @@ async function handleReschedule(req: VercelRequest, res: VercelResponse, auth: {
         action: 'createPending',
         date: newDate, start: newTime, packageKey,
         name, email, whatsapp,
+        numBailarinas: Number(numBailarinas) || 1,  // sem isto, createPending lança e o novo nunca cria
+        customValue:   origValor,                    // preserva o valor pago no lote original
         stripeSession: sessionId,
         source:        'admin',
       }),
@@ -3629,7 +3634,7 @@ async function handleReschedule(req: VercelRequest, res: VercelResponse, auth: {
       endTime,
       packageName:   pkg.name,
       duration:      pkg.duration,
-      price:         (pkg.price || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }),
+      price:         (origValor || pkg.price || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }),
       bookingId:     newBookingId,
       numBailarinas: Number(numBailarinas) || 1,
     }, 'rescheduled');
