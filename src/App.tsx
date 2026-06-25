@@ -23,6 +23,12 @@ import { useState, useRef, useEffect } from "react";
 import { track, initSessionContext, trackScrollDepth, trackTimeOnPage, trackInView } from "./lib/analytics";
 import { formatPhoneBR, isValidPhoneBR } from "./lib/phone";
 
+// ⬇️ ESCASSEZ — edite o texto aqui (1 lugar) e troca em todos os pontos do site.
+const SCARCITY = {
+  geral:    'Mais de 50% das vagas preenchidas.', // hero + pacotes Lembrança/Econômico
+  completo: 'Restam apenas 2 vagas.',             // pacote Completo
+};
+
 const fadeIn = {
   initial: { opacity: 0, y: 20 },
   animate: { opacity: 1, y: 0 },
@@ -379,7 +385,7 @@ export default function App() {
               style={{ y: heroBadgeY, background: 'linear-gradient(135deg, #c2410c, #e11d48)', textShadow: '0 1px 3px rgba(0,0,0,0.35)' }}
               className="flex items-center gap-2 w-fit px-4 py-2 rounded-full text-white text-sm font-black uppercase tracking-wide backdrop-blur-md shadow-lg"
             >
-              🔥 Mais de 50% das vagas preenchidas.
+              🔥 {SCARCITY.geral}
             </motion.div>
             <motion.div variants={fadeIn} style={{ y: heroLogoY }} className="py-6 inline-block relative">
               <div className="absolute inset-0 bg-gradient-to-b from-purple-300/15 to-purple-500/10 blur-3xl rounded-full scale-150"></div>
@@ -685,7 +691,7 @@ export default function App() {
                 <CountdownTimer />
               </div>
               <p className="mb-6 text-center text-xs font-black uppercase tracking-wide rounded-full px-3 py-2" style={{ background: '#FDECEC', color: '#B42318', border: '1px solid #F5C6C6' }}>
-                Mais de 50% das vagas preenchidas.
+                {SCARCITY.geral}
               </p>
               <ul className="space-y-4 mb-10 flex-grow">
                 <li className="flex items-center gap-3 text-sm font-medium">
@@ -736,7 +742,7 @@ export default function App() {
                 <CountdownTimer />
               </div>
               <p className="mb-6 text-center text-xs font-black uppercase tracking-wide rounded-full px-3 py-2" style={{ background: '#FDECEC', color: '#B42318', border: '1px solid #F5C6C6' }}>
-                Mais de 50% das vagas preenchidas.
+                {SCARCITY.geral}
               </p>
               <ul className="space-y-4 mb-10 flex-grow">
                 <li className="flex items-center gap-3 text-sm font-bold">
@@ -786,7 +792,7 @@ export default function App() {
                 <CountdownTimer />
               </div>
               <p className="mb-6 text-center text-xs font-black uppercase tracking-wide rounded-full px-3 py-2" style={{ background: '#FEF2E7', color: '#9A3412', border: '1px solid #F5C99B' }}>
-                Restam apenas 2 vagas.
+                {SCARCITY.completo}
               </p>
               <ul className="space-y-4 mb-10 flex-grow">
                 <li className="flex items-center gap-3 text-sm font-medium">
