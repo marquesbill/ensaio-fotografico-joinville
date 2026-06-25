@@ -374,6 +374,13 @@ export default function App() {
             >
               Joinville 2026
             </motion.span>
+            <motion.div
+              variants={fadeIn}
+              style={{ y: heroBadgeY, background: 'linear-gradient(135deg, #c2410c, #e11d48)', textShadow: '0 1px 3px rgba(0,0,0,0.35)' }}
+              className="flex items-center gap-2 w-fit px-4 py-2 rounded-full text-white text-sm font-black uppercase tracking-wide backdrop-blur-md shadow-lg"
+            >
+              🔥 Mais de 50% das vagas preenchidas.
+            </motion.div>
             <motion.div variants={fadeIn} style={{ y: heroLogoY }} className="py-6 inline-block relative">
               <div className="absolute inset-0 bg-gradient-to-b from-purple-300/15 to-purple-500/10 blur-3xl rounded-full scale-150"></div>
               <div className="relative z-10" style={{ perspective: '900px' }}>
@@ -575,6 +582,26 @@ export default function App() {
         </div>
       </section>
 
+      {/* Prova social — teaser (logo abaixo da primeira dobra) */}
+      <section className="py-16 bg-surface flex flex-col items-center px-6">
+        <motion.h2
+          initial={{ opacity: 0, y: 20 }}
+          whileInView={{ opacity: 1, y: 0 }}
+          viewport={{ once: true }}
+          className="font-headline text-2xl md:text-3xl text-on-surface text-center mb-8"
+        >
+          Veja como é o ensaio
+        </motion.h2>
+        <video
+          className="w-full max-w-[320px] sm:max-w-[360px] rounded-3xl shadow-2xl"
+          src="/teaser40s.mp4"
+          poster="/teaser-poster.jpg"
+          controls
+          playsInline
+          preload="metadata"
+        />
+      </section>
+
       {/* For Whom Section */}
       <section className="py-24 bg-surface">
         <div className="container mx-auto px-6">
@@ -657,6 +684,9 @@ export default function App() {
                 </div>
                 <CountdownTimer />
               </div>
+              <p className="mb-6 text-center text-xs font-black uppercase tracking-wide rounded-full px-3 py-2" style={{ background: '#FDECEC', color: '#B42318', border: '1px solid #F5C6C6' }}>
+                Mais de 50% das vagas preenchidas.
+              </p>
               <ul className="space-y-4 mb-10 flex-grow">
                 <li className="flex items-center gap-3 text-sm font-medium">
                   <CheckCircle className="text-primary w-5 h-5" />
@@ -705,6 +735,9 @@ export default function App() {
                 </div>
                 <CountdownTimer />
               </div>
+              <p className="mb-6 text-center text-xs font-black uppercase tracking-wide rounded-full px-3 py-2" style={{ background: '#FDECEC', color: '#B42318', border: '1px solid #F5C6C6' }}>
+                Mais de 50% das vagas preenchidas.
+              </p>
               <ul className="space-y-4 mb-10 flex-grow">
                 <li className="flex items-center gap-3 text-sm font-bold">
                   <CheckCircle className="text-primary w-5 h-5" />
@@ -752,6 +785,9 @@ export default function App() {
                 </div>
                 <CountdownTimer />
               </div>
+              <p className="mb-6 text-center text-xs font-black uppercase tracking-wide rounded-full px-3 py-2" style={{ background: '#FEF2E7', color: '#9A3412', border: '1px solid #F5C99B' }}>
+                Restam apenas 2 vagas.
+              </p>
               <ul className="space-y-4 mb-10 flex-grow">
                 <li className="flex items-center gap-3 text-sm font-medium">
                   <CheckCircle className="text-primary w-5 h-5" />
