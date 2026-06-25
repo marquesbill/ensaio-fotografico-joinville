@@ -2520,14 +2520,13 @@ const BR_STATE_NAME_TO_UF: Record<string, string> = {
   'tocantins': 'TO',
 };
 
-const _geoUnmapped = new Set<string>();  // ponytail: debug temporário — regiões que não mapearam
 function nameToUF(raw: string): string | null {
   if (!raw) return null;
   // Fold acentos (a Meta manda "São Paulo" com ã decomposto/NFD → não casava e
   // dropava SP), tira "State of ", lowercase, trim. As chaves ASCII do dict bastam.
   const cleaned = raw.toLowerCase()
     .normalize('NFD').replace(/[̀-ͯ]/g, '')
-    .replace(/^state of /, '').trim();
+    .replace(/^state of /, '').replace(/\s*\(state\)$/, '').trim();  // Meta manda "Rio de Janeiro (state)"
   if (BR_STATE_NAME_TO_UF[cleaned]) return BR_STATE_NAME_TO_UF[cleaned];
   // Talvez já seja UF de 2 letras
   if (/^[A-Z]{2}$/.test(raw.toUpperCase())) return raw.toUpperCase();
@@ -2541,7 +2540,6 @@ const ALL_UF = [
 
 async function handleGeoBrazil(req: VercelRequest, res: VercelResponse) {
   const days = Math.min(Math.max(parseInt(String(req.query.range || '28'), 10) || 28, 1), 365);
-  _geoUnmapped.clear();  // ponytail: debug temporário — reseta por request (instância warm persiste)
 
   // Fontes em paralelo. Cada uma falha de forma independente.
   const [leadsResult, bookingsResult, sessionsResult, impressionsResult] = await Promise.allSettled([
@@ -2584,7 +2582,6 @@ async function handleGeoBrazil(req: VercelRequest, res: VercelResponse) {
     states,
     sources,
     errors,
-    _unmapped: [..._geoUnmapped],  // ponytail: debug temporário
   });
 }
 
@@ -2655,7 +2652,6 @@ async function aggregateSessionsByUF(days: number): Promise<Record<string, numbe
     const sessions   = Number(r.metricValues?.[0]?.value || 0);
     const uf = nameToUF(regionName);
     if (uf) byState[uf] = (byState[uf] || 0) + sessions;
-    else if (regionName) _geoUnmapped.add('GA4:' + regionName);  // ponytail: debug temporário
   });
   return byState;
 }
@@ -2681,7 +2677,7 @@ async function aggregateImpressionsByUF(days: number): Promise<Record<string, nu
   const byState: Record<string, number> = {};
   (json.data || []).forEach(row => {
     const uf = nameToUF(row.region || '');
-    if (!uf) { if (row.region) _geoUnmapped.add('META:' + row.region); return; } // ponytail: debug temporário
+    if (!uf) return;
     byState[uf] = (byState[uf] || 0) + (Number(row.impressions) || 0);
   });
   return byState;
