@@ -8,3 +8,7 @@ coverage/
 !.env.example
 .vercel
 .env*.local
+
+# vídeos grandes (não versionar)
+teaser40s.mov
+*.mov

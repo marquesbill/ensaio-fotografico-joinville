@@ -3974,6 +3974,34 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   }
   if (endpoint === 'geo-brazil') {
     try {
+      if (req.query.debug === 'meta') {            // ponytail: debug temporário, remover depois
+        const token = process.env.META_ADS_TOKEN;
+        const accountId = process.env.META_ADS_ACCOUNT_ID;
+        const days = Math.min(Math.max(parseInt(String(req.query.range || '90'), 10) || 90, 1), 365);
+        const until = new Date().toISOString().slice(0, 10);
+        const since = new Date(Date.now() - days * 86400000).toISOString().slice(0, 10);
+        const tr = encodeURIComponent(JSON.stringify({ since, until }));
+        const acctPath = String(accountId).startsWith('act_') ? accountId : `act_${accountId}`;
+        let next: string | null = `https://graph.facebook.com/v19.0/${acctPath}/insights?fields=impressions&breakdowns=region&time_range=${tr}&limit=500&access_token=${token}`;
+        const allRows: Array<{ region: string; impressions: number; uf: string | null }> = [];
+        let pages = 0;
+        while (next && pages < 10) {
+          const rr: Response = await fetch(next);
+          if (!rr.ok) { return res.status(200).json({ debug: 'meta', error: `${rr.status}: ${(await rr.text()).slice(0,300)}`, page: pages }); }
+          const jj = await rr.json() as { data?: Array<{ region?: string; impressions?: string }>; paging?: { next?: string } };
+          (jj.data || []).forEach(d => allRows.push({ region: d.region || '', impressions: Number(d.impressions) || 0, uf: nameToUF(d.region || '') }));
+          next = jj.paging?.next || null;
+          pages++;
+        }
+        const spRows = allRows.filter(r => /paulo/i.test(r.region));
+        const unmapped = allRows.filter(r => !r.uf && r.impressions > 0);
+        return res.status(200).json({
+          debug: 'meta', pages, totalRows: allRows.length,
+          totalImpressions: allRows.reduce((s, r) => s + r.impressions, 0),
+          spRows, unmapped,
+          topRegions: [...allRows].sort((a, b) => b.impressions - a.impressions).slice(0, 30),
+        });
+      }
       return await handleGeoBrazil(req, res);
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
