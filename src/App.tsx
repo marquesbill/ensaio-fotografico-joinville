@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { motion, useScroll, useTransform } from "motion/react";
+import { motion, useScroll, useTransform, useMotionValue, animate } from "motion/react";
 import { 
   Quote as QuoteIcon, 
   Camera, 
@@ -29,24 +29,31 @@ const SCARCITY = {
   completo: 'Restam apenas 2 vagas.',             // pacote Completo
 };
 
-// Chamariz de escassez: pulso de escala + glow vermelho atrás. `strong` = o mais
-// crítico (Restam 2 vagas) → fundo vermelho cheio e pulso maior, puxa mais atenção.
+// Chamariz de escassez: pulso de escala + glow vermelho atrás, ACOPLADOS — o glow é
+// derivado da escala (glow = f(scale)), então cresce e some grudado no texto, nunca
+// dessincroniza. `strong` = o mais crítico (Restam 2 vagas): vermelho cheio, pulso maior.
 function ScarcityBadge({ text, strong = false }: { text: string; strong?: boolean }) {
+  const peak = strong ? 1.06 : 1.035;
+  const blur = strong ? 26 : 18, spread = strong ? 7 : 4, alpha = strong ? 0.55 : 0.40;
+  const scale = useMotionValue(1);
+  useEffect(() => {
+    const anim = animate(scale, [1, peak, 1], { duration: 2.2, repeat: Infinity, ease: 'easeInOut' });
+    return () => anim.stop();
+  }, [scale, peak]);
+  // p = 0 parado, 1 no pico — o glow lê a escala atual, então acompanha subida E descida.
+  const boxShadow = useTransform(scale, s => {
+    const p = (s - 1) / (peak - 1);
+    return `0 0 ${blur * p}px ${spread * p}px rgba(225,29,72,${alpha * p})`;
+  });
   return (
     <motion.p
       className="mb-6 text-center text-xs font-black uppercase tracking-wide rounded-full px-3 py-2"
-      style={strong
-        ? { background: 'linear-gradient(135deg, #e11d48, #b91c1c)', color: '#fff', border: '1px solid rgba(255,255,255,0.30)' }
-        : { background: '#FDECEC', color: '#B42318', border: '1px solid #F5C6C6' }}
-      animate={{
-        scale: [1, strong ? 1.06 : 1.035, 1],
-        boxShadow: [
-          '0 0 0 0 rgba(225,29,72,0)',
-          `0 0 ${strong ? 26 : 18}px ${strong ? 7 : 4}px rgba(225,29,72,${strong ? 0.55 : 0.40})`,
-          '0 0 0 0 rgba(225,29,72,0)',
-        ],
+      style={{
+        scale, boxShadow,
+        ...(strong
+          ? { background: 'linear-gradient(135deg, #e11d48, #b91c1c)', color: '#fff', border: '1px solid rgba(255,255,255,0.30)' }
+          : { background: '#FDECEC', color: '#B42318', border: '1px solid #F5C6C6' }),
       }}
-      transition={{ duration: 2.2, repeat: Infinity, ease: 'easeInOut' }}
     >
       {text}
     </motion.p>
