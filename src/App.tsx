@@ -29,6 +29,30 @@ const SCARCITY = {
   completo: 'Restam apenas 2 vagas.',             // pacote Completo
 };
 
+// Chamariz de escassez: pulso de escala + glow vermelho atrás. `strong` = o mais
+// crítico (Restam 2 vagas) → fundo vermelho cheio e pulso maior, puxa mais atenção.
+function ScarcityBadge({ text, strong = false }: { text: string; strong?: boolean }) {
+  return (
+    <motion.p
+      className="mb-6 text-center text-xs font-black uppercase tracking-wide rounded-full px-3 py-2"
+      style={strong
+        ? { background: 'linear-gradient(135deg, #e11d48, #b91c1c)', color: '#fff', border: '1px solid rgba(255,255,255,0.30)' }
+        : { background: '#FDECEC', color: '#B42318', border: '1px solid #F5C6C6' }}
+      animate={{
+        scale: [1, strong ? 1.06 : 1.035, 1],
+        boxShadow: [
+          '0 0 0 0 rgba(225,29,72,0)',
+          `0 0 ${strong ? 26 : 18}px ${strong ? 7 : 4}px rgba(225,29,72,${strong ? 0.55 : 0.40})`,
+          '0 0 0 0 rgba(225,29,72,0)',
+        ],
+      }}
+      transition={{ duration: 2.2, repeat: Infinity, ease: 'easeInOut' }}
+    >
+      {text}
+    </motion.p>
+  );
+}
+
 const fadeIn = {
   initial: { opacity: 0, y: 20 },
   animate: { opacity: 1, y: 0 },
@@ -596,15 +620,19 @@ export default function App() {
           viewport={{ once: true }}
           className="font-headline text-2xl md:text-3xl text-on-surface text-center mb-8"
         >
-          Veja como é o ensaio
+          Veja como é o ensaio:
         </motion.h2>
         <video
-          className="w-full max-w-[320px] sm:max-w-[360px] rounded-3xl shadow-2xl"
+          className="w-full max-w-[320px] sm:max-w-[360px] rounded-3xl"
+          style={{ boxShadow: '0 28px 80px 4px rgba(0,0,0,0.42), 0 0 130px 36px rgba(0,0,0,0.20)' }}
           src="/teaser40s.mp4"
           poster="/teaser-poster.jpg"
-          controls
+          autoPlay
+          muted
+          loop
           playsInline
-          preload="metadata"
+          controls
+          preload="auto"
         />
       </section>
 
@@ -690,9 +718,7 @@ export default function App() {
                 </div>
                 <CountdownTimer />
               </div>
-              <p className="mb-6 text-center text-xs font-black uppercase tracking-wide rounded-full px-3 py-2" style={{ background: '#FDECEC', color: '#B42318', border: '1px solid #F5C6C6' }}>
-                {SCARCITY.geral}
-              </p>
+              <ScarcityBadge text={SCARCITY.geral} />
               <ul className="space-y-4 mb-10 flex-grow">
                 <li className="flex items-center gap-3 text-sm font-medium">
                   <CheckCircle className="text-primary w-5 h-5" />
@@ -741,9 +767,7 @@ export default function App() {
                 </div>
                 <CountdownTimer />
               </div>
-              <p className="mb-6 text-center text-xs font-black uppercase tracking-wide rounded-full px-3 py-2" style={{ background: '#FDECEC', color: '#B42318', border: '1px solid #F5C6C6' }}>
-                {SCARCITY.geral}
-              </p>
+              <ScarcityBadge text={SCARCITY.geral} />
               <ul className="space-y-4 mb-10 flex-grow">
                 <li className="flex items-center gap-3 text-sm font-bold">
                   <CheckCircle className="text-primary w-5 h-5" />
@@ -791,9 +815,7 @@ export default function App() {
                 </div>
                 <CountdownTimer />
               </div>
-              <p className="mb-6 text-center text-xs font-black uppercase tracking-wide rounded-full px-3 py-2" style={{ background: '#FEF2E7', color: '#9A3412', border: '1px solid #F5C99B' }}>
-                {SCARCITY.completo}
-              </p>
+              <ScarcityBadge text={SCARCITY.completo} strong />
               <ul className="space-y-4 mb-10 flex-grow">
                 <li className="flex items-center gap-3 text-sm font-medium">
                   <CheckCircle className="text-primary w-5 h-5" />
