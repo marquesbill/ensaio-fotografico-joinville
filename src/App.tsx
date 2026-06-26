@@ -387,7 +387,8 @@ export default function App() {
       <section className="relative min-h-[80vh] flex items-center justify-center pt-8 pb-12 px-6 overflow-hidden">
         <div className="absolute inset-0 z-0">
           <img
-            alt="Hero Background"
+            alt=""
+            aria-hidden="true"
             className="w-full h-full object-cover"
             style={{ objectPosition: 'center 20%' }}
             src="/hero-bg-new.jpg"
@@ -1188,9 +1189,9 @@ export default function App() {
                 viewport={{ once: true }}
                 transition={{ delay: i * 0.05 }}
               >
-                <img 
-                  alt={`Dance Showcase ${i + 1}`} 
-                  className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-700" 
+                <img
+                  alt={`Bailarina em ensaio fotográfico no Festival de Dança de Joinville — foto ${i + 1}`}
+                  className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-700"
                   src={src}
                   referrerPolicy="no-referrer"
                 />
