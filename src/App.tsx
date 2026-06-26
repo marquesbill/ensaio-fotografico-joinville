@@ -394,6 +394,10 @@ export default function App() {
             src="/hero-bg-new.jpg"
           />
           <div className="absolute inset-0 bg-gradient-to-b from-surface/10 via-surface/40 to-surface"></div>
+          {/* 2.2 — scrim radial atrás do texto à esquerda: levanta o contraste e faz
+              fade-out em todas as direções, sem tocar o rodapé (preserva o blend
+              'to-surface' que dá a transição suave pro próximo bloco). */}
+          <div className="absolute inset-0" style={{ background: 'radial-gradient(110% 80% at 0% 34%, rgba(0,0,0,0.34) 0%, rgba(0,0,0,0.12) 36%, rgba(0,0,0,0) 60%)' }}></div>
         </div>
         
         {/* Header Overlay Removed */}
@@ -446,7 +450,7 @@ export default function App() {
             </motion.div>
             <motion.p
               variants={fadeIn}
-              style={{ y: heroDateY, color: '#f0f4ff', textShadow: '0 1px 4px rgba(0,0,0,0.45)' }}
+              style={{ y: heroDateY, color: '#f7f9ff', textShadow: '0 1px 2px rgba(0,0,0,0.85), 0 2px 14px rgba(0,0,0,0.55)' }}
               className="text-xl md:text-2xl font-semibold"
             >
               20 de Julho a 02 de Agosto
@@ -513,14 +517,15 @@ export default function App() {
             ) : (
               <form className="space-y-5" onSubmit={handleHeroSubmit}>
                 <div className="rounded-xl p-4 shadow-inner" style={{ background: 'rgba(255,255,255,0.9)', border: '1px solid rgba(255,255,255,0.80)' }}>
-                  <p className="font-black text-base mb-3 text-center leading-snug" style={{ color: '#374151' }}>
+                  <p id="hero-vai-joinville" className="font-black text-base mb-3 text-center leading-snug" style={{ color: '#374151' }}>
                     Vai para Joinville este ano?
                   </p>
-                  <div className="flex gap-3">
+                  <div className="flex gap-3" role="group" aria-labelledby="hero-vai-joinville">
                     {['Sim', 'Não'].map((opt) => (
                       <button
                         key={opt}
                         type="button"
+                        aria-pressed={heroForm.vaiJoinville === opt}
                         onClick={() => {
                           track.event(`hero_vai_joinville_${opt === 'Sim' ? 'sim' : 'nao'}`);
                           setHeroForm(f => ({ ...f, vaiJoinville: opt }));
@@ -534,9 +539,13 @@ export default function App() {
                   </div>
                 </div>
                 <div>
+                  <label htmlFor="hero-nome" className="block text-[13px] font-bold mb-1.5 px-1" style={{ color: '#f3eefa', textShadow: '0 1px 3px rgba(0,0,0,0.5)' }}>
+                    Seu nome
+                  </label>
                   <input
-                    className="w-full bg-white/90 border border-white/80 focus:ring-2 focus:ring-primary focus:bg-white rounded-xl px-4 py-4 placeholder:text-gray-600 text-gray-900 font-bold shadow-inner transition-colors"
-                    placeholder="Seu Nome"
+                    id="hero-nome"
+                    className="w-full bg-white/90 border border-white/80 focus:ring-2 focus:ring-primary focus:bg-white rounded-xl px-4 py-4 placeholder:text-gray-500 text-gray-900 font-bold shadow-inner transition-colors"
+                    placeholder="Como podemos te chamar"
                     type="text"
                     required
                     value={heroForm.nome}
@@ -550,31 +559,24 @@ export default function App() {
                   />
                 </div>
                 <div>
-                  <div className="relative">
-                    <input
-                      className={`w-full bg-white/90 border focus:ring-2 focus:ring-primary focus:bg-white rounded-xl px-4 py-4 text-gray-900 font-bold shadow-inner transition-colors ${heroPhoneError ? 'border-red-500 ring-2 ring-red-300' : 'border-white/80'}`}
-                      placeholder=""
-                      aria-label="WhatsApp com DDD"
-                      type="tel"
-                      inputMode="numeric"
-                      autoComplete="tel"
-                      maxLength={16}
-                      required
-                      value={heroForm.whatsapp}
-                      onChange={(e) => {
-                        setHeroForm(f => ({ ...f, whatsapp: formatPhoneBR(e.target.value) }));
-                        if (heroPhoneError) setHeroPhoneError(false);
-                      }}
-                    />
-                    {/* Hint de duas cores (placeholder não aceita 2 estilos):
-                        label igual aos outros campos + exemplo suave. */}
-                    {!heroForm.whatsapp && (
-                      <span className="pointer-events-none absolute inset-0 flex items-center px-4 whitespace-nowrap overflow-hidden">
-                        <span className="font-bold text-gray-600">WhatsApp com DDD</span>
-                        <span className="ml-1.5 text-sm font-thin italic text-gray-400">— ex: (47) 99123-4567</span>
-                      </span>
-                    )}
-                  </div>
+                  <label htmlFor="hero-whatsapp" className="block text-[13px] font-bold mb-1.5 px-1" style={{ color: '#f3eefa', textShadow: '0 1px 3px rgba(0,0,0,0.5)' }}>
+                    WhatsApp <span className="font-medium opacity-90">(com DDD)</span>
+                  </label>
+                  <input
+                    id="hero-whatsapp"
+                    className={`w-full bg-white/90 border focus:ring-2 focus:ring-primary focus:bg-white rounded-xl px-4 py-4 placeholder:text-gray-500 text-gray-900 font-bold shadow-inner transition-colors ${heroPhoneError ? 'border-red-500 ring-2 ring-red-300' : 'border-white/80'}`}
+                    placeholder="ex: (47) 99123-4567"
+                    type="tel"
+                    inputMode="numeric"
+                    autoComplete="tel"
+                    maxLength={16}
+                    required
+                    value={heroForm.whatsapp}
+                    onChange={(e) => {
+                      setHeroForm(f => ({ ...f, whatsapp: formatPhoneBR(e.target.value) }));
+                      if (heroPhoneError) setHeroPhoneError(false);
+                    }}
+                  />
                   {heroPhoneError && (
                     <p className="text-xs font-semibold text-red-200 mt-1.5 px-1">
                       Digite um WhatsApp válido com DDD (ex: (47) 99123-4567).
@@ -582,9 +584,13 @@ export default function App() {
                   )}
                 </div>
                 <div>
+                  <label htmlFor="hero-email" className="block text-[13px] font-bold mb-1.5 px-1" style={{ color: '#f3eefa', textShadow: '0 1px 3px rgba(0,0,0,0.5)' }}>
+                    Seu e-mail
+                  </label>
                   <input
-                    className="w-full bg-white/90 border border-white/80 focus:ring-2 focus:ring-primary focus:bg-white rounded-xl px-4 py-4 placeholder:text-gray-600 text-gray-900 font-bold shadow-inner transition-colors"
-                    placeholder="E-mail"
+                    id="hero-email"
+                    className="w-full bg-white/90 border border-white/80 focus:ring-2 focus:ring-primary focus:bg-white rounded-xl px-4 py-4 placeholder:text-gray-500 text-gray-900 font-bold shadow-inner transition-colors"
+                    placeholder="voce@email.com"
                     type="email"
                     required
                     value={heroForm.email}
