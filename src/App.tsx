@@ -72,6 +72,9 @@ const staggerContainer = {
   }
 };
 
+// 4.1 — refração do vidro: linha de luz fina no topo + brilho interno suave vindo de cima.
+const GLASS_INSET = "inset 0 1px 0 rgba(255,255,255,0.55), inset 0 12px 32px -16px rgba(255,255,255,0.4)";
+
 function useCountdown(targetDate: Date) {
   const [timeLeft, setTimeLeft] = useState(() => {
     const diff = targetDate.getTime() - Date.now();
@@ -440,14 +443,14 @@ export default function App() {
             </motion.p>
             <motion.p
               variants={fadeIn}
-              className="font-medium max-w-md p-6 rounded-2xl leading-relaxed"
+              className="hero-glass font-medium max-w-md p-6 rounded-2xl leading-relaxed"
               style={{
                 y: heroTextY,
                 background: 'linear-gradient(135deg, rgba(61,72,117,0.42) 0%, rgba(122,63,143,0.36) 55%, rgba(196,79,130,0.26) 100%)',
-                backdropFilter: 'blur(16px)',
-                WebkitBackdropFilter: 'blur(16px)',
+                backdropFilter: 'blur(16px) saturate(1.4)',
+                WebkitBackdropFilter: 'blur(16px) saturate(1.4)',
                 border: '1px solid rgba(255,255,255,0.16)',
-                boxShadow: '0 4px 24px rgba(0,0,0,0.18), inset 0 1px 0 rgba(255,255,255,0.12)',
+                boxShadow: '0 4px 24px rgba(0,0,0,0.18), inset 0 1px 0 rgba(255,255,255,0.28), inset 0 10px 26px -14px rgba(255,255,255,0.18)',
                 color: '#f0f4ff',
                 textShadow: '0 1px 3px rgba(0,0,0,0.35)',
               }}
@@ -458,16 +461,16 @@ export default function App() {
 
           <motion.div
             id="cadastro"
-            className="p-10 rounded-3xl border border-white/70 max-w-md mx-auto w-full bg-white/10 backdrop-blur-lg relative"
+            className="p-10 rounded-3xl border border-white/70 max-w-md mx-auto w-full bg-white/10 backdrop-blur-lg backdrop-saturate-150 relative"
             style={{ y: heroTextY }}
             initial={{ opacity: 0, scale: 0.9 }}
             animate={{
               opacity: 1,
               scale: 1,
               boxShadow: [
-                "0 0 15px 5px rgba(255,255,255,0.5)",
-                "0 0 25px 10px rgba(255,255,255,0.65)",
-                "0 0 15px 5px rgba(255,255,255,0.5)"
+                `0 0 15px 5px rgba(255,255,255,0.5), ${GLASS_INSET}`,
+                `0 0 25px 10px rgba(255,255,255,0.65), ${GLASS_INSET}`,
+                `0 0 15px 5px rgba(255,255,255,0.5), ${GLASS_INSET}`
               ]
             }}
             transition={{

@@ -82,5 +82,12 @@
     backdrop-filter: none !important;
     -webkit-backdrop-filter: none !important;
   }
+  /* 4.1 — vidro escuro (form do herói + descrição, texto claro) vira sólido. */
+  #cadastro,
+  .hero-glass {
+    background: #342a48 !important;
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+  }
 }
 
