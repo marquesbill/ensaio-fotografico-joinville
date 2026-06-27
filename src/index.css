@@ -1,6 +1,12 @@
 @import url('https://fonts.googleapis.com/css2?family=Noto+Serif:ital,wght@0,400;0,700;1,400&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap');
 @import "tailwindcss";
 
+/* DECISÃO DE DESIGN (4.5): light-only, deliberado.
+   Sem dark mode — sem `dark:` variants, sem @media (prefers-color-scheme).
+   A landing roda em tráfego pago (Meta ads) e a estética clara/etérea é parte da
+   marca; dark mode só adicionaria superfície de bug sem ganho de conversão.
+   Se um dia for necessário, começar por aqui (darkMode + tokens dark no @theme). */
+
 @theme {
   --font-headline: "Noto Serif", serif;
   --font-body: "Plus Jakarta Sans", sans-serif;
