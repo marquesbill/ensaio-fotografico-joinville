@@ -20,6 +20,7 @@ import {
 import { useState, useRef, useEffect } from "react";
 import { track, initSessionContext, trackScrollDepth, trackTimeOnPage, trackInView } from "./lib/analytics";
 import { formatPhoneBR, isValidPhoneBR } from "./lib/phone";
+import { currentTierPrices, FULL_PRICES, nextPriceSwitchMs, usePriceTierTick } from "./lib/pricing";
 
 // ⬇️ ESCASSEZ — edite o texto aqui (1 lugar) e troca em todos os pontos do site.
 const SCARCITY = {
@@ -112,57 +113,24 @@ function useCountdown(targetDate: Date) {
 //   lote 0 (pré-venda curta): até 15/05 23:59 → 1400 / 1900 / 2200
 //   lote 1: 16/05 → 31/05        → 1600 / 2100 / 2600
 //   lote 2: 01/06 em diante      → 1800 / 2400 / 2800 (preço cheio)
-const LOTE1_START_MS = new Date('2026-05-16T00:00:00-03:00').getTime();
-const LOTE2_START_MS = new Date('2026-06-01T00:00:00-03:00').getTime();
-function getPrices() {
-  const now = Date.now();
-  if (now >= LOTE2_START_MS) {
-    return {
-      lembranca: { sale: 1800, full: 1800 },
-      economico: { sale: 2400, full: 2400 },
-      completo:  { sale: 2800, full: 2800 },
-    };
-  }
-  if (now >= LOTE1_START_MS) {
-    return {
-      lembranca: { sale: 1600, full: 1800 },
-      economico: { sale: 2100, full: 2400 },
-      completo:  { sale: 2600, full: 2800 },
-    };
-  }
-  return {
-    lembranca: { sale: 1400, full: 1800 },
-    economico: { sale: 1900, full: 2400 },
-    completo:  { sale: 2200, full: 2800 },
-  };
-}
-// Próxima troca de preço (ou null se já estamos no último lote)
-function getNextPriceSwitch(): Date | null {
-  const now = Date.now();
-  if (now < LOTE1_START_MS) return new Date(LOTE1_START_MS);
-  if (now < LOTE2_START_MS) return new Date(LOTE2_START_MS);
-  return null;
-}
 function brl(n: number) { return 'R$ ' + n.toLocaleString('pt-BR'); }
-// Hook que força re-render quando relógio cruza qualquer switch futuro
-function usePriceTier() {
-  const [, setTick] = useState(0);
-  useEffect(() => {
-    const next = getNextPriceSwitch();
-    if (!next) return;
-    const ms = next.getTime() - Date.now();
-    if (ms > 0 && ms < 90 * 24 * 60 * 60 * 1000) {
-      const t = setTimeout(() => setTick(n => n + 1), ms + 500);
-      return () => clearTimeout(t);
-    }
-  }, []);
-  return getPrices();
+
+// Monta o shape {sale, full} da home a partir do núcleo de preços (src/lib/pricing).
+function usePrices() {
+  usePriceTierTick();
+  const sale = currentTierPrices();
+  return {
+    lembranca: { sale: sale.lembranca, full: FULL_PRICES.lembranca },
+    economico: { sale: sale.economico, full: FULL_PRICES.economico },
+    completo:  { sale: sale.completo,  full: FULL_PRICES.completo },
+  };
 }
 
 function CountdownTimer() {
   // Conta até a próxima troca de preço. Se já estamos no último lote
   // (preço cheio), o componente não renderiza nada.
-  const target = getNextPriceSwitch();
+  const ms = nextPriceSwitchMs();
+  const target = ms == null ? null : new Date(ms);
   // Hooks devem rodar incondicionalmente, então useCountdown sempre é chamado.
   // Quando target é null, passa uma data passada (timer mostra zeros e ignoramos).
   const { days, hours, minutes, seconds } = useCountdown(target ?? new Date(0));
@@ -221,7 +189,7 @@ const SHOW_FOOTER_FORM = false;
 export default function App() {
   const [openFaq, setOpenFaq] = useState<number | null>(0);
   const carouselRef = useRef<HTMLDivElement>(null);
-  const prices = usePriceTier();
+  const prices = usePrices();
   const { scrollY } = useScroll();
   const heroLogoY   = useTransform(scrollY, [0, 600], [0, -38]);
   const heroBadgeY  = useTransform(scrollY, [0, 600], [0, -24]);

@@ -3,17 +3,13 @@ import { motion, AnimatePresence } from 'motion/react';
 import { CheckCircle, ChevronLeft, ChevronRight, Clock, Calendar, User, Loader2, AlertCircle, Sun, Sunset, Moon } from 'lucide-react';
 import { initMercadoPago, Payment } from '@mercadopago/sdk-react';
 import { track, initSessionContext, trackScrollDepth, trackTimeOnPage } from '../lib/analytics';
+import { currentTierPrices, usePriceTierTick, type PkgKey } from '../lib/pricing';
+import { isValidPhoneBR, phoneDigits } from '../lib/phone';
 
 // ── Constants ─────────────────────────────────────────────────
-// Troca automática de preço entre lotes
-const LOTE1_START_MS = new Date('2026-05-16T00:00:00-03:00').getTime();
-const LOTE2_START_MS = new Date('2026-06-01T00:00:00-03:00').getTime();
+// Preços vêm de src/lib/pricing (fonte única, compartilhada com a home).
 function getPackages() {
-  const now = Date.now();
-  let prices: { lembranca: number; economico: number; completo: number };
-  if (now >= LOTE2_START_MS)      prices = { lembranca: 1800, economico: 2400, completo: 2800 };
-  else if (now >= LOTE1_START_MS) prices = { lembranca: 1600, economico: 2100, completo: 2600 };
-  else                            prices = { lembranca: 1400, economico: 1900, completo: 2200 };
+  const prices = currentTierPrices();
   return [
     {
       key: 'lembranca' as const,
@@ -50,27 +46,9 @@ function getPackages() {
     },
   ];
 }
-function nextPriceSwitch(): number | null {
-  const now = Date.now();
-  if (now < LOTE1_START_MS) return LOTE1_START_MS;
-  if (now < LOTE2_START_MS) return LOTE2_START_MS;
-  return null;
-}
-type PkgKey = 'lembranca' | 'economico' | 'completo';
-
-// Hook que recalcula PACKAGES e força re-render quando o relógio
-// cruza a próxima troca de lote (caso o cliente esteja na página).
+// Recalcula PACKAGES e re-renderiza quando o relógio cruza a troca de lote.
 function usePackages() {
-  const [, setTick] = useState(0);
-  useEffect(() => {
-    const next = nextPriceSwitch();
-    if (!next) return;
-    const ms = next - Date.now();
-    if (ms > 0 && ms < 90 * 24 * 60 * 60 * 1000) {
-      const t = setTimeout(() => setTick(n => n + 1), ms + 500);
-      return () => clearTimeout(t);
-    }
-  }, []);
+  usePriceTierTick();
   return getPackages();
 }
 
@@ -244,8 +222,7 @@ export default function Agendamento() {
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email.trim())) {
       errors.email = 'E-mail inválido. Ex: maria@gmail.com';
     }
-    const digits = form.whatsapp.replace(/\D/g, '');
-    if (digits.length < 10 || digits.length > 11) {
+    if (!isValidPhoneBR(form.whatsapp)) {
       errors.whatsapp = 'Número inválido. Ex: (47) 99999-9999';
     }
     const nb  = Number(form.numBailarinas);
@@ -275,10 +252,9 @@ export default function Agendamento() {
   }
   function validateWhatsapp(value: string) {
     if (!value.trim()) { setFormErrors(fe => ({ ...fe, whatsapp: '' })); return; }
-    const digits = value.replace(/\D/g, '');
     setFormErrors(fe => ({
       ...fe,
-      whatsapp: digits.length >= 10 && digits.length <= 11 ? '' : 'Número inválido. Ex: (47) 99999-9999',
+      whatsapp: isValidPhoneBR(value) ? '' : 'Número inválido. Ex: (47) 99999-9999',
     }));
   }
 
@@ -299,8 +275,8 @@ export default function Agendamento() {
     // valores em SHA-256 client-side antes de enviar pra Meta (PII nunca sai em claro).
     // Telefone em E.164 (BR sempre com prefixo 55).
     if (window.fbq) {
-      const phoneDigits = form.whatsapp.replace(/\D/g, '');
-      const phoneE164   = phoneDigits.startsWith('55') ? phoneDigits : `55${phoneDigits}`;
+      // phoneDigits (lib) tira o 55 se vier colado; prefixamos 55 -> E.164 limpo.
+      const phoneE164 = `55${phoneDigits(form.whatsapp)}`;
       window.fbq('init', '1117650036922205', {
         em: form.email.trim().toLowerCase(),
         ph: phoneE164,
