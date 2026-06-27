@@ -10,10 +10,8 @@ import {
   Sparkles, 
   Heart, 
   Users, 
-  CheckCircle, 
-  XCircle, 
-  MapPin, 
-  ArrowRight, 
+  CheckCircle,
+  ArrowRight,
   ChevronDown,
   Instagram,
   ExternalLink,
@@ -70,21 +68,6 @@ const staggerContainer = {
   animate: {
     transition: {
       staggerChildren: 0.1
-    }
-  }
-};
-
-const pulsingGlow = {
-  animate: {
-    boxShadow: [
-      "0 0 0 0px rgba(168,85,247,0.3)",
-      "0 0 30px 15px rgba(168,85,247,0.4)",
-      "0 0 0 0px rgba(168,85,247,0.3)"
-    ],
-    transition: {
-      duration: 2.5,
-      repeat: Infinity,
-      ease: "easeInOut"
     }
   }
 };

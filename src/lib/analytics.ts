@@ -77,14 +77,6 @@ export const track = {
     });
   },
 
-  /** Identifica usuário (use só com PII com consentimento — ex. após payment success) */
-  identify(userId: string, friendlyName?: string) {
-    if (typeof window === 'undefined') return;
-    safeCall(() => {
-      if (window.clarity) window.clarity('identify', userId, undefined, undefined, friendlyName);
-    });
-  },
-
   /** GA4 Enhanced Ecommerce — popula relatórios de Monetização automaticamente */
   ecommerce(eventName:
     | 'view_item_list'
