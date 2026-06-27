@@ -61,3 +61,29 @@
   aspect-ratio: 1/1;
 }
 
+/* ── A11y (2.3): respeitar preferências do sistema ── */
+
+/* Movimento reduzido: zera animações/transições CSS. O JS/framer já é tratado
+   pelo <MotionConfig reducedMotion="user"> em main.tsx (mantém opacidade, corta
+   movimento), então o reveal-on-scroll continua aparecendo, só sem deslizar. */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* Transparência reduzida: o vidro vira fundo sólido (o blur custa GPU e baixa o
+   contraste). Cobre os cards de pacote/depoimento (.glass-card). O card do form
+   e a descrição do herói usam blur inline/utilitário e ganham fallback sólido no
+   item 4.1 (refino de vidro) — tirar só o blur deles deixaria o fundo transparente. */
+@media (prefers-reduced-transparency: reduce) {
+  .glass-card {
+    background: #ffffff !important;
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+  }
+}
+
