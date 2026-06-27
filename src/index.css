@@ -67,6 +67,9 @@
     transition-duration: 0.001ms !important;
     scroll-behavior: auto !important;
   }
+  /* 2.4 — reveals do framer (style="opacity: 0; transform:…") aparecem instantâneos:
+     reduced-motion não quer fade gated por scroll e não deve ficar preso invisível. */
+  [style*="opacity: 0"] { opacity: 1 !important; }
 }
 
 /* Transparência reduzida: o vidro vira fundo sólido (o blur custa GPU e baixa o
