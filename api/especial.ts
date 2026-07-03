@@ -31,6 +31,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     if (!data || (data as { error?: string }).error) {
       return res.status(404).json({ error: 'Especial não encontrado.' });
     }
+    // Total é info interna (André/Mari) — a página pública mostra só o valor de cada um.
+    delete (data as { total?: number }).total;
     return res.status(200).json(data);
   } catch (e) {
     console.error('[api/especial]', e);

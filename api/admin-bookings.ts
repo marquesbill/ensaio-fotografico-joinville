@@ -4134,6 +4134,14 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const url  = `${SCRIPT_URL}?action=bookings&t=${Date.now()}`;
     const r    = await fetch(url, { cache: 'no-store' });
     const json = await r.json();
+    // Especial: injeta o link público do grupo (token = HMAC, só o backend calcula).
+    if (Array.isArray(json)) {
+      for (const b of json as Array<{ id?: string; package?: string; especialShareUrl?: string }>) {
+        if (b && String(b.package).toLowerCase() === 'especial' && b.id) {
+          b.especialShareUrl = `${SITE_URL}/especial/${b.id}?t=${especialToken(b.id)}`;
+        }
+      }
+    }
     return res.status(200).json(json);
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);

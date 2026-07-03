@@ -4,7 +4,7 @@ import { useParams } from 'react-router-dom';
 type Payer = { name: string; value: number; url: string; paid: boolean };
 type EspecialData = {
   id: string; clientName: string; date: string; start: string; end: string;
-  total: number; status: string; allPaid: boolean; payers: Payer[];
+  status: string; allPaid: boolean; payers: Payer[];
 };
 
 const brl = (n: number) => 'R$ ' + Number(n || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -104,11 +104,6 @@ export default function Especial() {
               )}
             </div>
           ))}
-        </div>
-
-        <div className="mt-5 flex items-center justify-between px-1">
-          <span className="text-on-surface-variant text-sm">Total do ensaio</span>
-          <span className="font-headline text-xl text-on-surface">{brl(data.total)}</span>
         </div>
 
         <p className="text-center text-on-surface-variant text-xs mt-8">
