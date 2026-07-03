@@ -1088,20 +1088,6 @@ function PaymentLinkModal({
         </div>
       </div>
 
-      {booking.especialShareUrl && (
-        <div className="mb-4 rounded-xl p-3 border-2 border-[#7a3f8f]" style={{ background: '#f5edfb' }}>
-          <p className="text-xs font-bold text-[#7a3f8f] uppercase tracking-wide mb-1">🔗 Página do grupo — mande este link</p>
-          <div className="bg-white border border-purple-100 rounded-lg px-3 py-2 mb-2 break-all text-[10px] text-gray-700 font-mono select-all">{booking.especialShareUrl}</div>
-          <button
-            onClick={() => copyShare(booking.especialShareUrl!)}
-            className="w-full flex items-center justify-center gap-1.5 py-2 rounded-lg bg-[#7a3f8f] text-white text-xs font-semibold hover:brightness-110 transition-all"
-          >
-            {copiedShare ? <Check size={12} /> : <Copy size={12} />}
-            {copiedShare ? 'Copiado!' : 'Copiar link da página'}
-          </button>
-        </div>
-      )}
-
       {especialShareUrl && (
         <div className="mb-4 rounded-xl p-3 border-2 border-[#7a3f8f]" style={{ background: '#f5edfb' }}>
           <p className="text-xs font-bold text-[#7a3f8f] uppercase tracking-wide mb-1">🔗 Página do grupo — mande este link</p>
@@ -1242,6 +1228,20 @@ function SplitDetailsModal({
           <p className="text-xs text-gray-500">{paid}/{total} pagaram · R$ {totalValue.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} total</p>
         </div>
       </div>
+
+      {booking.especialShareUrl && (
+        <div className="mb-4 rounded-xl p-3 border-2 border-[#7a3f8f]" style={{ background: '#f5edfb' }}>
+          <p className="text-xs font-bold text-[#7a3f8f] uppercase tracking-wide mb-1">🔗 Página do grupo — mande este link</p>
+          <div className="bg-white border border-purple-100 rounded-lg px-3 py-2 mb-2 break-all text-[10px] text-gray-700 font-mono select-all">{booking.especialShareUrl}</div>
+          <button
+            onClick={() => copyShare(booking.especialShareUrl!)}
+            className="w-full flex items-center justify-center gap-1.5 py-2 rounded-lg bg-[#7a3f8f] text-white text-xs font-semibold hover:brightness-110 transition-all"
+          >
+            {copiedShare ? <Check size={12} /> : <Copy size={12} />}
+            {copiedShare ? 'Copiado!' : 'Copiar link da página'}
+          </button>
+        </div>
+      )}
 
       {/* Gateway pra regen — só relevante se vai regerar algum */}
       {paid < total && (
