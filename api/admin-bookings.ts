@@ -3004,74 +3004,97 @@ async function handleConfirmPart(req: VercelRequest, res: VercelResponse, auth: 
 async function handleCreate(req: VercelRequest, res: VercelResponse, auth: { user: string }) {
   const PACKAGES = getPackages();
   const { name, email, whatsapp, instagram, instagramBailarina, nomeBailarina, numBailarinas,
-          date, time, packageKey, confirm, customValue, splitCount, payerNames } = req.body as {
+          date, time, packageKey, confirm, customValue, splitCount, payerNames,
+          durationMin, payerValues } = req.body as {
     name: string; email: string; whatsapp: string;
     instagram?: string; instagramBailarina?: string; nomeBailarina?: string; numBailarinas?: number;
-    date: string; time: string; packageKey: PkgKey; confirm: boolean;
+    date: string; time: string; packageKey: PkgKey | 'especial'; confirm: boolean;
     customValue?: number;
     splitCount?: number;      // 1 (default) ou até pkg.maxBailarinas — multi-pagador
     payerNames?: string[];    // nome de cada pagador (paralelo aos links do split)
+    durationMin?: number;     // SÓ Especial: duração custom em minutos
+    payerValues?: number[];   // SÓ Especial: valor (R$) de cada pagador; total = soma
   };
+  const isEspecial = packageKey === 'especial';
 
   if (!name || !email || !date || !time || !packageKey) {
     return res.status(400).json({ error: 'Campos obrigatórios faltando' });
   }
 
-  const pkg = PACKAGES[packageKey];
-  if (!pkg) return res.status(400).json({ error: 'Pacote inválido' });
+  const pkg = isEspecial ? null : PACKAGES[packageKey as PkgKey];
+  if (!isEspecial && !pkg) return res.status(400).json({ error: 'Pacote inválido' });
 
   const nb = Number(numBailarinas);
-  if (!Number.isInteger(nb) || nb < 1 || nb > pkg.maxBailarinas) {
-    return res.status(400).json({ error: `Nº Bailarinas deve estar entre 1 e ${pkg.maxBailarinas} para o pacote ${pkg.name}` });
+  const maxNb = isEspecial ? Infinity : pkg!.maxBailarinas;
+  if (!Number.isInteger(nb) || nb < 1 || nb > maxNb) {
+    return res.status(400).json({ error: isEspecial ? 'Nº de bailarinas inválido (inteiro >= 1)' : `Nº Bailarinas deve estar entre 1 e ${pkg!.maxBailarinas} para o pacote ${pkg!.name}` });
   }
 
-  // Multi-pagador: valida splitCount contra pkg.maxBailarinas. 1 = comportamento
-  // antigo (1 link com valor cheio). Sem campo → default 1 (compat).
-  let split = 1;
-  if (splitCount !== undefined && splitCount !== null) {
-    if (typeof splitCount !== 'number' || !Number.isInteger(splitCount) || splitCount < 1) {
-      return res.status(400).json({ error: 'splitCount inválido' });
-    }
-    if (splitCount > pkg.maxBailarinas) {
-      return res.status(400).json({ error: `splitCount máximo pro pacote ${pkg.name} é ${pkg.maxBailarinas}` });
-    }
-    split = splitCount;
-  }
-
-  // Nomes dos pagadores (1 por link). Normaliza pra array de tamanho `split`:
-  // entradas faltantes viram '' (link fica sem nome — fallback "Pagador N").
-  const names: string[] = Array.from({ length: split }, (_, i) =>
-    (Array.isArray(payerNames) && typeof payerNames[i] === 'string' ? payerNames[i].trim() : '')
-  );
-
-  // Admin pode customizar valor (descontos especiais). Em REAIS, mesma unidade
-  // de pkg.price. Sanity: número finito >= 0 e <= pkg.price (não permitimos
-  // cobrar ACIMA do catálogo via descontos).
-  //
-  // IMPORTANTE: se admin ENVIOU um customValue mas é inválido (NaN, negativo,
-  // ou > catálogo), RETORNA 400 em vez de cair em pkg.price silenciosamente.
-  // Fallback silencioso é o bug que fazia Mari achar que aplicou desconto e
-  // o ASAAS cobrar o valor cheio. Só usa catálogo se admin NÃO mandou o campo.
+  // Especial (freeform): valores LIVRES por pagador, duração custom, sem caps.
+  // Os 3 pacotes: split igual + customValue ≤ catálogo (comportamento antigo).
+  let split: number;
   let chargeValue: number;
-  if (customValue === undefined || customValue === null) {
-    chargeValue = pkg.price;
-  } else if (typeof customValue !== 'number' || !isFinite(customValue)) {
-    return res.status(400).json({ error: `Valor inválido: ${String(customValue)}. Use um número inteiro em reais (ex: 1400).` });
-  } else if (customValue < 0) {
-    return res.status(400).json({ error: 'Valor não pode ser negativo.' });
-  } else if (customValue > pkg.price) {
-    return res.status(400).json({ error: `Valor (R$ ${customValue}) acima do catálogo (R$ ${pkg.price}). Desconto só pra baixo.` });
-  } else {
-    chargeValue = customValue;
-  }
-  console.log(`[admin-bookings/create] chargeValue=${chargeValue} (pkg.price=${pkg.price}, customValue=${customValue})`);
+  let duration: number;
+  let pkgLabel: string;
+  let especialLinkValues: number[] | null = null;   // Especial: valor de cada pagador (não é split igual)
 
-  const endTime = calcEnd(time, pkg.duration);
+  if (isEspecial) {
+    pkgLabel = 'Especial';
+    duration = Number(durationMin);
+    if (!Number.isFinite(duration) || duration <= 0) {
+      return res.status(400).json({ error: 'Especial: duração (min) inválida.' });
+    }
+    if (!Array.isArray(payerValues) || payerValues.length < 1) {
+      return res.status(400).json({ error: 'Especial: informe ao menos um pagador com valor.' });
+    }
+    especialLinkValues = payerValues.map(v => Number(v));
+    if (especialLinkValues.some(v => !Number.isFinite(v) || v <= 0)) {
+      return res.status(400).json({ error: 'Especial: cada pagador precisa de um valor em reais > 0.' });
+    }
+    split = especialLinkValues.length;
+    chargeValue = Number(especialLinkValues.reduce((s, v) => s + v, 0).toFixed(2));  // total = soma
+  } else {
+    pkgLabel = pkg!.name;
+    duration = pkg!.duration;
+    // Multi-pagador: valida splitCount contra pkg.maxBailarinas. 1 = comportamento antigo.
+    split = 1;
+    if (splitCount !== undefined && splitCount !== null) {
+      if (typeof splitCount !== 'number' || !Number.isInteger(splitCount) || splitCount < 1) {
+        return res.status(400).json({ error: 'splitCount inválido' });
+      }
+      if (splitCount > pkg!.maxBailarinas) {
+        return res.status(400).json({ error: `splitCount máximo pro pacote ${pkg!.name} é ${pkg!.maxBailarinas}` });
+      }
+      split = splitCount;
+    }
+    // customValue ≤ catálogo (desconto só pra baixo). Inválido → 400 (não cai no
+    // catálogo silenciosamente); sem o campo → catálogo.
+    if (customValue === undefined || customValue === null) {
+      chargeValue = pkg!.price;
+    } else if (typeof customValue !== 'number' || !isFinite(customValue)) {
+      return res.status(400).json({ error: `Valor inválido: ${String(customValue)}. Use um número inteiro em reais (ex: 1400).` });
+    } else if (customValue < 0) {
+      return res.status(400).json({ error: 'Valor não pode ser negativo.' });
+    } else if (customValue > pkg!.price) {
+      return res.status(400).json({ error: `Valor (R$ ${customValue}) acima do catálogo (R$ ${pkg!.price}). Desconto só pra baixo.` });
+    } else {
+      chargeValue = customValue;
+    }
+  }
+
+  // Nomes dos pagadores (1 por link), tamanho = split; faltantes viram ''.
+  const names: string[] = Array.from({ length: split }, (_, i) =>
+    (Array.isArray(payerNames) && typeof payerNames[i] === 'string' ? payerNames[i].trim() : ''));
+
+  console.log(`[admin-bookings/create] especial=${isEspecial} chargeValue=${chargeValue} split=${split} dur=${duration}`);
+
+  const endTime = calcEnd(time, duration);
   const logUser = auth.user;
 
   // Pre-flight: confirma que o slot ainda está livre antes de qualquer escrita
   try {
-    const slotsRes  = await fetch(`${SCRIPT_URL}?action=slots&date=${encodeURIComponent(date)}&package=${encodeURIComponent(packageKey)}&t=${Date.now()}`, { cache: 'no-store' });
+    const durParam  = isEspecial ? `&duration=${duration}` : '';
+    const slotsRes  = await fetch(`${SCRIPT_URL}?action=slots&date=${encodeURIComponent(date)}&package=${encodeURIComponent(packageKey)}${durParam}&t=${Date.now()}`, { cache: 'no-store' });
     const slotsJson = await slotsRes.json() as { slots?: string[] };
     const livres    = Array.isArray(slotsJson.slots) ? slotsJson.slots : [];
     if (!livres.includes(time)) {
@@ -3087,16 +3110,21 @@ async function handleCreate(req: VercelRequest, res: VercelResponse, auth: { use
   // Multi-pagador: se split > 1, cria N links em paralelo, cada um pagando
   // chargeValue/N (arredondado a 2 casas; ajustes de centavos vão pro último
   // link). Todos os N session IDs vão pra "Stripe Session" comma-separated.
-  if (!confirm) {
+  // Especial sempre usa o caminho de links (1 por pagador). "Confirmar direto" não se aplica.
+  if (!confirm || isEspecial) {
     try {
       const gw = resolveGateway((req.body as { gateway?: string }).gateway);
 
       // Distribuição dos valores: split-1 chunks iguais, último absorve o resto
       // pra fechar exatamente em chargeValue (evita perda de centavo).
-      const linkValues: number[] = [];
-      if (split === 1) {
-        linkValues.push(chargeValue);
+      // Especial: valores custom por pagador (já validados). Fixos: split igual (resto no último).
+      let linkValues: number[];
+      if (especialLinkValues) {
+        linkValues = especialLinkValues;
+      } else if (split === 1) {
+        linkValues = [chargeValue];
       } else {
+        linkValues = [];
         const each = Math.floor((chargeValue / split) * 100) / 100;  // 2 decimais p/ baixo
         for (let i = 0; i < split - 1; i++) linkValues.push(each);
         linkValues.push(Number((chargeValue - each * (split - 1)).toFixed(2)));  // resto
@@ -3113,11 +3141,11 @@ async function handleCreate(req: VercelRequest, res: VercelResponse, auth: { use
           // ASAAS itemName limita 30 chars: prioriza o nome do pagador (é o que
           // a Mari precisa ver pra saber de quem é o link). Sem nome → "Pacote X".
           const asaasItemName = (split > 1 && payerName)
-            ? `${pkg.name}: ${payerName}`.slice(0, 30)
-            : `Pacote ${pkg.name}`.slice(0, 30);
+            ? `${pkgLabel}: ${payerName}`.slice(0, 30)
+            : `Pacote ${pkgLabel}`.slice(0, 30);
           const checkout = await createAsaasCheckoutAdmin({
             itemName:          asaasItemName,
-            itemDescription:   `${dateLabel} · ${pkg.duration} min · ${nb} ${nb === 1 ? 'bailarina' : 'bailarinas'}${partLabel}`,
+            itemDescription:   `${dateLabel} · ${duration} min · ${nb} ${nb === 1 ? 'bailarina' : 'bailarinas'}${partLabel}`,
             value:             partValue,
             externalReference: encodeAsaasRefAdmin({ date, time, packageKey, numBailarinas: nb, name, email, whatsapp }),
             successUrl:        `${SITE_URL}/agendamento/sucesso`,
@@ -3127,8 +3155,8 @@ async function handleCreate(req: VercelRequest, res: VercelResponse, auth: { use
         }
         // Mercado Pago — title aceita mais chars; coloca o nome direto.
         const mpTitle = (split > 1 && payerName)
-          ? `Ensaio Joinville — ${pkg.name} · ${payerName}`
-          : `Ensaio Joinville — ${pkg.name}${partLabel}`;
+          ? `Ensaio Joinville — ${pkgLabel} · ${payerName}`
+          : `Ensaio Joinville — ${pkgLabel}${partLabel}`;
         const expiry = new Date(Date.now() + 3 * 24 * 60 * 60 * 1000).toISOString();
         const prefRes = await fetch('https://api.mercadopago.com/checkout/preferences', {
           method: 'POST',
@@ -3136,7 +3164,7 @@ async function handleCreate(req: VercelRequest, res: VercelResponse, auth: { use
           body: JSON.stringify({
             items: [{
               title:       mpTitle,
-              description: `${dateLabel} · ${pkg.duration} min`,
+              description: `${dateLabel} · ${duration} min`,
               quantity:    1,
               unit_price:  partValue,
               currency_id: 'BRL',
@@ -3195,6 +3223,8 @@ async function handleCreate(req: VercelRequest, res: VercelResponse, auth: { use
             source:             'admin',
             customValue:        chargeValue,
             payerNames:         names,   // 1 nome por link (paralelo a sessionsJoined)
+            payerValues:        linkValues,               // valor de cada pagador (Especial)
+            durationMin:        isEspecial ? duration : undefined,
           }),
         });
         if (!pendingRes.ok) throw new Error(`Sheets HTTP ${pendingRes.status}`);
