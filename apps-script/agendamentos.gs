@@ -136,7 +136,7 @@ function initSheets() {
     'ID','Data','Início','Fim','Pacote','Duração (min)','Valor (R$)',
     'Nome','E-mail','WhatsApp','Instagram Cliente','Instagram Bailarina','Nome Bailarina','Nº Bailarinas',
     'Stripe Session','Stripe Payment','Status','Criado em','Atualizado em',
-    'Rem1Sent','Rem2Sent','Rem3Sent','AndreNotified','ExpiryWarnSent','Source','Sessões Pagas','Nomes Pagadores'
+    'Rem1Sent','Rem2Sent','Rem3Sent','AndreNotified','ExpiryWarnSent','Source','Sessões Pagas','Nomes Pagadores','Valores Pagadores'
   ];
   ensureSheet('Agendamentos', agHeaders, '#4CAF50');
   ensureSheet('Bloqueios',    ['Data','Início','Fim','Motivo'],                '#FF9800');
@@ -286,6 +286,11 @@ function getBookingsForDate(dateStr) {
                     ? dRaw
                     : Utilities.formatDate(dRaw, 'America/Sao_Paulo', 'yyyy-MM-dd')) : '';
     if (d !== dateStr) return false;
+    // Especial (gerenciado pela Mari): bloqueia o intervalo SEM prazo de expiração,
+    // enquanto não for cancelado/expirado manualmente — o grupo pode levar dias pra pagar.
+    if (String(_val(row, cm, 'Pacote') || '') === 'especial') {
+      return status === 'Pendente' || status === 'Pago Parcial' || status === 'Confirmado';
+    }
     // Status "Pago Parcial" também bloqueia slot — agendamento já tem dinheiro
     // entrando, só falta um ou mais pagadores fecharem o split.
     if (status === 'Confirmado' || status === 'Pago Parcial') return true;
@@ -328,17 +333,25 @@ function _toHHMM(v) {
   return '00:00';
 }
 
-function computeAvailableSlots(dateStr, pkgKey) {
-  const pkg = CFG.PACKAGES[pkgKey];
-  if (!pkg) return [];
-  const needed    = pkg.duration + CFG.BUFFER_MIN;
+function computeAvailableSlots(dateStr, pkgKey, durationOverride) {
+  // durationOverride (min): usado pelo pacote 'especial' (duração livre). Sem override,
+  // usa a duração fixa do pacote de catálogo.
+  let duration;
+  if (durationOverride != null && Number(durationOverride) > 0) {
+    duration = Number(durationOverride);
+  } else {
+    const pkg = CFG.PACKAGES[pkgKey];
+    if (!pkg) return [];
+    duration = pkg.duration;
+  }
+  const needed    = duration + CFG.BUFFER_MIN;
   const bookings  = getBookingsForDate(dateStr);
   const intervals = getWorkIntervals(dateStr);
   const slots     = [];
 
   intervals.forEach(({ start: ivStart, end: ivEnd }) => {
     for (let t = ivStart; t + needed <= ivEnd; t += CFG.SLOT_STEP_MIN) {
-      const slotEnd = t + pkg.duration;
+      const slotEnd = t + duration;
       // Buffer aplicado dos dois lados: o slot novo precisa terminar
       // ao menos BUFFER_MIN antes do início de uma reserva existente
       // E começar ao menos BUFFER_MIN depois do fim dela.
@@ -618,6 +631,8 @@ function processReminders() {
   data.forEach((row, i) => {
     const status = String(_val(row, cm, 'Status', 15) || '').trim();
     if (status !== 'Pendente') return;
+    // Especial é gerenciado manualmente pela Mari: não expira nem dispara lembrete.
+    if (String(_val(row, cm, 'Pacote', 4) || '') === 'especial') return;
     const criadoEm = _val(row, cm, 'Criado em', 16);
     if (!criadoEm) return;
 
@@ -695,38 +710,51 @@ function _ensureColumn(sa, headerName) {
 function createPending(data) {
   const { date, start, packageKey, name, email, whatsapp,
           instagram, instagramBailarina, nomeBailarina, numBailarinas,
-          stripeSession, source, customValue, payerNames } = data;
-  const pkg = CFG.PACKAGES[packageKey];
-  if (!pkg) throw new Error('Pacote inválido: ' + packageKey);
+          stripeSession, source, customValue, payerNames, payerValues } = data;
 
-  // Admin pode customizar valor (descontos especiais para fechar pacote).
-  // customValue chega em REAIS (e.g., 1700 = R$1.700). pkg.price é em centavos
-  // internamente (e.g., 180000 = R$1.800) — comparamos em REAIS.
-  // Sem customValue → preço do catálogo. Sanity: >= 0 e <= pkg.price (não
-  // permitimos COBRAR mais que o catálogo via descontos do admin).
-  const pkgPriceReais = pkg.price / 100;
-  const valorReais    = (typeof customValue === 'number' && customValue >= 0 && customValue <= pkgPriceReais)
-    ? customValue
-    : pkgPriceReais;
+  const isEspecial = packageKey === 'especial';
 
-  const nb = Number(numBailarinas);
-  if (!Number.isInteger(nb) || nb < 1 || nb > pkg.maxBailarinas) {
-    throw new Error('Nº Bailarinas deve estar entre 1 e ' + pkg.maxBailarinas + ' para o pacote ' + pkg.name);
+  // Especial (freeform, criado pela Mari): duração, valor total e nº de bailarinas
+  // LIVRES, sem teto de catálogo. Os 3 pacotes seguem o template fixo de sempre.
+  let duration, valorReais, maxNb, pkgName;
+  if (isEspecial) {
+    duration = Number(data.durationMin);
+    if (!Number.isFinite(duration) || duration <= 0) throw new Error('Especial: duração (min) inválida.');
+    valorReais = Number(customValue);
+    if (!Number.isFinite(valorReais) || valorReais <= 0) throw new Error('Especial: valor total inválido.');
+    maxNb   = Infinity;
+    pkgName = 'Especial';
+  } else {
+    const pkg = CFG.PACKAGES[packageKey];
+    if (!pkg) throw new Error('Pacote inválido: ' + packageKey);
+    // customValue chega em REAIS; pkg.price em centavos. Sem customValue → catálogo.
+    // Sanity: >= 0 e <= catálogo (admin só desconta, não cobra a mais nos 3 fixos).
+    const pkgPriceReais = pkg.price / 100;
+    valorReais = (typeof customValue === 'number' && customValue >= 0 && customValue <= pkgPriceReais)
+      ? customValue
+      : pkgPriceReais;
+    duration = pkg.duration;
+    maxNb    = pkg.maxBailarinas;
+    pkgName  = pkg.name;
   }
 
-  // ── Revalidação anti-race-condition ──────────────────────────
-  // Recalcula slots livres AGORA (não confia no estado do frontend
-  // que pode estar com segundos de defasagem) e rejeita se o horário
-  // pedido já não estiver disponível.
-  const livres = computeAvailableSlots(date, packageKey);
+  const nb = Number(numBailarinas);
+  if (!Number.isInteger(nb) || nb < 1 || nb > maxNb) {
+    throw new Error(isEspecial
+      ? 'Especial: nº de bailarinas deve ser inteiro >= 1.'
+      : 'Nº Bailarinas deve estar entre 1 e ' + maxNb + ' para o pacote ' + pkgName);
+  }
+
+  // ── Revalidação anti-race-condition (usa a duração custom no Especial) ──
+  const livres = computeAvailableSlots(date, packageKey, isEspecial ? duration : undefined);
   if (livres.indexOf(start) === -1) {
     addLog('SLOT_CONFLITO', '',
-      'Tentativa de reservar slot já ocupado: ' + date + ' ' + start + ' (' + pkg.name + ') por ' + name,
+      'Tentativa de reservar slot já ocupado: ' + date + ' ' + start + ' (' + pkgName + ') por ' + name,
       source === 'admin' ? 'painel' : 'site');
     throw new Error('Esse horário acabou de ser reservado por outra pessoa. Por favor, escolha outro.');
   }
 
-  const endTime   = minToTime(timeToMin(start) + pkg.duration);
+  const endTime   = minToTime(timeToMin(start) + duration);
   const bookingId = genBookingId();
   const now       = nowIso();
 
@@ -734,6 +762,7 @@ function createPending(data) {
   // Self-healing: garante colunas novas (multi-pagador) antes de montar a linha.
   _ensureColumn(sa, 'Sessões Pagas');
   _ensureColumn(sa, 'Nomes Pagadores');
+  _ensureColumn(sa, 'Valores Pagadores');   // valor cobrado de cada pagador (paralelo aos nomes)
   const cm = _colMap(sa);
 
   // payerNames pode chegar como array ou string comma-separated — normaliza pra
@@ -741,6 +770,11 @@ function createPending(data) {
   const payerNamesCsv = Array.isArray(payerNames)
     ? payerNames.map(function(n) { return String(n || '').trim(); }).join(',')
     : String(payerNames || '');
+  // Valores por pagador em REAIS (mesma ordem/qtd dos nomes). Usado no Especial p/
+  // cobrar cada um o seu; a soma = "Valor (R$)" total.
+  const payerValuesCsv = Array.isArray(payerValues)
+    ? payerValues.map(function(v) { return (Number(v) || 0).toFixed(2); }).join(',')
+    : String(payerValues || '');
 
   // Monta a linha header-by-header — funciona com schema antigo ou novo.
   const numCols = Math.max(sa.getLastColumn(), 23);
@@ -754,7 +788,7 @@ function createPending(data) {
   set('Início',                start,                              2);
   set('Fim',                   endTime,                            3);
   set('Pacote',                packageKey,                         4);
-  set('Duração (min)',         pkg.duration,                       5);
+  set('Duração (min)',         duration,                           5);
   set('Valor (R$)',            valorReais.toFixed(2),              6);
   set('Nome',                  name,                               7);
   set('E-mail',                email,                              8);
@@ -770,13 +804,14 @@ function createPending(data) {
   set('Atualizado em',         now,                                17);
   set('Source',                source || 'site');
   set('Nomes Pagadores',       payerNamesCsv);
+  set('Valores Pagadores',     payerValuesCsv);
 
   sa.appendRow(newRow);
 
   try { buildClientesSheet(); } catch (e) { addLog('CLIENTES_REBUILD_ERRO', bookingId, String(e), 'sistema'); }
 
   addLog('PENDENTE_CRIADO', bookingId,
-    name + ' | ' + (pkg.name) + ' | ' + date + ' ' + start + '–' + endTime + ' | Stripe: ' + stripeSession,
+    name + ' | ' + pkgName + ' | ' + date + ' ' + start + '–' + endTime + ' | Stripe: ' + stripeSession,
     source === 'admin' ? 'painel' : 'site');
 
   return { ok: true, bookingId: bookingId, endTime: endTime };
@@ -1962,7 +1997,9 @@ function doGet(e) {
       const date = e.parameter.date;
       const pkg  = e.parameter.package;
       if (!date || !pkg) throw new Error('date e package são obrigatórios');
-      result = { slots: computeAvailableSlots(date, pkg) };
+      // 'especial' tem duração livre — chega em &duration=<min>.
+      const dur = pkg === 'especial' ? Number(e.parameter.duration) : undefined;
+      result = { slots: computeAvailableSlots(date, pkg, dur) };
     } else if (action === 'allSlots') {
       const date = e.parameter.date;
       if (!date) throw new Error('date é obrigatório');
