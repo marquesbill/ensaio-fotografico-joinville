@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import {
   LogOut, Calendar, List,
-  X, AlertCircle, Check, Loader2, RefreshCw, Search, Link2, CheckCircle, Copy, Plus, Pencil,
+  X, AlertCircle, Check, Loader2, RefreshCw, Search, Link2, CheckCircle, Copy, Plus, Pencil, Sparkles, Trash2,
 } from 'lucide-react';
 
 /* ─────────────────────────── types ─────────────────────────── */
@@ -902,12 +902,162 @@ function EditBookingModal({
 /* ─────────────────── Payment Link Modal ──────────────────────
  * Suporta single-link (`url`) ou multi-pagador (`parts` com N entradas).
  * Em multi: mostra 1 row por pagador com valor + copy + abrir individual. */
+// Pacote Especial (freeform, SÓ admin): duração/nº bailarinas/valor livres, com
+// lista de pagadores (nome + valor por pessoa; total = soma). Gera 1 link por
+// pagador + o link da página pública do grupo.
+function NewEspecialModal({
+  onClose, onSubmit, loading,
+}: {
+  onClose: () => void;
+  onSubmit: (data: { name: string; email: string; whatsapp: string; instagram: string; instagramBailarina: string; nomeBailarina: string; numBailarinas: number; date: string; time: string; packageKey: string; durationMin?: number; payerNames?: string[]; payerValues?: number[] }, confirm: boolean, gateway?: 'mp' | 'asaas') => void;
+  loading: boolean;
+}) {
+  const [gateway,  setGateway]  = useState<'mp' | 'asaas'>('asaas');
+  const [name,     setName]     = useState('');
+  const [email,    setEmail]    = useState('');
+  const [whatsapp, setWhatsapp] = useState('');
+  const [numBailarinas, setNumBailarinas] = useState<number>(1);
+  const [hours,    setHours]    = useState<number>(1);
+  const [minutes,  setMinutes]  = useState<number>(0);
+  const [date,     setDate]     = useState('');
+  const [time,     setTime]     = useState('');
+  const [slots,    setSlots]    = useState<string[]>([]);
+  const [slotsLoading, setSlotsLoading] = useState(false);
+  const [payers,   setPayers]   = useState<Array<{ name: string; value: string }>>([{ name: '', value: '' }]);
+
+  const durationMin = hours * 60 + minutes;
+  const today = new Date().toISOString().split('T')[0];
+
+  // Slots dependem da data E da duração custom.
+  useEffect(() => {
+    if (!date || durationMin <= 0) { setSlots([]); setTime(''); return; }
+    setSlotsLoading(true);
+    fetch(`${API}/api/slots?date=${date}&package=especial&duration=${durationMin}`)
+      .then(r => r.json())
+      .then((data: { slots?: string[] }) => { setSlots(Array.isArray(data.slots) ? data.slots : []); setTime(''); })
+      .catch(() => setSlots([]))
+      .finally(() => setSlotsLoading(false));
+  }, [date, durationMin]);
+
+  const total = payers.reduce((s, p) => s + (Number(p.value) || 0), 0);
+  const rowsOk = payers.length >= 1 && payers.every(p => p.name.trim() && Number(p.value) > 0);
+  const canSubmit = !!(name.trim() && email.trim() && date && time && durationMin > 0
+                    && Number.isInteger(numBailarinas) && numBailarinas >= 1 && rowsOk);
+
+  const setPayer = (i: number, f: 'name' | 'value', v: string) =>
+    setPayers(ps => ps.map((p, idx) => idx === i ? { ...p, [f]: v } : p));
+  const addPayer    = () => setPayers(ps => [...ps, { name: '', value: '' }]);
+  const removePayer = (i: number) => setPayers(ps => ps.length > 1 ? ps.filter((_, idx) => idx !== i) : ps);
+
+  function submit() {
+    if (!canSubmit || loading) return;
+    onSubmit({
+      name: name.trim(), email: email.trim(), whatsapp: whatsapp.trim(),
+      instagram: '', instagramBailarina: '', nomeBailarina: '',
+      numBailarinas, date, time, packageKey: 'especial', durationMin,
+      payerNames:  payers.map(p => p.name.trim()),
+      payerValues: payers.map(p => Number(p.value)),
+    }, false, gateway);
+  }
+
+  const inp = 'w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-[#7a3f8f] focus:border-[#7a3f8f] outline-none';
+  const lbl = 'block text-xs font-semibold text-gray-600 mb-1';
+
+  return (
+    <Overlay onClose={onClose}>
+      <div className="flex items-center gap-3 mb-4">
+        <div className="w-10 h-10 rounded-full flex items-center justify-center shrink-0" style={{ background: 'linear-gradient(135deg,#7a3f8f,#e87060)' }}>
+          <Sparkles size={18} className="text-white" />
+        </div>
+        <div>
+          <h2 className="text-base font-bold text-[#352D39]">Novo Especial</h2>
+          <p className="text-xs text-gray-500">Sob medida — nº de bailarinas, duração e valor livres</p>
+        </div>
+      </div>
+
+      <div className="space-y-3 max-h-[62vh] overflow-y-auto pr-1">
+        <div>
+          <label className={lbl}>Nome do cliente (contato) *</label>
+          <input className={inp} value={name} onChange={e => setName(e.target.value)} placeholder="Ex: Ana (mãe organizadora)" />
+        </div>
+        <div className="grid grid-cols-2 gap-3">
+          <div><label className={lbl}>E-mail *</label><input className={inp} type="email" value={email} onChange={e => setEmail(e.target.value)} /></div>
+          <div><label className={lbl}>WhatsApp</label><input className={inp} value={whatsapp} onChange={e => setWhatsapp(e.target.value)} /></div>
+        </div>
+        <div className="grid grid-cols-3 gap-3">
+          <div><label className={lbl}>Nº bailarinas *</label><input className={inp} type="number" min={1} value={numBailarinas} onChange={e => setNumBailarinas(parseInt(e.target.value, 10) || 1)} /></div>
+          <div><label className={lbl}>Horas</label><input className={inp} type="number" min={0} value={hours} onChange={e => setHours(parseInt(e.target.value, 10) || 0)} /></div>
+          <div><label className={lbl}>Minutos</label><input className={inp} type="number" min={0} max={59} step={5} value={minutes} onChange={e => setMinutes(parseInt(e.target.value, 10) || 0)} /></div>
+        </div>
+
+        <div className="grid grid-cols-2 gap-3">
+          <div>
+            <label className={lbl}>Data *</label>
+            <input className={inp} type="date" min={today} value={date} onChange={e => setDate(e.target.value)} />
+          </div>
+          <div>
+            <label className={lbl}>Início * {slotsLoading && <Loader2 size={11} className="inline animate-spin" />}</label>
+            <select className={inp} value={time} onChange={e => setTime(e.target.value)} disabled={!date || durationMin <= 0 || slotsLoading}>
+              <option value="">{!date ? 'Escolha a data' : durationMin <= 0 ? 'Defina a duração' : slots.length ? 'Escolha' : 'Sem horário livre'}</option>
+              {slots.map(s => <option key={s} value={s}>{s}</option>)}
+            </select>
+          </div>
+        </div>
+
+        {/* Pagadores — nome + valor por pessoa; total = soma */}
+        <div className="border border-gray-200 rounded-xl p-3">
+          <div className="flex items-center justify-between mb-2">
+            <span className="text-xs font-bold text-[#7a3f8f] uppercase tracking-wide">Pagadores (nome + valor)</span>
+            <span className="text-sm font-bold text-[#352D39]">Total: R$ {total.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+          </div>
+          <div className="space-y-2">
+            {payers.map((p, i) => (
+              <div key={i} className="flex gap-2 items-center">
+                <input className={inp + ' flex-1'} value={p.name} onChange={e => setPayer(i, 'name', e.target.value)} placeholder={`Pagador ${i + 1}`} />
+                <div className="relative w-28 shrink-0">
+                  <span className="absolute left-2 top-1/2 -translate-y-1/2 text-xs text-gray-400">R$</span>
+                  <input className={inp + ' pl-7'} type="number" min={0} step="0.01" value={p.value} onChange={e => setPayer(i, 'value', e.target.value)} placeholder="0,00" />
+                </div>
+                <button type="button" onClick={() => removePayer(i)} disabled={payers.length <= 1} className="p-2 text-gray-400 hover:text-red-500 disabled:opacity-30" title="Remover">
+                  <Trash2 size={15} />
+                </button>
+              </div>
+            ))}
+          </div>
+          <button type="button" onClick={addPayer} className="mt-2 flex items-center gap-1 text-xs font-semibold text-[#7a3f8f] hover:underline">
+            <Plus size={13} /> Adicionar pagador
+          </button>
+        </div>
+
+        <div>
+          <label className={lbl}>Gateway dos links</label>
+          <div className="flex gap-2">
+            {(['asaas', 'mp'] as const).map(g => (
+              <button key={g} type="button" onClick={() => setGateway(g)}
+                className={`flex-1 py-2 rounded-lg text-sm font-semibold border-2 transition-colors ${gateway === g ? 'border-[#7a3f8f] text-[#7a3f8f] bg-purple-50' : 'border-gray-200 text-gray-500'}`}>
+                {g === 'asaas' ? 'ASAAS' : 'Mercado Pago'}
+              </button>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      <button onClick={submit} disabled={!canSubmit || loading}
+        className="w-full mt-4 py-3 rounded-xl text-white text-sm font-bold disabled:opacity-40 transition-opacity"
+        style={{ background: 'linear-gradient(135deg,#7a3f8f,#e87060)' }}>
+        {loading ? <Loader2 size={16} className="inline animate-spin" /> : `Criar Especial + gerar ${payers.length} link${payers.length > 1 ? 's' : ''}`}
+      </button>
+    </Overlay>
+  );
+}
+
 function PaymentLinkModal({
-  url, parts, gateway, onClose,
+  url, parts, gateway, especialShareUrl, onClose,
 }: {
   url: string;
   parts?: Array<{ url: string; sessionId: string; value: number; payerName?: string }>;
   gateway: 'mp' | 'asaas';
+  especialShareUrl?: string;
   onClose: () => void;
 }) {
   const [copiedIdx, setCopiedIdx] = useState<number | null>(null);
@@ -936,6 +1086,20 @@ function PaymentLinkModal({
           <p className="text-xs text-gray-500">Válido por {validade} · {gatewayLabel}{isSplit && ' · cada link é individual'}</p>
         </div>
       </div>
+
+      {especialShareUrl && (
+        <div className="mb-4 rounded-xl p-3 border-2 border-[#7a3f8f]" style={{ background: '#f5edfb' }}>
+          <p className="text-xs font-bold text-[#7a3f8f] uppercase tracking-wide mb-1">🔗 Página do grupo — mande este link</p>
+          <div className="bg-white border border-purple-100 rounded-lg px-3 py-2 mb-2 break-all text-[10px] text-gray-700 font-mono select-all">{especialShareUrl}</div>
+          <button
+            onClick={() => copy(especialShareUrl, -1)}
+            className="w-full flex items-center justify-center gap-1.5 py-2 rounded-lg bg-[#7a3f8f] text-white text-xs font-semibold hover:brightness-110 transition-all"
+          >
+            {copiedIdx === -1 ? <Check size={12} /> : <Copy size={12} />}
+            {copiedIdx === -1 ? 'Copiado!' : 'Copiar link da página'}
+          </button>
+        </div>
+      )}
 
       {isSplit ? (
         <div className="space-y-3 mb-4 max-h-[60vh] overflow-y-auto">
@@ -1739,7 +1903,9 @@ function Dashboard({
     urls?:   string[];
     parts?:  Array<{ url: string; sessionId: string; value: number; payerName?: string }>;
     gateway: 'mp' | 'asaas';
+    especialShareUrl?: string;   // Especial: link público da página do grupo
   } | null>(null);
+  const [showNewEspecial,  setShowNewEspecial]  = useState(false);
   const [gatewayPicker,    setGatewayPicker]    = useState<Booking | null>(null);
   // Multi-pagador: modal de detalhes do split + sessionId atualmente em regen
   const [splitTarget,      setSplitTarget]      = useState<Booking | null>(null);
@@ -1880,7 +2046,7 @@ function Dashboard({
   }
 
   async function handleCreateBooking(
-    data: { name: string; email: string; whatsapp: string; instagram: string; instagramBailarina: string; nomeBailarina: string; numBailarinas: number; date: string; time: string; packageKey: string; customValue?: number; splitCount?: number; payerNames?: string[] },
+    data: { name: string; email: string; whatsapp: string; instagram: string; instagramBailarina: string; nomeBailarina: string; numBailarinas: number; date: string; time: string; packageKey: string; customValue?: number; splitCount?: number; payerNames?: string[]; durationMin?: number; payerValues?: number[] },
     confirm: boolean,
     gateway?: 'mp' | 'asaas',
   ) {
@@ -1892,17 +2058,19 @@ function Dashboard({
       });
       const json = await r.json() as {
         bookingId?: string; paymentUrl?: string; paymentUrls?: string[];
-        paymentParts?: Array<{ url: string; sessionId: string; value: number }>;
-        splitCount?: number; error?: string;
+        paymentParts?: Array<{ url: string; sessionId: string; value: number; payerName?: string }>;
+        splitCount?: number; especialShareUrl?: string; error?: string;
       };
       if (!r.ok) throw new Error(json.error || 'Erro');
       setShowNewBooking(false);
+      setShowNewEspecial(false);
       if (!confirm && json.paymentUrl) {
         setPaymentLink({
           url:    json.paymentUrl,
           urls:   json.paymentUrls && json.paymentUrls.length > 1 ? json.paymentUrls : undefined,
           parts:  json.paymentParts && json.paymentParts.length > 1 ? json.paymentParts : undefined,
           gateway: gateway ?? 'asaas',
+          especialShareUrl: json.especialShareUrl,
         });
       } else {
         setToast({ msg: `Agendamento de ${data.name} criado e confirmado`, type: 'ok' });
@@ -2153,6 +2321,14 @@ function Dashboard({
               <Plus size={14} /> <span className="hidden sm:block">Novo agendamento</span>
               <span className="sm:hidden">Novo</span>
             </button>
+            {/* Novo Especial (sob medida, só admin) */}
+            <button
+              onClick={() => setShowNewEspecial(true)}
+              className="flex items-center gap-1.5 text-sm font-semibold px-3 py-1.5 rounded-lg border-2 border-[#7a3f8f] text-[#7a3f8f] hover:bg-purple-50 transition-colors"
+              title="Agendamento sob medida (nº de bailarinas, duração e valor livres)"
+            >
+              <Sparkles size={14} /> <span className="hidden sm:block">Especial</span>
+            </button>
             <button
               onClick={fetchBookings} title="Atualizar"
               className="p-2 rounded-lg hover:bg-gray-100 text-gray-500"
@@ -2246,6 +2422,13 @@ function Dashboard({
           loading={actionLoading}
         />
       )}
+      {showNewEspecial && (
+        <NewEspecialModal
+          onClose={() => setShowNewEspecial(false)}
+          onSubmit={handleCreateBooking}
+          loading={actionLoading}
+        />
+      )}
       {cancelTarget && (
         <CancelModal
           booking={cancelTarget}
@@ -2286,6 +2469,7 @@ function Dashboard({
           url={paymentLink.url}
           parts={paymentLink.parts}
           gateway={paymentLink.gateway}
+          especialShareUrl={paymentLink.especialShareUrl}
           onClose={() => setPaymentLink(null)}
         />
       )}
