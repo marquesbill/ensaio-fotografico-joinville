@@ -136,7 +136,7 @@ function initSheets() {
     'ID','Data','Início','Fim','Pacote','Duração (min)','Valor (R$)',
     'Nome','E-mail','WhatsApp','Instagram Cliente','Instagram Bailarina','Nome Bailarina','Nº Bailarinas',
     'Stripe Session','Stripe Payment','Status','Criado em','Atualizado em',
-    'Rem1Sent','Rem2Sent','Rem3Sent','AndreNotified','ExpiryWarnSent','Source','Sessões Pagas','Nomes Pagadores','Valores Pagadores'
+    'Rem1Sent','Rem2Sent','Rem3Sent','AndreNotified','ExpiryWarnSent','Source','Sessões Pagas','Nomes Pagadores','Valores Pagadores','Links Pagadores'
   ];
   ensureSheet('Agendamentos', agHeaders, '#4CAF50');
   ensureSheet('Bloqueios',    ['Data','Início','Fim','Motivo'],                '#FF9800');
@@ -331,6 +331,51 @@ function _toHHMM(v) {
     if (!isNaN(parsed.getTime())) return Utilities.formatDate(parsed, 'America/Sao_Paulo', 'HH:mm');
   }
   return '00:00';
+}
+
+// Retorna os dados PÚBLICOS de um agendamento Especial (p/ a página compartilhável):
+// lista de pagadores (nome, valor, link, pago?) + total/data/status. null se não achar
+// ou se não for 'especial' (só Especial é exposto publicamente).
+function getEspecialPublic(id) {
+  const sa = getSheet('Agendamentos');
+  if (!sa || sa.getLastRow() < 2) return null;
+  const cm   = _colMap(sa);
+  const data = sa.getRange(2, 1, sa.getLastRow() - 1, sa.getLastColumn()).getValues();
+  for (let r = 0; r < data.length; r++) {
+    const row = data[r];
+    if (String(_val(row, cm, 'ID') || '') !== id) continue;
+    if (String(_val(row, cm, 'Pacote') || '') !== 'especial') return null;
+    const names    = String(_val(row, cm, 'Nomes Pagadores')  || '').split(',');
+    const values   = String(_val(row, cm, 'Valores Pagadores') || '').split(',');
+    const urls     = String(_val(row, cm, 'Links Pagadores')   || '').split('|');
+    const sessions = String(_val(row, cm, 'Stripe Session')    || '').split(',');
+    const paidArr  = String(_val(row, cm, 'Sessões Pagas')     || '').split(',').filter(Boolean);
+    const paidSet  = {}; paidArr.forEach(function(s) { paidSet[s] = true; });
+    const payers = sessions.map(function(sid, i) {
+      return {
+        name:  (names[i] || '').trim() || ('Pagador ' + (i + 1)),
+        value: Number(values[i] || 0),
+        url:   (urls[i] || '').trim(),
+        paid:  !!paidSet[sid],
+      };
+    });
+    const dRaw   = _val(row, cm, 'Data');
+    const dateStr = dRaw ? (typeof dRaw === 'string'
+      ? dRaw : Utilities.formatDate(dRaw, 'America/Sao_Paulo', 'yyyy-MM-dd')) : '';
+    const status = String(_val(row, cm, 'Status') || '');
+    return {
+      id:         id,
+      clientName: _val(row, cm, 'Nome') || '',
+      date:       dateStr,
+      start:      _toHHMM(_val(row, cm, 'Início')),
+      end:        _toHHMM(_val(row, cm, 'Fim')),
+      total:      Number(_val(row, cm, 'Valor (R$)') || 0),
+      status:     status,
+      allPaid:    status === 'Confirmado',
+      payers:     payers,
+    };
+  }
+  return null;
 }
 
 function computeAvailableSlots(dateStr, pkgKey, durationOverride) {
@@ -710,7 +755,7 @@ function _ensureColumn(sa, headerName) {
 function createPending(data) {
   const { date, start, packageKey, name, email, whatsapp,
           instagram, instagramBailarina, nomeBailarina, numBailarinas,
-          stripeSession, source, customValue, payerNames, payerValues } = data;
+          stripeSession, source, customValue, payerNames, payerValues, payerUrls } = data;
 
   const isEspecial = packageKey === 'especial';
 
@@ -763,6 +808,7 @@ function createPending(data) {
   _ensureColumn(sa, 'Sessões Pagas');
   _ensureColumn(sa, 'Nomes Pagadores');
   _ensureColumn(sa, 'Valores Pagadores');   // valor cobrado de cada pagador (paralelo aos nomes)
+  _ensureColumn(sa, 'Links Pagadores');     // URL de pagamento de cada pagador (p/ página pública)
   const cm = _colMap(sa);
 
   // payerNames pode chegar como array ou string comma-separated — normaliza pra
@@ -775,6 +821,10 @@ function createPending(data) {
   const payerValuesCsv = Array.isArray(payerValues)
     ? payerValues.map(function(v) { return (Number(v) || 0).toFixed(2); }).join(',')
     : String(payerValues || '');
+  // URLs de pagamento (1 por pagador, mesma ordem). Pipe-separated: URL pode conter vírgula.
+  const payerUrlsCsv = Array.isArray(payerUrls)
+    ? payerUrls.map(function(u) { return String(u || ''); }).join('|')
+    : String(payerUrls || '');
 
   // Monta a linha header-by-header — funciona com schema antigo ou novo.
   const numCols = Math.max(sa.getLastColumn(), 23);
@@ -805,6 +855,7 @@ function createPending(data) {
   set('Source',                source || 'site');
   set('Nomes Pagadores',       payerNamesCsv);
   set('Valores Pagadores',     payerValuesCsv);
+  set('Links Pagadores',       payerUrlsCsv);
 
   sa.appendRow(newRow);
 
@@ -2005,6 +2056,11 @@ function doGet(e) {
       if (!date) throw new Error('date é obrigatório');
       result = {};
       Object.keys(CFG.PACKAGES).forEach(k => { result[k] = computeAvailableSlots(date, k); });
+    } else if (action === 'especialById') {
+      // Dados públicos de UM Especial (página compartilhável). Só campos seguros.
+      const id = e.parameter.id;
+      if (!id) throw new Error('id é obrigatório');
+      result = getEspecialPublic(id);
     } else if (action === 'bookings') {
       const sa = getSheet('Agendamentos');
       if (!sa || sa.getLastRow() < 2) { result = []; }

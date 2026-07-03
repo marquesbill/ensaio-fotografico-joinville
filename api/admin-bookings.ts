@@ -21,6 +21,7 @@
 
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { createHmac } from 'crypto';
+import { especialToken } from './_especial';
 import { Resend } from 'resend';
 import { BetaAnalyticsDataClient } from '@google-analytics/data';
 import { OAuth2Client, JWT } from 'google-auth-library';
@@ -3224,6 +3225,7 @@ async function handleCreate(req: VercelRequest, res: VercelResponse, auth: { use
             customValue:        chargeValue,
             payerNames:         names,   // 1 nome por link (paralelo a sessionsJoined)
             payerValues:        linkValues,               // valor de cada pagador (Especial)
+            payerUrls:          createdLinks.map(l => l.url),  // URL de cada link (p/ página pública)
             durationMin:        isEspecial ? duration : undefined,
           }),
         });
@@ -3262,6 +3264,8 @@ async function handleCreate(req: VercelRequest, res: VercelResponse, auth: { use
         paymentParts: createdLinks.map((l, i) => ({ url: l.url, sessionId: l.id, value: linkValues[i], payerName: names[i] || '' })),
         splitCount:  split,
         externalId:  primaryExternalId,
+        // Especial: link público (token) que a Mari manda pro grupo acompanhar/pagar.
+        especialShareUrl: isEspecial ? `${SITE_URL}/especial/${bookingId}?t=${especialToken(bookingId)}` : undefined,
       });
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
