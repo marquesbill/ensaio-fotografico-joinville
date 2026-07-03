@@ -1,7 +1,14 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
-import { especialToken } from './_especial';
+import { createHmac } from 'crypto';
 
 const SCRIPT_URL = process.env.SHEETS_SCRIPT_URL!;
+
+// INLINE (não importar de _*.ts — o bundler da Vercel não inclui e a função crasha).
+// Duplicada em api/admin-bookings.ts de propósito — manter em sincronia.
+const SECRET = process.env.ADMIN_SECRET || 'dev-secret-change-me';
+function especialToken(id: string): string {
+  return createHmac('sha256', SECRET).update('especial:' + id).digest('hex').slice(0, 24);
+}
 
 // Endpoint PÚBLICO (sem auth de admin) da página compartilhável do Especial.
 // Protegido por token: /api/especial?id=<id>&t=<token>. Sem o token certo → 403.

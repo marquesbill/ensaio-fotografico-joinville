@@ -21,7 +21,6 @@
 
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { createHmac } from 'crypto';
-import { especialToken } from './_especial';
 import { Resend } from 'resend';
 import { BetaAnalyticsDataClient } from '@google-analytics/data';
 import { OAuth2Client, JWT } from 'google-auth-library';
@@ -29,6 +28,14 @@ import { OAuth2Client, JWT } from 'google-auth-library';
 /* ───────── Config ───────── */
 
 const SECRET          = process.env.ADMIN_SECRET || 'dev-secret-change-me';
+
+// Token do link público do Especial — HMAC(id), não-adivinhável, sem coluna nova.
+// INLINE (não em módulo _*.ts): o bundler da Vercel NÃO inclui _*.ts e a função
+// crasha com FUNCTION_INVOCATION_FAILED (mesma lição do _adminAuth.ts órfão).
+// Duplicada em api/especial.ts de propósito — manter em sincronia.
+function especialToken(id: string): string {
+  return createHmac('sha256', SECRET).update('especial:' + id).digest('hex').slice(0, 24);
+}
 const TOKEN_TTL       = 8 * 60 * 60 * 1000; // 8 h
 const SCRIPT_URL      = process.env.SHEETS_SCRIPT_URL!;
 const SITE_URL        = process.env.SITE_URL || 'https://www.ensaiofotograficoemjoinville.com';
