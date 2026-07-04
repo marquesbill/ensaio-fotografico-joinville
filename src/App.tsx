@@ -600,11 +600,11 @@ export default function App() {
           </motion.h2>
           <ul className="space-y-4">
             {[
-              "Material de suporte e orientações criado por nossa equipe",
-              "Imagens de referências para planejar suas poses",
-              "Direção artística durante a sessão",
-              "Suporte de uma professora especializada para te auxiliar e corrigir nas poses",
-              "As fotos digitais aprovadas editadas exclusivamente pelo fotógrafo",
+              "Material para preparação com orientações.",
+              "Referências de poses para ajudar no planejamento do ensaio.",
+              "Direção artística durante toda a sessão para valorizar sua técnica e expressividade.",
+              "Acompanhamento de professora especializada, auxiliando nos ajustes e execuções das poses.",
+              "Todas as fotos aprovadas, entregues em alta qualidade e editadas individualmente pelo fotógrafo.",
             ].map((item, i) => (
               <li key={i} className="flex items-center gap-3 text-on-surface-variant font-medium">
                 <CheckCircle className="text-primary w-5 h-5 flex-shrink-0" />
@@ -1257,11 +1257,11 @@ export default function App() {
               { q: "Quanto tempo dura o ensaio?", a: "Nossos ensaios duram entre 30 a 120 minutos, dependendo do pacote escolhido." },
               { q: "O que eu vou receber?", a: (
                 <ul className="list-disc pl-4 space-y-1">
-                  <li>Material de suporte e orientações criado por nossa equipe</li>
-                  <li>Imagens de referências para planejar suas poses</li>
-                  <li>Direção artística durante a sessão</li>
-                  <li>Suporte de uma professora especializada para te auxiliar e corrigir nas poses</li>
-                  <li>As fotos digitais aprovadas editadas exclusivamente pelo fotógrafo</li>
+                  <li>Material para preparação com orientações.</li>
+                  <li>Referências de poses para ajudar no planejamento do ensaio.</li>
+                  <li>Direção artística durante toda a sessão para valorizar sua técnica e expressividade.</li>
+                  <li>Acompanhamento de professora especializada, auxiliando nos ajustes e execuções das poses.</li>
+                  <li>Todas as fotos aprovadas, entregues em alta qualidade e editadas individualmente pelo fotógrafo.</li>
                 </ul>
               ) },
               { q: "Quais são as formas de pagamento?", a: "Aceitamos PIX e cartões de crédito (com possibilidade de parcelamento)." },
