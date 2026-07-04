@@ -669,12 +669,24 @@ function extractDDD(whatsapp: string | null | undefined): string | null {
   return DDD_TO_STATE[ddd] ? ddd : null;
 }
 
-function normalizePackage(p: string | null | undefined): 'lembranca' | 'economico' | 'completo' | 'unknown' {
+function normalizePackage(p: string | null | undefined): 'lembranca' | 'economico' | 'completo' | 'especial' | 'unknown' {
   const s = String(p || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
   if (s.startsWith('lemb')) return 'lembranca';
   if (s.startsWith('econ')) return 'economico';
   if (s.startsWith('comp')) return 'completo';
+  if (s.startsWith('espec')) return 'especial';
   return 'unknown';
+}
+
+// Especial (freeform) NÃO está no catálogo PACKAGES. Resolve um pkg válido para
+// handlers que só usam o NOME (emails/labels); duration/price = 0 porque o valor
+// real vive no booking/planilha. Sem isto, agora que o front manda 'especial',
+// PACKAGES['especial'] === undefined quebraria cancel/confirm/link/regen com 400.
+function resolvePkg(packageKey: string | null | undefined): { name: string; duration: number; price: number; maxBailarinas: number } | null {
+  const p = getPackages()[packageKey as PkgKey];
+  if (p) return p;
+  if (packageKey === 'especial') return { name: 'Especial', duration: 0, price: 0, maxBailarinas: 999 };
+  return null;
 }
 
 function normalizeStatus(s: string | null | undefined): 'confirmado' | 'pendente' | 'cancelado' | 'other' {
@@ -2732,7 +2744,7 @@ async function handleCancel(req: VercelRequest, res: VercelResponse, auth: { use
   }).catch(e => console.error('[admin-bookings/cancel] addLog error', e));
 
   if (email) {
-    const pkg = (packageKey && PACKAGES[packageKey as PkgKey]) || { name: packageName || '—', duration: 0, price: 0 };
+    const pkg = resolvePkg(packageKey) || { name: packageName || '—', duration: 0, price: 0 };
     const html = buildBookingEmailHtml({
       name, date, time,
       endTime:       endTime || time,
@@ -2775,7 +2787,7 @@ async function handleConfirm(req: VercelRequest, res: VercelResponse, auth: { us
     return res.status(400).json({ error: 'bookingId é obrigatório' });
   }
 
-  const pkg = PACKAGES[packageKey as PkgKey] || { name: packageKey, duration: 0, price: 0 };
+  const pkg = resolvePkg(packageKey) || { name: packageKey, duration: 0, price: 0 };
 
   // Confirmação manual pela Mari: confirma a reserva INTEIRA pelo bookingId
   // (funciona em single E split — antes casava por session, o que quebrava
@@ -2926,7 +2938,7 @@ async function handleConfirmPart(req: VercelRequest, res: VercelResponse, auth: 
   const totalSessions    = meta.totalSessions || 1;
   const pName            = (payerName || meta.paidPayerName || '').trim();
 
-  const pkg          = PACKAGES[(meta.package || '') as PkgKey] || { name: meta.package || '—', duration: 0, price: 0 };
+  const pkg          = resolvePkg(meta.package) || { name: meta.package || '—', duration: 0, price: 0 };
   const finalName    = meta.name  || '';
   const finalEmail   = meta.email || '';
   const finalDate    = meta.date  || '';
@@ -3363,8 +3375,8 @@ async function handleEdit(req: VercelRequest, res: VercelResponse, auth: { user:
   let nb: number | undefined;
   if (numBailarinas !== undefined && numBailarinas !== null && String(numBailarinas) !== '') {
     nb = Number(numBailarinas);
-    if (!Number.isInteger(nb) || nb < 1 || nb > 9) {
-      return res.status(400).json({ error: 'Nº Bailarinas deve ser um inteiro entre 1 e 9' });
+    if (!Number.isInteger(nb) || nb < 1 || nb > 99) {
+      return res.status(400).json({ error: 'Nº Bailarinas deve ser um inteiro entre 1 e 99' });
     }
   }
 
@@ -3419,7 +3431,7 @@ async function handlePaymentLink(req: VercelRequest, res: VercelResponse, auth: 
     return res.status(400).json({ error: 'Campos obrigatórios faltando' });
   }
 
-  const pkg = PACKAGES[packageKey];
+  const pkg = resolvePkg(packageKey);
   if (!pkg) return res.status(400).json({ error: 'Pacote inválido' });
 
   // Admin pode customizar valor (descontos). Em REAIS. Sanity igual ao handleCreate.
@@ -3623,7 +3635,7 @@ async function handleReschedule(req: VercelRequest, res: VercelResponse, auth: {
     return res.status(400).json({ error: 'Campos obrigatórios faltando' });
   }
 
-  const pkg = PACKAGES[packageKey as PkgKey];
+  const pkg = resolvePkg(packageKey);
   if (!pkg) return res.status(400).json({ error: 'Pacote inválido' });
 
   const endTime   = calcEnd(newTime, pkg.duration);
@@ -3736,7 +3748,7 @@ async function handleRegenerateSplitLink(req: VercelRequest, res: VercelResponse
   }
 
   const PACKAGES = getPackages();
-  const pkg = PACKAGES[packageKey];
+  const pkg = resolvePkg(packageKey);
   if (!pkg) return res.status(400).json({ error: 'Pacote inválido' });
 
   const nb = Number(numBailarinas) || 1;

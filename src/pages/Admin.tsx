@@ -78,15 +78,27 @@ function usePackages() {
   return getPackages();
 }
 const MAX_BAILARINAS: Record<string, number> = {
-  lembranca: 2, economico: 3, completo: 4,
-  'Lembrança': 2, 'Econômico': 3, 'Completo': 4,
+  lembranca: 2, economico: 3, completo: 4, especial: 99,   // especial: sem teto (freeform)
+  'Lembrança': 2, 'Econômico': 3, 'Completo': 4, 'Especial': 99,
 };
 
 const PKG_KEY: Record<string, string> = {
   'Lembrança': 'lembranca', 'lembranca': 'lembranca',
   'Econômico': 'economico', 'economico': 'economico',
   'Completo':  'completo',  'completo':  'completo',
+  'Especial':  'especial',  'especial':  'especial',
 };
+
+// Nome de exibição do pacote — a coluna "Pacote" guarda a key crua ('especial',
+// 'lembranca'…). Fallback: title-case. Usar em TODA exibição de pacote.
+const PKG_LABEL: Record<string, string> = {
+  lembranca: 'Lembrança', economico: 'Econômico', completo: 'Completo', especial: 'Especial',
+};
+function pkgLabel(pkg?: string): string {
+  const k = (pkg ?? '').trim();
+  return PKG_LABEL[k] || (k ? k.charAt(0).toUpperCase() + k.slice(1) : '—');
+}
+const isEspecialPkg = (pkg?: string) => PKG_KEY[(pkg ?? '').trim()] === 'especial';
 
 const STATUS_COLOR: Record<string, string> = {
   Confirmado:    'bg-green-100 text-green-700 border-green-200',
@@ -291,6 +303,25 @@ function RescheduleModal({
   }, [newDate, pkgKey]);
 
   const today = new Date().toISOString().split('T')[0];
+
+  // Especial: o remarcar padrão recria+confirma o agendamento, o que destruiria o
+  // split de pagadores e a duração custom. Bloqueado até haver um fluxo dedicado.
+  if (isEspecialPkg(booking.package)) {
+    return (
+      <Overlay onClose={onClose}>
+        <h2 className="text-lg font-bold text-[#352D39] mb-2">Remarcar Especial</h2>
+        <p className="text-sm text-gray-600 mb-4">
+          O remarcar automático não é compatível com o pacote Especial — ele recriaria o
+          agendamento e perderia os pagadores e a duração personalizada.
+        </p>
+        <p className="text-sm text-gray-600 mb-5">
+          Para mover <strong>{booking.name}</strong> ({fmtDate(booking.date)} às {fmtTime(booking.start)}),
+          cancele este Especial e crie um novo com a data/hora desejada.
+        </p>
+        <button onClick={onClose} className="w-full py-2.5 rounded-lg bg-[#7a3f8f] text-white text-sm font-semibold">Entendi</button>
+      </Overlay>
+    );
+  }
 
   return (
     <Overlay onClose={onClose}>
@@ -788,11 +819,12 @@ function EditBookingModal({
   const [instagram,          setInstagram]          = useState(s(booking.instagram));
   const [instagramBailarina, setInstagramBailarina] = useState(s(booking.instagramBailarina));
   const [nomeBailarina,      setNomeBailarina]      = useState(s(booking.nomeBailarina));
-  const maxNb = MAX_BAILARINAS[booking.package] ?? 4;
+  const isEsp = isEspecialPkg(booking.package);
+  const maxNb = isEsp ? 999 : (MAX_BAILARINAS[booking.package] ?? 4);
   const initialNb = (() => {
     const n = Math.floor(Number(booking.numBailarinas));
     if (!Number.isFinite(n) || n < 1) return 1;
-    return Math.min(n, maxNb);
+    return Math.min(n, maxNb);   // especial: maxNb=999, não trunca grupos grandes
   })();
   const [numBailarinas, setNumBailarinas] = useState<number>(initialNb);
 
@@ -807,9 +839,9 @@ function EditBookingModal({
           <Pencil size={16} className="text-white" />
         </div>
         <div>
-          <h2 className="text-base font-bold text-[#352D39]">Editar Agendamento</h2>
+          <h2 className="text-base font-bold text-[#352D39]">Editar {isEsp ? 'Especial' : 'Agendamento'}</h2>
           <p className="text-xs text-gray-400">
-            {fmtDate(booking.date)} · {fmtTime(booking.start)}–{fmtTime(booking.end)} · {booking.package}
+            {fmtDate(booking.date)} · {fmtTime(booking.start)}–{fmtTime(booking.end)} · {pkgLabel(booking.package)}
           </p>
         </div>
       </div>
@@ -856,16 +888,25 @@ function EditBookingModal({
             />
           </div>
           <div>
-            <label className="block text-xs font-semibold text-gray-600 mb-1 uppercase tracking-wide">Nº Bailarinas * (máx {MAX_BAILARINAS[booking.package] ?? 4})</label>
-            <select
-              className="w-full border border-gray-200 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-purple-200 bg-white"
-              value={numBailarinas}
-              onChange={e => setNumBailarinas(parseInt(e.target.value, 10) || 1)}
-            >
-              {Array.from({ length: MAX_BAILARINAS[booking.package] ?? 4 }, (_, i) => i + 1).map(n => (
-                <option key={n} value={n}>{n}</option>
-              ))}
-            </select>
+            <label className="block text-xs font-semibold text-gray-600 mb-1 uppercase tracking-wide">Nº Bailarinas *{isEsp ? '' : ` (máx ${MAX_BAILARINAS[booking.package] ?? 4})`}</label>
+            {isEsp ? (
+              <input
+                type="number" min={1}
+                className="w-full border border-gray-200 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-purple-200 bg-white"
+                value={numBailarinas}
+                onChange={e => setNumBailarinas(parseInt(e.target.value, 10) || 1)}
+              />
+            ) : (
+              <select
+                className="w-full border border-gray-200 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-purple-200 bg-white"
+                value={numBailarinas}
+                onChange={e => setNumBailarinas(parseInt(e.target.value, 10) || 1)}
+              >
+                {Array.from({ length: MAX_BAILARINAS[booking.package] ?? 4 }, (_, i) => i + 1).map(n => (
+                  <option key={n} value={n}>{n}</option>
+                ))}
+              </select>
+            )}
           </div>
           <div className="col-span-3">
             <label className="block text-xs font-semibold text-gray-600 mb-1 uppercase tracking-wide">Instagram da bailarina</label>
@@ -1536,8 +1577,11 @@ function TimelineView({
                     const em     = timeToMins(b.end)   - DAY_FROM * 60;
                     const top    = (sm / 15) * slotPx + 1;
                     const height = Math.max((em - sm) / 15 * slotPx - 2, 18);
-                    const cls    = (b.status ?? '').trim() === 'Confirmado'
+                    const st     = (b.status ?? '').trim();
+                    const cls    = st === 'Confirmado'
                       ? 'bg-green-100 border-green-300 text-green-800'
+                      : st === 'Pago Parcial'
+                      ? 'bg-blue-100 border-blue-300 text-blue-800'
                       : 'bg-red-100 border-red-300 text-red-800';
                     return (
                       <button key={b.id}
@@ -1559,6 +1603,7 @@ function TimelineView({
       <div className="flex gap-4 mt-3 text-xs text-gray-400">
         <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-sm bg-green-300" />Confirmado</span>
         <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-sm bg-red-300" />Pendente</span>
+        <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-sm bg-blue-300" />Pago parcial</span>
       </div>
 
       {/* Detail card */}
@@ -1568,7 +1613,7 @@ function TimelineView({
             <div>
               <p className="font-semibold text-sm text-[#352D39]">{sel.name}</p>
               <p className="text-xs text-gray-500 mt-0.5">
-                {fmtDate(sel.date)} · {fmtTime(sel.start)}–{fmtTime(sel.end)} · {sel.package}
+                {fmtDate(sel.date)} · {fmtTime(sel.start)}–{fmtTime(sel.end)} · {pkgLabel(sel.package)}
               </p>
               {sel.email              && <p className="text-xs text-gray-400 mt-0.5">{sel.email}</p>}
               {sel.whatsapp           && <p className="text-xs text-gray-400">{sel.whatsapp}</p>}
@@ -1662,7 +1707,7 @@ function BookingCard({
       <div className="flex items-start justify-between gap-2">
         <div>
           <p className="font-semibold text-sm text-[#352D39]">{booking.name}</p>
-          <p className="text-xs text-gray-500 mt-0.5">{fmtTime(booking.start)} – {fmtTime(booking.end)} · {booking.package}</p>
+          <p className="text-xs text-gray-500 mt-0.5">{fmtTime(booking.start)} – {fmtTime(booking.end)} · {pkgLabel(booking.package)}</p>
           {booking.email              && <p className="text-xs text-gray-400 mt-0.5">{booking.email}</p>}
           {booking.whatsapp           && <p className="text-xs text-gray-400">{booking.whatsapp}</p>}
           {booking.instagram          && <p className="text-xs text-gray-400">📷 {booking.instagram}</p>}
@@ -1782,6 +1827,7 @@ function BookingList({
           <option value="">Todos os status</option>
           <option>Confirmado</option>
           <option>Pendente</option>
+          <option>Pago Parcial</option>
           <option>Cancelado</option>
         </select>
         <input
@@ -1823,7 +1869,7 @@ function BookingList({
                   {b.email && <p className="text-xs text-gray-400">{b.email}</p>}
                   {b.whatsapp && <p className="text-xs text-gray-400">{b.whatsapp}</p>}
                 </td>
-                <td className="px-4 py-3 text-gray-600">{b.package}</td>
+                <td className="px-4 py-3 text-gray-600">{pkgLabel(b.package)}</td>
                 <td className="px-4 py-3 text-gray-600">
                   {b.price != null ? `R$ ${Number(b.price).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : '—'}
                 </td>
@@ -2315,7 +2361,7 @@ function Dashboard({
 
   const norm = (s?: string) => (s ?? '').trim().toLowerCase();
   const confirmed = bookings.filter(b => norm(b.status) === 'confirmado').length;
-  const pending   = bookings.filter(b => norm(b.status) === 'pendente').length;
+  const pending   = bookings.filter(b => ['pendente','pago parcial'].includes(norm(b.status))).length;
   const cancelled = bookings.filter(b => norm(b.status) === 'cancelado').length;
   const expired   = bookings.filter(b => norm(b.status) === 'expirado').length;
 
