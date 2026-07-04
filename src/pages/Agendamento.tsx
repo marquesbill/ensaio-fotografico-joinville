@@ -1,7 +1,6 @@
 import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { CheckCircle, ChevronLeft, ChevronRight, Clock, Calendar, User, Loader2, AlertCircle, Sun, Sunset, Moon } from 'lucide-react';
-import { initMercadoPago, Payment } from '@mercadopago/sdk-react';
 import { track, initSessionContext, trackScrollDepth, trackTimeOnPage } from '../lib/analytics';
 import { currentTierPrices, usePriceTierTick, type PkgKey } from '../lib/pricing';
 import { isValidPhoneBR, phoneDigits } from '../lib/phone';
@@ -166,7 +165,6 @@ export default function Agendamento() {
   const [formErrors, setFormErrors]   = useState({ nome: '', email: '', whatsapp: '', numBailarinas: '' });
   const [submitting, setSubmitting]   = useState(false);
   const [submitError, setSubmitError] = useState('');
-  const [preferenceId, setPreferenceId] = useState<string | null>(null);
 
   const dates = allDates();
   const PACKAGES = usePackages();
@@ -258,11 +256,6 @@ export default function Agendamento() {
     }));
   }
 
-  // Initialise MP SDK once (idempotent)
-  useEffect(() => {
-    initMercadoPago(import.meta.env.VITE_MP_PUBLIC_KEY as string, { locale: 'pt-BR' });
-  }, []);
-
   async function handleCheckout() {
     if (!validateForm()) {
       track.event('agendamento_checkout_validation_blocked');
@@ -308,85 +301,19 @@ export default function Agendamento() {
         throw new Error(data.error || 'Esse horário não está mais disponível.');
       }
       if (data.error) throw new Error(data.error);
-      track.event('agendamento_checkout_preference_created');
+      // Fluxo novo: o site NÃO cria pagamento — envia a solicitação pra Mari
+      // (e-mail com o relatório) e mostra a tela de sucesso. O agendamento
+      // real (com link de pagamento) é feito pela equipe via painel admin.
+      track.event('agendamento_solicitacao_enviada');
       track.upgrade('checkout_reached');
       track.tag('reached_checkout', 'true');
-
-      // Gateway-specific routing:
-      //  - ASAAS: backend retorna { paymentLinkUrl } → redireciona pra página hospedada
-      //  - MP:    backend retorna { preferenceId }   → renderiza Brick no step 5
-      if (data.paymentLinkUrl) {
-        track.tag('payment_gateway', 'asaas');
-        window.location.href = data.paymentLinkUrl;
-        return;
-      }
-      track.tag('payment_gateway', 'mp');
-      setPreferenceId(data.preferenceId);
       setStep(5);
     } catch (e: unknown) {
       track.event('agendamento_checkout_error');
       track.tag('checkout_error_message', String((e instanceof Error ? e.message : e) || 'unknown').slice(0, 100));
-      setSubmitError(e instanceof Error ? e.message : 'Erro ao criar sessão de pagamento.');
+      setSubmitError(e instanceof Error ? e.message : 'Erro ao enviar sua solicitação.');
     } finally {
       setSubmitting(false);
-    }
-  }
-
-  async function handlePaymentSubmit(formData: Record<string, unknown>) {
-    if (!pkg || !selectedDate || !selectedTime || !preferenceId) return;
-    const paymentType = String((formData as { payment_type_id?: string; paymentMethodId?: string }).payment_type_id || (formData as { paymentMethodId?: string }).paymentMethodId || 'unknown');
-    track.event('payment_submit_attempt');
-    track.tag('payment_method', paymentType);
-    // GA4 add_payment_info (recommended event)
-    if (selectedPkg) {
-      track.ecommerce('add_payment_info', {
-        item_id: selectedPkg.key, item_name: `Pacote ${selectedPkg.name}`, price: selectedPkg.price,
-        payment_type: paymentType,
-      });
-    }
-    try {
-      const res = await fetch('/api/process-payment', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          formData,
-          preferenceId,
-          date: selectedDate, time: selectedTime, packageKey: pkg,
-          name: form.nome, email: form.email, whatsapp: form.whatsapp, instagram: form.instagram,
-          numBailarinas: form.numBailarinas,
-        }),
-      });
-      const data = await res.json();
-      if (data.error) throw new Error(data.error);
-      if (data.status === 'approved') {
-        track.event('payment_approved');
-        track.tag('payment_status', 'approved');
-        track.upgrade('payment_approved');
-        if (window.fbq) window.fbq('track', 'Purchase', { value: selectedPkg?.price || 0, currency: 'BRL' });
-        // GA4 purchase com transaction_id (necessário para deduplicação)
-        if (selectedPkg) {
-          const txId = String((data as { id?: string; bookingId?: string }).id || (data as { bookingId?: string }).bookingId || `${Date.now()}-${selectedPkg.key}`);
-          track.ecommerce('purchase', {
-            item_id: selectedPkg.key, item_name: `Pacote ${selectedPkg.name}`, price: selectedPkg.price,
-            transaction_id: txId, payment_type: paymentType,
-          });
-        }
-        window.location.href = '/agendamento/sucesso';
-      } else if (data.status === 'pending') {
-        track.event('payment_pending');
-        track.tag('payment_status', 'pending');
-        track.upgrade('payment_pending');
-        // PIX or boleto — success page handles pending too
-        window.location.href = '/agendamento/sucesso';
-      } else {
-        throw new Error('Pagamento recusado. Verifique os dados e tente novamente.');
-      }
-    } catch (e: unknown) {
-      track.event('payment_error');
-      track.tag('payment_status', 'rejected');
-      track.tag('payment_error_message', String((e instanceof Error ? e.message : e) || 'unknown').slice(0, 100));
-      track.upgrade('payment_failed');
-      throw e; // re-throw so the Brick shows its own error state
     }
   }
 
@@ -794,7 +721,7 @@ export default function Agendamento() {
                     className="flex-1 py-3 rounded-full font-bold text-white disabled:opacity-40 transition-all flex items-center justify-center gap-2"
                     style={{ background: 'linear-gradient(135deg,#7a3f8f,#e87060)' }}
                     whileTap={{ scale: 0.98 }}>
-                    {submitting ? <><Loader2 className="w-4 h-4 animate-spin" /> Aguarde…</> : <>Ir para pagamento</>}
+                    {submitting ? <><Loader2 className="w-4 h-4 animate-spin" /> Aguarde…</> : <>Quero agendar!</>}
                   </motion.button>
                 </div>
 
@@ -805,50 +732,26 @@ export default function Agendamento() {
             </motion.div>
           )}
 
-          {/* ── Step 5: Payment Brick ── */}
-          {step === 5 && preferenceId && selectedPkg && (
+          {/* ── Step 5: solicitação enviada (o agendamento real é feito pela equipe) ── */}
+          {step === 5 && (
             <motion.div key="step5"
               initial={{ opacity: 0, x: 40 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -40 }}
-              className="w-full max-w-lg mx-auto"
+              className="w-full max-w-lg mx-auto text-center"
             >
-              <h2 className="font-headline text-2xl font-black text-on-surface mb-1">Pagamento</h2>
-              <p className="text-sm text-on-surface-variant mb-6">
-                {selectedPkg.name} · {selectedDate ? selectedDate.split('-').reverse().join('/') : ''} às {selectedTime}
+              <CheckCircle className="w-16 h-16 text-primary mx-auto mb-4" />
+              <h2 className="font-headline text-3xl font-black text-on-surface mb-3">Pedido enviado!</h2>
+              <p className="text-on-surface-variant leading-relaxed mb-2">
+                Recebemos sua solicitação de agendamento{selectedPkg ? <> do pacote <strong className="text-on-surface">{selectedPkg.name}</strong></> : ''}
+                {selectedDate ? <> para <strong className="text-on-surface">{selectedDate.split('-').reverse().join('/')}</strong></> : ''}
+                {selectedTime ? <> às <strong className="text-on-surface">{selectedTime}</strong></> : ''}.
               </p>
-
-              <div className="bg-white rounded-2xl shadow-lg overflow-hidden">
-                <Payment
-                  initialization={{
-                    amount: selectedPkg.price,
-                    preferenceId,
-                  }}
-                  customization={{
-                    paymentMethods: {
-                      creditCard: 'all',
-                      debitCard:  'all',
-                      ticket:     'all',
-                      bankTransfer: 'all',
-                      maxInstallments: 6,
-                    },
-                    visual: {
-                      style: {
-                        theme: 'default',
-                      },
-                    },
-                  }}
-                  onSubmit={async ({ formData }) => {
-                    await handlePaymentSubmit(formData as Record<string, unknown>);
-                  }}
-                  onError={(error) => {
-                    console.error('[Payment Brick]', error);
-                  }}
-                />
-              </div>
-
-              <button onClick={() => setStep(4)}
-                className="mt-4 w-full py-2 text-sm text-on-surface-variant hover:text-on-surface transition-colors flex items-center justify-center gap-1">
-                <ChevronLeft className="w-4 h-4" /> Voltar e alterar dados
-              </button>
+              <p className="text-on-surface-variant leading-relaxed mb-8">
+                Entraremos em contato pelo <strong className="text-on-surface">WhatsApp</strong> o mais rápido
+                possível para combinar todos os detalhes. 💜
+              </p>
+              <a href="/" className="inline-block px-8 py-3 rounded-full bg-primary text-white font-bold hover:opacity-90 transition-opacity">
+                Voltar ao início
+              </a>
             </motion.div>
           )}
         </AnimatePresence>
