@@ -407,7 +407,7 @@ export default function App() {
               style={{ y: heroDateY, color: '#f7f9ff', textShadow: '0 1px 2px rgba(0,0,0,0.85), 0 2px 14px rgba(0,0,0,0.55)' }}
               className="flex items-center gap-2 text-sm md:text-base font-bold"
             >
-              ✨ Sem limites de poses e tentativas no ensaio escolhido
+              Sem limites de poses e tentativas no ensaio escolhido
             </motion.p>
             <motion.p
               variants={fadeIn}
@@ -600,7 +600,7 @@ export default function App() {
           </motion.h2>
           <ul className="space-y-4">
             {[
-              "Material exclusivo com orientações para seu ensaio",
+              "Material criado por nossa equipe",
               "Imagens de referências para planejar suas poses",
               "Direção artística durante a sessão",
               "Suporte de uma professora especializada para te auxiliar e corrigir nas poses",
@@ -729,7 +729,7 @@ export default function App() {
                 </li>
                 <li className="flex items-center gap-3 text-sm font-medium">
                   <CheckCircle className="text-primary w-5 h-5" />
-                  ≈ 5 fotos aprovadas e editadas
+                  ≈ 5 fotos editadas
                 </li>
                 <li className="flex items-center gap-3 text-sm font-medium">
                   <CheckCircle className="text-primary w-5 h-5" />
@@ -782,7 +782,7 @@ export default function App() {
                 </li>
                 <li className="flex items-center gap-3 text-sm font-bold">
                   <CheckCircle className="text-primary w-5 h-5" />
-                  ≈ 12 fotos aprovadas e editadas
+                  ≈ 12 fotos editadas
                 </li>
                 <li className="flex items-center gap-3 text-sm font-bold">
                   <CheckCircle className="text-primary w-5 h-5" />
@@ -834,7 +834,7 @@ export default function App() {
                 </li>
                 <li className="flex items-center gap-3 text-sm font-medium">
                   <CheckCircle className="text-primary w-5 h-5" />
-                  ≈ 25 fotos aprovadas e editadas
+                  ≈ 25 fotos editadas
                 </li>
                 <li className="flex items-center gap-3 text-sm font-medium">
                   <CheckCircle className="text-primary w-5 h-5" />
@@ -1257,7 +1257,7 @@ export default function App() {
               { q: "Quanto tempo dura o ensaio?", a: "Nossos ensaios duram entre 30 a 120 minutos, dependendo do pacote escolhido." },
               { q: "O que eu vou receber?", a: (
                 <ul className="list-disc pl-4 space-y-1">
-                  <li>Material exclusivo com orientações para seu ensaio</li>
+                  <li>Material criado por nossa equipe</li>
                   <li>Imagens de referências para planejar suas poses</li>
                   <li>Direção artística durante a sessão</li>
                   <li>Suporte de uma professora especializada para te auxiliar e corrigir nas poses</li>
