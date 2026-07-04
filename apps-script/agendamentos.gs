@@ -2093,10 +2093,16 @@ function doGet(e) {
         const splitCsv  = function(v) {
           return String(v || '').split(',').map(function(s) { return s.trim(); }).filter(function(s) { return !!s; });
         };
+        // fmt* defensivos: uma célula de data/hora gravada como NÚMERO (não Date/string)
+        // fazia Utilities.formatDate/.toISOString() estourar — e isso derrubava a lista
+        // INTEIRA (action=bookings devolvia HTML de erro, painel quebrava). Agora célula
+        // ruim vira String(v) e a linha ruim (qualquer throw) vira objeto mínimo, nunca
+        // deixando UMA linha corromper todo o carregamento do admin.
+        var fmtDate = function(v) { try { return v ? (typeof v === 'string' ? v : Utilities.formatDate(v, TZ, 'yyyy-MM-dd')) : ''; } catch (e) { return String(v); } };
+        var fmtTime = function(v) { try { return v ? (typeof v === 'string' ? v : Utilities.formatDate(v, TZ, 'HH:mm')) : ''; } catch (e) { return String(v); } };
+        var fmtIso  = function(v) { try { return v ? (typeof v === 'string' ? v : (v && v.toISOString ? v.toISOString() : String(v))) : ''; } catch (e) { return String(v); } };
         result = sa.getRange(2, 1, sa.getLastRow() - 1, numCols).getValues().map(function(r) {
-          var fmtDate = function(v) { return v ? (typeof v === 'string' ? v : Utilities.formatDate(v, TZ, 'yyyy-MM-dd')) : ''; };
-          var fmtTime = function(v) { return v ? (typeof v === 'string' ? v : Utilities.formatDate(v, TZ, 'HH:mm')) : ''; };
-          var fmtIso  = function(v) { return v ? (typeof v === 'string' ? v : v.toISOString()) : ''; };
+          try {
           // Multi-pagador: expõe lista de sessions + lista pagas + nomes pra UI
           // mostrar "2/4 pagos", nome por pagador e botão "regerar".
           var sessions  = splitCsv(r[iSession]);
@@ -2129,6 +2135,11 @@ function doGet(e) {
             status:              r[iStatus],
             createdAt:           fmtIso(r[iCreated]),
           };
+          } catch (rowErr) {
+            // Linha malformada não pode derrubar a lista toda — devolve o mínimo pra UI.
+            return { id: String(r[iId] || ''), name: String(r[iNome] || ''), status: r[iStatus],
+                     package: r[iPkg], date: '', start: '', end: '', _rowError: String(rowErr) };
+          }
         });
       }
     } else if (action === 'getPendingForReminders') {
