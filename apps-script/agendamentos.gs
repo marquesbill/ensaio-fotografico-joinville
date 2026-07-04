@@ -136,7 +136,7 @@ function initSheets() {
     'ID','Data','Início','Fim','Pacote','Duração (min)','Valor (R$)',
     'Nome','E-mail','WhatsApp','Instagram Cliente','Instagram Bailarina','Nome Bailarina','Nº Bailarinas',
     'Stripe Session','Stripe Payment','Status','Criado em','Atualizado em',
-    'Rem1Sent','Rem2Sent','Rem3Sent','AndreNotified','ExpiryWarnSent','Source','Sessões Pagas','Nomes Pagadores','Valores Pagadores','Links Pagadores'
+    'Rem1Sent','Rem2Sent','Rem3Sent','AndreNotified','ExpiryWarnSent','Source','Sessões Pagas','Nomes Pagadores','Valores Pagadores','Links Pagadores','Emails Pagadores'
   ];
   ensureSheet('Agendamentos', agHeaders, '#4CAF50');
   ensureSheet('Bloqueios',    ['Data','Início','Fim','Motivo'],                '#FF9800');
@@ -755,7 +755,7 @@ function _ensureColumn(sa, headerName) {
 function createPending(data) {
   const { date, start, packageKey, name, email, whatsapp,
           instagram, instagramBailarina, nomeBailarina, numBailarinas,
-          stripeSession, source, customValue, payerNames, payerValues, payerUrls } = data;
+          stripeSession, source, customValue, payerNames, payerValues, payerUrls, payerEmails } = data;
 
   const isEspecial = packageKey === 'especial';
 
@@ -809,6 +809,7 @@ function createPending(data) {
   _ensureColumn(sa, 'Nomes Pagadores');
   _ensureColumn(sa, 'Valores Pagadores');   // valor cobrado de cada pagador (paralelo aos nomes)
   _ensureColumn(sa, 'Links Pagadores');     // URL de pagamento de cada pagador (p/ página pública)
+  _ensureColumn(sa, 'Emails Pagadores');    // e-mail de cada pagador (paralelo aos nomes) — Especial
   const cm = _colMap(sa);
 
   // payerNames pode chegar como array ou string comma-separated — normaliza pra
@@ -825,6 +826,10 @@ function createPending(data) {
   const payerUrlsCsv = Array.isArray(payerUrls)
     ? payerUrls.map(function(u) { return String(u || ''); }).join('|')
     : String(payerUrls || '');
+  // E-mails dos pagadores (1 por pagador, mesma ordem). CSV — e-mail não tem vírgula.
+  const payerEmailsCsv = Array.isArray(payerEmails)
+    ? payerEmails.map(function(e) { return String(e || '').trim(); }).join(',')
+    : String(payerEmails || '');
 
   // Monta a linha header-by-header — funciona com schema antigo ou novo.
   const numCols = Math.max(sa.getLastColumn(), 23);
@@ -856,6 +861,7 @@ function createPending(data) {
   set('Nomes Pagadores',       payerNamesCsv);
   set('Valores Pagadores',     payerValuesCsv);
   set('Links Pagadores',       payerUrlsCsv);
+  set('Emails Pagadores',      payerEmailsCsv);
 
   sa.appendRow(newRow);
 
@@ -919,9 +925,16 @@ function confirmBooking(data) {
 
   // Nomes dos pagadores (paralelo a "Stripe Session" por posição). Permite
   // dizer "Ana pagou (2/4) · falta Bruna, Carla" no e-mail parcial pra Mari.
-  const payerNames = splitCsv(_val(row, cm, 'Nomes Pagadores'));
+  const payerNames  = splitCsv(_val(row, cm, 'Nomes Pagadores'));
+  // Emails/valores dos pagadores (paralelos a "Stripe Session"). Especial: o webhook
+  // usa isto pra mandar "sua parte confirmada" pra quem pagou e "ensaio confirmado"
+  // pra todos. splitCsv preserva posição (não filtra vazios? filtra — mas p/ Especial
+  // e-mail é obrigatório, então todas as posições vêm preenchidas).
+  const payerEmails = splitCsv(_val(row, cm, 'Emails Pagadores'));
+  const payerValues = splitCsv(_val(row, cm, 'Valores Pagadores'));
   const thisPos    = totalSessions.indexOf(stripeSession);
-  const thisPayerName = (thisPos >= 0 && payerNames[thisPos]) ? payerNames[thisPos] : '';
+  const thisPayerName  = (thisPos >= 0 && payerNames[thisPos])  ? payerNames[thisPos]  : '';
+  const thisPayerEmail = (thisPos >= 0 && payerEmails[thisPos]) ? payerEmails[thisPos] : '';
 
   // Resposta-base reusada nos retornos abaixo
   const baseReturn = {
@@ -933,10 +946,16 @@ function confirmBooking(data) {
     email:            _val(row, cm, 'E-mail',   8),
     whatsapp:         _val(row, cm, 'WhatsApp', 9),
     package:          _val(row, cm, 'Pacote',   4),
+    duration:         Number(_val(row, cm, 'Duração (min)')) || 0,
     numBailarinas:    Number(_val(row, cm, 'Nº Bailarinas')) || 1,
     valor:            parseFloat(_val(row, cm, 'Valor (R$)', 6)) || 0,
     totalSessions:    totalCount,
     paidPayerName:    thisPayerName,
+    paidPayerEmail:   thisPayerEmail,
+    isEspecial:       String(_val(row, cm, 'Pacote', 4)).toLowerCase() === 'especial',
+    payerNames:       payerNames,
+    payerEmails:      payerEmails,
+    payerValues:      payerValues,
   };
 
   // ── Guarda: booking CANCELADO ────────────────────────────────
@@ -2090,6 +2109,7 @@ function doGet(e) {
         const iCreated  = ci['Criado em']            ?? (iInsta === -1 ? 13 : 16);
         const iPaidSes  = ci['Sessões Pagas']        ?? -1;
         const iPayerNm  = ci['Nomes Pagadores']      ?? -1;
+        const iPayerEm  = ci['Emails Pagadores']     ?? -1;
         const splitCsv  = function(v) {
           return String(v || '').split(',').map(function(s) { return s.trim(); }).filter(function(s) { return !!s; });
         };
@@ -2112,6 +2132,9 @@ function doGet(e) {
           var payerNames = iPayerNm >= 0
             ? String(r[iPayerNm] || '').split(',').map(function(s) { return s.trim(); })
             : [];
+          var payerEmails = iPayerEm >= 0
+            ? String(r[iPayerEm] || '').split(',').map(function(s) { return s.trim(); })
+            : [];
           return {
             id:                  r[iId],
             date:                fmtDate(r[iDate]),
@@ -2130,6 +2153,7 @@ function doGet(e) {
             stripeSessions:      sessions,       // array (1 ou N elementos)
             paidSessions:        paidList,       // array (subset de stripeSessions)
             payerNames:          payerNames,     // array paralelo a stripeSessions
+            payerEmails:         payerEmails,    // idem (Especial) — só admin vê
             splitCount:          sessions.length,
             paidCount:           paidList.length,
             status:              r[iStatus],

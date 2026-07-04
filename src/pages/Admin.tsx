@@ -23,6 +23,7 @@ interface Booking {
   stripeSessions?:      string[]; // expandido pela API (1 ou N elementos)
   paidSessions?:        string[]; // subset de stripeSessions que pagaram
   payerNames?:          string[]; // nome de cada pagador (paralelo a stripeSessions)
+  payerEmails?:         string[]; // e-mail de cada pagador (Especial) — só admin vê
   splitCount?:          number;   // = stripeSessions.length
   paidCount?:           number;   // = paidSessions.length
   status:               string;   // "Confirmado" | "Pendente" | "Cancelado" | "Pago Parcial"
@@ -981,7 +982,7 @@ function NewEspecialModal({
   onClose, onSubmit, loading,
 }: {
   onClose: () => void;
-  onSubmit: (data: { name: string; email: string; whatsapp: string; instagram: string; instagramBailarina: string; nomeBailarina: string; numBailarinas: number; date: string; time: string; packageKey: string; durationMin?: number; payerNames?: string[]; payerValues?: number[] }, confirm: boolean, gateway?: 'mp' | 'asaas') => void;
+  onSubmit: (data: { name: string; email: string; whatsapp: string; instagram: string; instagramBailarina: string; nomeBailarina: string; numBailarinas: number; date: string; time: string; packageKey: string; durationMin?: number; payerNames?: string[]; payerValues?: number[]; payerEmails?: string[] }, confirm: boolean, gateway?: 'mp' | 'asaas') => void;
   loading: boolean;
 }) {
   const [gateway,  setGateway]  = useState<'mp' | 'asaas'>('asaas');
@@ -995,7 +996,7 @@ function NewEspecialModal({
   const [time,     setTime]     = useState('');
   const [slots,    setSlots]    = useState<string[]>([]);
   const [slotsLoading, setSlotsLoading] = useState(false);
-  const [payers,   setPayers]   = useState<Array<{ name: string; value: string }>>([{ name: '', value: '' }]);
+  const [payers,   setPayers]   = useState<Array<{ name: string; email: string; value: string }>>([{ name: '', email: '', value: '' }]);
 
   const durationMin = hours * 60 + minutes;
   const today = new Date().toISOString().split('T')[0];
@@ -1012,13 +1013,15 @@ function NewEspecialModal({
   }, [date, durationMin]);
 
   const total = payers.reduce((s, p) => s + (Number(p.value) || 0), 0);
-  const rowsOk = payers.length >= 1 && payers.every(p => p.name.trim() && Number(p.value) > 0);
+  // E-mail é OBRIGATÓRIO por pagador (a feature de avisos depende dele).
+  const emailOk = (e: string) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e.trim());
+  const rowsOk = payers.length >= 1 && payers.every(p => p.name.trim() && emailOk(p.email) && Number(p.value) > 0);
   const canSubmit = !!(name.trim() && email.trim() && date && time && durationMin > 0
                     && Number.isInteger(numBailarinas) && numBailarinas >= 1 && rowsOk);
 
-  const setPayer = (i: number, f: 'name' | 'value', v: string) =>
+  const setPayer = (i: number, f: 'name' | 'email' | 'value', v: string) =>
     setPayers(ps => ps.map((p, idx) => idx === i ? { ...p, [f]: v } : p));
-  const addPayer    = () => setPayers(ps => [...ps, { name: '', value: '' }]);
+  const addPayer    = () => setPayers(ps => [...ps, { name: '', email: '', value: '' }]);
   const removePayer = (i: number) => setPayers(ps => ps.length > 1 ? ps.filter((_, idx) => idx !== i) : ps);
 
   function submit() {
@@ -1029,6 +1032,7 @@ function NewEspecialModal({
       numBailarinas, date, time, packageKey: 'especial', durationMin,
       payerNames:  payers.map(p => p.name.trim()),
       payerValues: payers.map(p => Number(p.value)),
+      payerEmails: payers.map(p => p.email.trim()),
     }, false, gateway);
   }
 
@@ -1079,20 +1083,24 @@ function NewEspecialModal({
         {/* Pagadores — nome + valor por pessoa; total = soma */}
         <div className="border border-gray-200 rounded-xl p-3">
           <div className="flex items-center justify-between mb-2">
-            <span className="text-xs font-bold text-[#7a3f8f] uppercase tracking-wide">Pagadores (nome + valor)</span>
+            <span className="text-xs font-bold text-[#7a3f8f] uppercase tracking-wide">Pagadores (nome + e-mail + valor)</span>
             <span className="text-sm font-bold text-[#352D39]">Total: R$ {total.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
           </div>
           <div className="space-y-2">
             {payers.map((p, i) => (
-              <div key={i} className="flex gap-2 items-center">
-                <input className={inp + ' flex-1'} value={p.name} onChange={e => setPayer(i, 'name', e.target.value)} placeholder={`Pagador ${i + 1}`} />
-                <div className="relative w-28 shrink-0">
-                  <span className="absolute left-2 top-1/2 -translate-y-1/2 text-xs text-gray-400">R$</span>
-                  <input className={inp + ' pl-7'} type="number" min={0} step="0.01" value={p.value} onChange={e => setPayer(i, 'value', e.target.value)} placeholder="0,00" />
+              <div key={i} className="border border-gray-100 rounded-lg p-2 space-y-1.5 bg-gray-50/50">
+                <div className="flex gap-2 items-center">
+                  <input className={inp + ' flex-1'} value={p.name} onChange={e => setPayer(i, 'name', e.target.value)} placeholder={`Pagador ${i + 1}`} />
+                  <div className="relative w-28 shrink-0">
+                    <span className="absolute left-2 top-1/2 -translate-y-1/2 text-xs text-gray-400">R$</span>
+                    <input className={inp + ' pl-7'} type="number" min={0} step="0.01" value={p.value} onChange={e => setPayer(i, 'value', e.target.value)} placeholder="0,00" />
+                  </div>
+                  <button type="button" onClick={() => removePayer(i)} disabled={payers.length <= 1} className="p-2 text-gray-400 hover:text-red-500 disabled:opacity-30" title="Remover">
+                    <Trash2 size={15} />
+                  </button>
                 </div>
-                <button type="button" onClick={() => removePayer(i)} disabled={payers.length <= 1} className="p-2 text-gray-400 hover:text-red-500 disabled:opacity-30" title="Remover">
-                  <Trash2 size={15} />
-                </button>
+                <input className={inp + (p.email && !emailOk(p.email) ? ' border-red-300' : '')} type="email" value={p.email}
+                       onChange={e => setPayer(i, 'email', e.target.value)} placeholder="E-mail do pagador * (recebe o link e as confirmações)" />
               </div>
             ))}
           </div>
@@ -1338,6 +1346,7 @@ function SplitDetailsModal({
           const newUrl       = regenerated[sessId];
           const isRegenerating = regenerating === sessId;
           const payerName    = (booking.payerNames ?? [])[idx] || '';
+          const payerEmail   = (booking.payerEmails ?? [])[idx] || '';
           return (
             <div key={sessId} className={`border rounded-xl p-3 ${isPaid ? 'border-green-200 bg-green-50/50' : 'border-gray-200'}`}>
               <div className="flex items-center justify-between mb-1.5">
@@ -1353,6 +1362,9 @@ function SplitDetailsModal({
                   <span className="text-[10px] font-bold text-amber-700 bg-amber-100 px-2 py-0.5 rounded">⏳ AGUARDANDO</span>
                 )}
               </div>
+              {payerEmail && (
+                <p className="text-[10px] text-gray-500 mb-1 truncate" title={payerEmail}>✉ {payerEmail}</p>
+              )}
               <p className="text-[9px] text-gray-400 font-mono mb-2 truncate" title={sessId}>
                 ID: {sessId}
               </p>
@@ -2105,6 +2117,9 @@ function Dashboard({
           endTime:       booking.end,
           packageKey:    PKG_KEY[booking.package] ?? 'lembranca',
           numBailarinas: booking.numBailarinas ?? 1,
+          // Especial: avisa todos os pagadores do cancelamento (a API só manda se especial).
+          payerNames:    booking.payerNames ?? [],
+          payerEmails:   booking.payerEmails ?? [],
         }),
       });
       if (!r.ok) throw new Error((await r.json()).error || 'Erro');
@@ -2150,7 +2165,7 @@ function Dashboard({
   }
 
   async function handleCreateBooking(
-    data: { name: string; email: string; whatsapp: string; instagram: string; instagramBailarina: string; nomeBailarina: string; numBailarinas: number; date: string; time: string; packageKey: string; customValue?: number; splitCount?: number; payerNames?: string[]; durationMin?: number; payerValues?: number[] },
+    data: { name: string; email: string; whatsapp: string; instagram: string; instagramBailarina: string; nomeBailarina: string; numBailarinas: number; date: string; time: string; packageKey: string; customValue?: number; splitCount?: number; payerNames?: string[]; durationMin?: number; payerValues?: number[]; payerEmails?: string[] },
     confirm: boolean,
     gateway?: 'mp' | 'asaas',
   ) {

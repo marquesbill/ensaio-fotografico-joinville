@@ -1,5 +1,6 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { Resend } from 'resend';
+import { createHmac } from 'crypto';
 
 // ─── ASAAS decoder (inlined) ───────────────────────────────────
 // Decodifica o externalReference compacto (formato `v1|...`) que veio do
@@ -133,6 +134,68 @@ const MARIANE_EMAIL = 'mariane.sslourenco@gmail.com';
 const FROM_EMAIL    = 'Ensaio Joinville <confirmacao@ensaiofotograficoemjoinville.com>';
 
 const resend = new Resend(process.env.RESEND_API_KEY!);
+
+// ── Especial (multi-pagador): link do grupo + e-mails por pagador ──────────
+// INLINE (não importar de _*.ts — o bundler da Vercel não inclui). especialToken
+// e o builder abaixo são cópias em sincronia com api/admin-bookings.ts / especial.ts.
+const SITE_URL = process.env.SITE_URL || 'https://www.ensaiofotograficoemjoinville.com';
+const ESP_SECRET = process.env.ADMIN_SECRET || 'dev-secret-change-me';
+function especialToken(id: string): string {
+  return createHmac('sha256', ESP_SECRET).update('especial:' + id).digest('hex').slice(0, 24);
+}
+const ESPECIAL_VARIANT = {
+  partPaid:     { tag: 'Pagamento confirmado', color: '#0f7b3f', partLabel: 'Sua parte (paga)',
+                  intro: 'Recebemos o seu pagamento — a sua parte no ensaio está confirmada! Assim que todos do grupo pagarem, o ensaio é confirmado e você recebe a confirmação final.' },
+  allConfirmed: { tag: 'Ensaio confirmado', color: '#0f7b3f', partLabel: 'Sua parte',
+                  intro: 'Todos os pagadores do grupo concluíram o pagamento — o ensaio está confirmado! Nos vemos no dia. 💜' },
+};
+function buildEspecialEmailHtml(variant: 'partPaid' | 'allConfirmed', d: {
+  payerName: string; date: string; time: string; endTime: string; duration: number;
+  numBailarinas: number; partValue: string; groupUrl?: string; bookingId: string;
+}): string {
+  const cfg = ESPECIAL_VARIANT[variant];
+  const firstName = String(d.payerName || '').trim().split(/\s+/)[0] || 'você';
+  const row = (label: string, value: string) =>
+    `<tr><td style="padding:16px 0;border-bottom:1px solid #eee;"><p style="margin:0 0 4px;font-family:Georgia,serif;font-size:11px;letter-spacing:2px;text-transform:uppercase;color:#999;">${label}</p><p style="margin:0;font-family:Georgia,serif;font-size:16px;color:#1a1a1a;">${value}</p></td></tr>`;
+  const groupRow = d.groupUrl
+    ? `<tr><td style="padding:8px 40px 28px;text-align:center;border-top:1px solid #eee;"><p style="margin:0 0 8px;font-family:Georgia,serif;font-size:11px;letter-spacing:2px;text-transform:uppercase;color:#999;">Página do grupo</p><p style="margin:0;"><a href="${d.groupUrl}" style="color:#7a3f8f;text-decoration:none;font-size:13px;word-break:break-all;">${d.groupUrl}</a></p></td></tr>`
+    : '';
+  return `<!DOCTYPE html>
+<html lang="pt-BR"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${cfg.tag}</title></head>
+<body style="margin:0;padding:0;background:#f5f0fa;font-family:Georgia,'Cormorant Garamond','Times New Roman',serif;color:#1a1a1a;">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background:#f5f0fa;padding:32px 12px;">
+<tr><td align="center">
+<table role="presentation" width="600" cellpadding="0" cellspacing="0" border="0" style="max-width:600px;background:#ffffff;border-radius:6px;overflow:hidden;box-shadow:0 4px 24px rgba(0,0,0,0.06);">
+<tr><td style="line-height:0;"><img src="${HERO_IMG_URL}" alt="" width="600" style="display:block;width:100%;max-width:600px;height:auto;border:0;outline:none;text-decoration:none;"></td></tr>
+<tr><td style="padding:36px 40px 0;text-align:center;"><span style="display:inline-block;font-family:Georgia,'Times New Roman',serif;font-size:11px;letter-spacing:3px;text-transform:uppercase;color:${cfg.color};border:1px solid #e8d8f0;border-radius:30px;padding:6px 16px;">${cfg.tag}</span></td></tr>
+<tr><td style="padding:24px 40px 4px;text-align:center;"><p style="margin:0;font-family:Georgia,'Cormorant Garamond',serif;font-size:30px;line-height:1.2;color:#1a1a1a;font-weight:400;font-style:italic;">Olá, <strong style="font-weight:600;">${firstName}</strong>.</p></td></tr>
+<tr><td style="padding:18px 56px 28px;text-align:center;"><p style="margin:0;font-family:Georgia,serif;font-size:14px;line-height:1.65;color:#555;">${cfg.intro}</p></td></tr>
+<tr><td style="padding:0 40px 8px;"><table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="border-top:1px solid #eee;">
+${row('Data', fmtDateLong(d.date))}
+${row('Horário', `${d.time} — ${d.endTime}`)}
+${row('Duração', `${d.duration} minutos`)}
+${row('Grupo', `${d.numBailarinas} ${d.numBailarinas === 1 ? 'bailarina' : 'bailarinas'}`)}
+${d.partValue ? `<tr><td style="padding:16px 0;"><p style="margin:0 0 4px;font-family:Georgia,serif;font-size:11px;letter-spacing:2px;text-transform:uppercase;color:#999;">${cfg.partLabel}</p><p style="margin:0;font-family:Georgia,serif;font-size:18px;color:#7a3f8f;font-weight:600;">R$ ${d.partValue}</p></td></tr>` : ''}
+</table></td></tr>
+${groupRow}
+<tr><td style="padding:28px 40px 24px;text-align:center;border-top:1px solid #eee;"><p style="margin:0;font-family:Georgia,serif;font-size:13px;line-height:1.6;color:#666;">Dúvidas? Fale com a gente pelo</p><p style="margin:6px 0 0;"><a href="https://wa.me/5511519606272" style="color:#128C7E;text-decoration:none;font-weight:600;white-space:nowrap;">WhatsApp (11) 5196-0627</a></p></td></tr>
+<tr><td style="padding:0 40px 24px;text-align:center;"><p style="margin:0;font-family:Georgia,serif;font-size:10px;letter-spacing:2px;text-transform:uppercase;color:#bbb;">Código do ensaio · <span style="color:#777;font-family:monospace;letter-spacing:1px;">${d.bookingId}</span></p></td></tr>
+<tr><td style="padding:20px 40px 28px;text-align:center;background:#fafafa;border-top:1px solid #eee;"><p style="margin:0;font-family:Georgia,serif;font-size:12px;color:#999;">© 2026 André Ferreira Fotografia</p><p style="margin:4px 0 0;font-family:Georgia,serif;font-size:12px;"><a href="https://www.instagram.com/affotografia" style="color:#7a3f8f;text-decoration:none;">@affotografia</a></p></td></tr>
+</table></td></tr></table></body></html>`;
+}
+// Envia e-mails do Especial em série (Resend 2/s) com BCC André+Mari. Não lança.
+async function sendEspecialEmails(sends: Array<{ to: string; subject: string; html: string }>): Promise<void> {
+  for (const s of sends) {
+    if (!s.to) continue;
+    try {
+      const { error } = await resend.emails.send({
+        from: FROM_EMAIL, to: s.to, bcc: [ANDRE_EMAIL, MARIANE_EMAIL], subject: s.subject, html: s.html,
+      });
+      if (error) console.error('[webhook] Resend especial error', s.to, error);
+    } catch (e) { console.error('[webhook] Resend especial throw', s.to, e); }
+    await new Promise(r => setTimeout(r, 550));
+  }
+}
 
 // Throttle de alertas operacionais (por instância warm): evita email-bomb —
 // um atacante anônimo num endpoint público não pode transformar cada request
@@ -439,6 +502,14 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   let totalSessions = 1;
   let paidPayerName = '';            // nome do pagador que acabou de pagar
   let pendingPayerNames: string[] = []; // nomes que ainda faltam pagar
+  // Especial: dados p/ e-mails por pagador (sua parte confirmada / ensaio confirmado).
+  let paidPayerEmail = '';
+  let isEspecial     = false;
+  let espEnd         = '';
+  let espDuration    = 0;
+  let espPayerNames:  string[] = [];
+  let espPayerEmails: string[] = [];
+  let espPayerValues: string[] = [];
   for (let attempt = 1; attempt <= 3; attempt++) {
     try {
       const r = await fetch(SCRIPT_URL, {
@@ -461,8 +532,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         bookingId?: string; alreadyConfirmed?: boolean; fullyConfirmed?: boolean;
         paidCount?: number; totalSessions?: number;
         paidPayerName?: string; pendingPayerNames?: string[];
-        date?: string; start?: string; name?: string; email?: string;
+        date?: string; start?: string; end?: string; name?: string; email?: string;
         whatsapp?: string; package?: string; numBailarinas?: number; valor?: number;
+        paidPayerEmail?: string; isEspecial?: boolean; duration?: number;
+        payerNames?: string[]; payerEmails?: string[]; payerValues?: string[];
       };
       // Apps Script devolve erros como HTTP 200 + {error} (ContentService não
       // controla o status) — ex.: 'Session não encontrada'. Sem essa checagem,
@@ -477,6 +550,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       totalSessions    = json.totalSessions || 1;
       paidPayerName    = json.paidPayerName || '';
       pendingPayerNames = Array.isArray(json.pendingPayerNames) ? json.pendingPayerNames : [];
+      paidPayerEmail   = json.paidPayerEmail || '';
+      isEspecial       = json.isEspecial === true;
+      espEnd           = json.end || '';
+      espDuration      = Number(json.duration) || 0;
+      espPayerNames    = Array.isArray(json.payerNames)  ? json.payerNames  : [];
+      espPayerEmails   = Array.isArray(json.payerEmails) ? json.payerEmails : [];
+      espPayerValues   = Array.isArray(json.payerValues) ? json.payerValues : [];
       // confirmBooking lê a linha da planilha — fonte autoritativa da meta.
       // Sobrescreve o fallback (essencial pro Checkout ASAAS, que vem sem ref).
       if (json.date)          meta.date          = json.date;
@@ -593,33 +673,85 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     } catch (e) {
       console.error('[webhook] Resend Mari (partial) error', e);
     }
+    // Especial: o pagador que acabou de pagar recebe "sua parte confirmada"
+    // (BCC André+Mari). A confirmação do ensaio inteiro sai quando o último fecha.
+    if (isEspecial && paidPayerEmail) {
+      const groupUrl = bookingId ? `${SITE_URL}/especial/${bookingId}?t=${especialToken(bookingId)}` : undefined;
+      await sendEspecialEmails([{
+        to:      paidPayerEmail,
+        subject: `Sua parte no ensaio de ${fmtDate(date)} está confirmada`,
+        html:    buildEspecialEmailHtml('partPaid', {
+          payerName: paidPayerName, date, time, endTime: espEnd || endTime,
+          duration: espDuration || pkg.duration, numBailarinas: Number(numBailarinas) || 1,
+          partValue: (Number(normalized.amount) || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }),
+          groupUrl, bookingId,
+        }),
+      }]);
+    }
     return res.status(200).json({ received: true, partial: true, paidCount, totalSessions });
   }
 
   // 2. Send confirmation email to client
-  const htmlBody = buildBookingEmailHtml({
-    name, date, time, endTime,
-    packageName: pkg.name, duration: pkg.duration,
-    price: priceFinal.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }),
-    bookingId,
-    numBailarinas,
-  }, 'confirmed');
-  // Resend limita a 2 req/s — os 3 sends abaixo são sequenciais com pausa
+  // Resend limita a 2 req/s — os sends abaixo são sequenciais com pausa
   // pra não tomar 429 (que o SDK devolve em {error}, sem retry automático).
   const emailLog: Record<string, string> = {};
-  try {
-    const { data: sent, error } = await resend.emails.send({
-      from:    FROM_EMAIL,
-      to:      email,
-      subject: `Reserva confirmada — ${pkg.name} · ${date.split('-').reverse().join('/')} às ${time}`,
-      html:    htmlBody,
+  if (isEspecial) {
+    // Especial: cada pagador + o contato principal recebem "ensaio confirmado"
+    // (SEM valor total — cada um vê só a própria parte), BCC André+Mari. As
+    // notificações internas de André/Mari abaixo seguem com o total.
+    const groupUrl = bookingId ? `${SITE_URL}/especial/${bookingId}?t=${especialToken(bookingId)}` : undefined;
+    const nb   = Number(numBailarinas) || 1;
+    const seen = new Set<string>();
+    const sends: Array<{ to: string; subject: string; html: string }> = [];
+    espPayerEmails.forEach((pe, i) => {
+      const to = String(pe || '').trim().toLowerCase();
+      if (!to || seen.has(to)) return;
+      seen.add(to);
+      sends.push({
+        to: pe.trim(),
+        subject: `Ensaio de ${fmtDate(date)} confirmado!`,
+        html: buildEspecialEmailHtml('allConfirmed', {
+          payerName: espPayerNames[i] || '', date, time, endTime: espEnd || endTime,
+          duration: espDuration || pkg.duration, numBailarinas: nb,
+          partValue: (parseFloat(String(espPayerValues[i] || '0')) || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }),
+          groupUrl, bookingId,
+        }),
+      });
     });
-    emailLog.cliente = error ? `ERRO: ${error.message || error.name}` : (sent?.id || 'ok');
-    if (error) console.error('[webhook] Resend client error', error);
-  } catch (e) {
-    console.error('[webhook] Resend client error', e);
+    if (email && !seen.has(email.trim().toLowerCase())) {
+      sends.push({
+        to: email,
+        subject: `Ensaio de ${fmtDate(date)} confirmado!`,
+        html: buildEspecialEmailHtml('allConfirmed', {
+          payerName: name, date, time, endTime: espEnd || endTime,
+          duration: espDuration || pkg.duration, numBailarinas: nb, partValue: '', groupUrl, bookingId,
+        }),
+      });
+    }
+    await sendEspecialEmails(sends);
+    emailLog.cliente = `especial: ${sends.length} enviados`;
+  } else {
+    const htmlBody = buildBookingEmailHtml({
+      name, date, time, endTime,
+      packageName: pkg.name, duration: pkg.duration,
+      price: priceFinal.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }),
+      bookingId,
+      numBailarinas,
+    }, 'confirmed');
+    try {
+      const { data: sent, error } = await resend.emails.send({
+        from:    FROM_EMAIL,
+        to:      email,
+        subject: `Reserva confirmada — ${pkg.name} · ${date.split('-').reverse().join('/')} às ${time}`,
+        html:    htmlBody,
+      });
+      emailLog.cliente = error ? `ERRO: ${error.message || error.name}` : (sent?.id || 'ok');
+      if (error) console.error('[webhook] Resend client error', error);
+    } catch (e) {
+      console.error('[webhook] Resend client error', e);
+    }
+    await new Promise(r => setTimeout(r, 600));
   }
-  await new Promise(r => setTimeout(r, 600));
 
   // 3. Notify André
   try {

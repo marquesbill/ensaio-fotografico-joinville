@@ -319,6 +319,81 @@ function buildBookingEmailHtml(data: {
 </table></td></tr></table></body></html>`;
 }
 
+/* ───────── E-mail do pacote Especial (multi-pagador) ─────────
+ * Mesma casca visual do buildBookingEmailHtml (hero + Georgia + roxo), mas com
+ * a PARTE INDIVIDUAL de cada pagador, botão de pagamento e link da página do
+ * grupo. NUNCA mostra o valor total (privacidade — total só pra André/Mari).
+ * Duplicado em api/webhook.ts de propósito (não importar de _*.ts). */
+const ESPECIAL_VARIANT = {
+  created:      { tag: 'Sua parte no ensaio', color: '#7a3f8f', partLabel: 'Sua parte',
+                  intro: 'Você faz parte de um ensaio especial em grupo. Abaixo está a sua parte e o seu link de pagamento — e o link da página do grupo, onde todos acompanham quem já pagou.' },
+  createdContact: { tag: 'Ensaio especial criado', color: '#7a3f8f', partLabel: '',
+                  intro: 'Seu ensaio especial em grupo foi criado. Cada pagador recebeu por e-mail o próprio link de pagamento. Use a página do grupo abaixo para acompanhar quem já pagou — quando todos pagarem, o ensaio é confirmado automaticamente.' },
+  partPaid:     { tag: 'Pagamento confirmado', color: '#0f7b3f', partLabel: 'Sua parte (paga)',
+                  intro: 'Recebemos o seu pagamento — a sua parte no ensaio está confirmada! Assim que todos do grupo pagarem, o ensaio é confirmado e você recebe a confirmação final.' },
+  allConfirmed: { tag: 'Ensaio confirmado', color: '#0f7b3f', partLabel: 'Sua parte',
+                  intro: 'Todos os pagadores do grupo concluíram o pagamento — o ensaio está confirmado! Nos vemos no dia. 💜' },
+  cancelled:    { tag: 'Ensaio cancelado', color: '#b91c1c', partLabel: 'Sua parte',
+                  intro: 'Este ensaio especial em grupo foi cancelado. Se você já pagou a sua parte, entraremos em contato para o reembolso. Qualquer dúvida, fale com a gente pelo WhatsApp.' },
+};
+function buildEspecialEmailHtml(variant: 'created' | 'createdContact' | 'partPaid' | 'allConfirmed' | 'cancelled', d: {
+  payerName: string; date: string; time: string; endTime: string; duration: number;
+  numBailarinas: number; partValue: string; payUrl?: string; groupUrl?: string; bookingId: string;
+}): string {
+  const cfg = ESPECIAL_VARIANT[variant];
+  const firstName = String(d.payerName || '').trim().split(/\s+/)[0] || 'você';
+  const row = (label: string, value: string) =>
+    `<tr><td style="padding:16px 0;border-bottom:1px solid #eee;"><p style="margin:0 0 4px;font-family:Georgia,serif;font-size:11px;letter-spacing:2px;text-transform:uppercase;color:#999;">${label}</p><p style="margin:0;font-family:Georgia,serif;font-size:16px;color:#1a1a1a;">${value}</p></td></tr>`;
+  const payBtn = (variant === 'created' && d.payUrl)
+    ? `<tr><td style="padding:4px 40px 28px;text-align:center;"><a href="${d.payUrl}" style="display:inline-block;background:#7a3f8f;color:#ffffff;font-family:Georgia,serif;font-size:16px;text-decoration:none;padding:14px 40px;border-radius:30px;">Pagar minha parte</a></td></tr>`
+    : '';
+  const groupRow = (variant !== 'cancelled' && d.groupUrl)
+    ? `<tr><td style="padding:8px 40px 28px;text-align:center;border-top:1px solid #eee;"><p style="margin:0 0 8px;font-family:Georgia,serif;font-size:11px;letter-spacing:2px;text-transform:uppercase;color:#999;">Página do grupo</p><p style="margin:0;font-family:Georgia,serif;font-size:13px;line-height:1.6;color:#666;">Acompanhe quem já pagou e o status do ensaio:</p><p style="margin:8px 0 0;"><a href="${d.groupUrl}" style="color:#7a3f8f;text-decoration:none;font-size:13px;word-break:break-all;">${d.groupUrl}</a></p></td></tr>`
+    : '';
+  return `<!DOCTYPE html>
+<html lang="pt-BR"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${cfg.tag}</title></head>
+<body style="margin:0;padding:0;background:#f5f0fa;font-family:Georgia,'Cormorant Garamond','Times New Roman',serif;color:#1a1a1a;">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background:#f5f0fa;padding:32px 12px;">
+<tr><td align="center">
+<table role="presentation" width="600" cellpadding="0" cellspacing="0" border="0" style="max-width:600px;background:#ffffff;border-radius:6px;overflow:hidden;box-shadow:0 4px 24px rgba(0,0,0,0.06);">
+<tr><td style="line-height:0;"><img src="${HERO_IMG_URL}" alt="" width="600" style="display:block;width:100%;max-width:600px;height:auto;border:0;outline:none;text-decoration:none;"></td></tr>
+<tr><td style="padding:36px 40px 0;text-align:center;"><span style="display:inline-block;font-family:Georgia,'Times New Roman',serif;font-size:11px;letter-spacing:3px;text-transform:uppercase;color:${cfg.color};border:1px solid #e8d8f0;border-radius:30px;padding:6px 16px;">${cfg.tag}</span></td></tr>
+<tr><td style="padding:24px 40px 4px;text-align:center;"><p style="margin:0;font-family:Georgia,'Cormorant Garamond',serif;font-size:30px;line-height:1.2;color:#1a1a1a;font-weight:400;font-style:italic;">Olá, <strong style="font-weight:600;">${firstName}</strong>.</p></td></tr>
+<tr><td style="padding:18px 56px 28px;text-align:center;"><p style="margin:0;font-family:Georgia,serif;font-size:14px;line-height:1.65;color:#555;">${cfg.intro}</p></td></tr>
+<tr><td style="padding:0 40px 8px;"><table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="border-top:1px solid #eee;">
+${row('Data', fmtDateLong(d.date))}
+${row('Horário', `${d.time} — ${d.endTime}`)}
+${row('Duração', `${d.duration} minutos`)}
+${row('Grupo', `${d.numBailarinas} ${d.numBailarinas === 1 ? 'bailarina' : 'bailarinas'}`)}
+${(d.partValue && cfg.partLabel) ? `<tr><td style="padding:16px 0;"><p style="margin:0 0 4px;font-family:Georgia,serif;font-size:11px;letter-spacing:2px;text-transform:uppercase;color:#999;">${cfg.partLabel}</p><p style="margin:0;font-family:Georgia,serif;font-size:18px;color:#7a3f8f;font-weight:600;">R$ ${d.partValue}</p></td></tr>` : ''}
+</table></td></tr>
+${payBtn}
+${groupRow}
+<tr><td style="padding:28px 40px 24px;text-align:center;border-top:1px solid #eee;"><p style="margin:0;font-family:Georgia,serif;font-size:13px;line-height:1.6;color:#666;">Dúvidas? Fale com a gente pelo</p><p style="margin:6px 0 0;"><a href="https://wa.me/5511519606272" style="color:#128C7E;text-decoration:none;font-weight:600;white-space:nowrap;">WhatsApp (11) 5196-0627</a></p></td></tr>
+<tr><td style="padding:0 40px 24px;text-align:center;"><p style="margin:0;font-family:Georgia,serif;font-size:10px;letter-spacing:2px;text-transform:uppercase;color:#bbb;">Código do ensaio · <span style="color:#777;font-family:monospace;letter-spacing:1px;">${d.bookingId}</span></p></td></tr>
+<tr><td style="padding:20px 40px 28px;text-align:center;background:#fafafa;border-top:1px solid #eee;"><p style="margin:0;font-family:Georgia,serif;font-size:12px;color:#999;">© 2026 André Ferreira Fotografia</p><p style="margin:4px 0 0;font-family:Georgia,serif;font-size:12px;"><a href="https://www.instagram.com/affotografia" style="color:#7a3f8f;text-decoration:none;">@affotografia</a></p></td></tr>
+</table></td></tr></table></body></html>`;
+}
+
+// Envia e-mails do Especial em série respeitando o limite do Resend (2 req/s),
+// com BCC pra André+Mari em toda mensagem. Erros são logados, não derrubam o fluxo.
+async function sendEspecialEmails(sends: Array<{ to: string; subject: string; html: string }>): Promise<Record<string, string>> {
+  const log: Record<string, string> = {};
+  for (const s of sends) {
+    if (!s.to) continue;
+    try {
+      const { data, error } = await resend.emails.send({
+        from: FROM_EMAIL, to: s.to, bcc: [ANDRE_EMAIL, MARIANE_EMAIL], subject: s.subject, html: s.html,
+      });
+      log[s.to] = error ? `ERRO: ${error.message || error.name}` : (data?.id || 'ok');
+    } catch (e) {
+      log[s.to] = `ERRO: ${e instanceof Error ? e.message : String(e)}`;
+    }
+    await new Promise(r => setTimeout(r, 550));  // ~2/s
+  }
+  return log;
+}
+
 /* ───────── GA4 Dashboard ───────── */
 
 function categorizeChannel(channel: string): string {
@@ -2719,13 +2794,16 @@ async function aggregateImpressionsByUF(days: number): Promise<Record<string, nu
 
 async function handleCancel(req: VercelRequest, res: VercelResponse, auth: { user: string }) {
   const PACKAGES = getPackages();
-  const { bookingId, reason, name, email, date, time, endTime, packageKey, packageName, numBailarinas } = req.body as {
+  const { bookingId, reason, name, email, date, time, endTime, packageKey, packageName, numBailarinas,
+          payerNames, payerEmails } = req.body as {
     bookingId:      string; reason: string;
     name:           string; email: string;
     date:           string; time:  string;
     endTime?:       string;
     packageKey?:    string; packageName?: string;
     numBailarinas?: number;
+    payerNames?:    string[];   // Especial: avisa cada pagador do cancelamento
+    payerEmails?:   string[];
   };
 
   if (!bookingId || !reason) return res.status(400).json({ error: 'bookingId e reason são obrigatórios' });
@@ -2746,7 +2824,51 @@ async function handleCancel(req: VercelRequest, res: VercelResponse, auth: { use
     body: JSON.stringify({ action: 'addLog', message: logMsg, origin: 'painel' }),
   }).catch(e => console.error('[admin-bookings/cancel] addLog error', e));
 
-  if (email) {
+  const isEspecial = String(packageKey || '').toLowerCase() === 'especial'
+    || String(packageName || '').toLowerCase() === 'especial';
+
+  if (isEspecial) {
+    // Especial: avisa TODOS os pagadores + o contato principal (todos com o builder
+    // especial, sem valor total). BCC André+Mari. Sem "sua parte" — o e-mail já
+    // explica o reembolso; não precisamos dos valores aqui.
+    const toMin = (t: string) => { const [h, m] = String(t || '').split(':').map(Number); return (h || 0) * 60 + (m || 0); };
+    const dur   = (endTime && time) ? Math.max(0, toMin(endTime) - toMin(time)) : 0;
+    const nb    = Number(numBailarinas) || 1;
+    const eArr  = Array.isArray(payerEmails) ? payerEmails : [];
+    const nArr  = Array.isArray(payerNames)  ? payerNames  : [];
+    const seen  = new Set<string>();
+    const sends: Array<{ to: string; subject: string; html: string }> = [];
+    eArr.forEach((pe, i) => {
+      const to = String(pe || '').trim().toLowerCase();
+      if (!to || seen.has(to)) return;
+      seen.add(to);
+      sends.push({
+        to: pe.trim(),
+        subject: `Ensaio de ${fmtDate(date)} cancelado`,
+        html: buildEspecialEmailHtml('cancelled', {
+          payerName: nArr[i] || '', date, time, endTime: endTime || time, duration: dur,
+          numBailarinas: nb, partValue: '', bookingId,
+        }),
+      });
+    });
+    if (email && !seen.has(email.trim().toLowerCase())) {
+      sends.push({
+        to: email,
+        subject: `Ensaio de ${fmtDate(date)} cancelado`,
+        html: buildEspecialEmailHtml('cancelled', {
+          payerName: name, date, time, endTime: endTime || time, duration: dur,
+          numBailarinas: nb, partValue: '', bookingId,
+        }),
+      });
+    }
+    const emailLog = await sendEspecialEmails(sends);
+    await resend.emails.send({
+      from: FROM_EMAIL, to: ANDRE_EMAIL,
+      subject: `[Admin] Especial cancelado: ${name} — ${fmtDate(date)} ${time}`,
+      html: `<p>${logMsg}</p><p>Avisados: ${sends.length} (pagadores + contato).</p>`,
+    }).catch(e => console.error('[admin-bookings/cancel] Resend André error', e));
+    console.log('[admin-bookings/cancel] especial cancel emails', JSON.stringify(emailLog));
+  } else if (email) {
     const pkg = resolvePkg(packageKey) || { name: packageName || '—', duration: 0, price: 0 };
     const html = buildBookingEmailHtml({
       name, date, time,
@@ -3028,7 +3150,7 @@ async function handleCreate(req: VercelRequest, res: VercelResponse, auth: { use
   const PACKAGES = getPackages();
   const { name, email, whatsapp, instagram, instagramBailarina, nomeBailarina, numBailarinas,
           date, time, packageKey, confirm, customValue, splitCount, payerNames,
-          durationMin, payerValues } = req.body as {
+          durationMin, payerValues, payerEmails } = req.body as {
     name: string; email: string; whatsapp: string;
     instagram?: string; instagramBailarina?: string; nomeBailarina?: string; numBailarinas?: number;
     date: string; time: string; packageKey: PkgKey | 'especial'; confirm: boolean;
@@ -3037,6 +3159,7 @@ async function handleCreate(req: VercelRequest, res: VercelResponse, auth: { use
     payerNames?: string[];    // nome de cada pagador (paralelo aos links do split)
     durationMin?: number;     // SÓ Especial: duração custom em minutos
     payerValues?: number[];   // SÓ Especial: valor (R$) de cada pagador; total = soma
+    payerEmails?: string[];   // SÓ Especial: e-mail de cada pagador (obrigatório) p/ avisos
   };
   const isEspecial = packageKey === 'especial';
 
@@ -3076,6 +3199,12 @@ async function handleCreate(req: VercelRequest, res: VercelResponse, auth: { use
     }
     split = especialLinkValues.length;
     chargeValue = Number(especialLinkValues.reduce((s, v) => s + v, 0).toFixed(2));  // total = soma
+    // E-mail é OBRIGATÓRIO por pagador (a feature de avisos depende dele). Precisa
+    // ter a mesma qtd dos valores e cada um ser um e-mail plausível.
+    if (!Array.isArray(payerEmails) || payerEmails.length !== split
+        || payerEmails.some(e => !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(e || '').trim()))) {
+      return res.status(400).json({ error: 'Especial: cada pagador precisa de um e-mail válido.' });
+    }
   } else {
     pkgLabel = pkg!.name;
     duration = pkg!.duration;
@@ -3108,6 +3237,10 @@ async function handleCreate(req: VercelRequest, res: VercelResponse, auth: { use
   // Nomes dos pagadores (1 por link), tamanho = split; faltantes viram ''.
   const names: string[] = Array.from({ length: split }, (_, i) =>
     (Array.isArray(payerNames) && typeof payerNames[i] === 'string' ? payerNames[i].trim() : ''));
+  // E-mails dos pagadores (Especial: validados acima como obrigatórios; nos 3
+  // pacotes fixos fica vazio). Paralelo a names/linkValues/createdLinks.
+  const emails: string[] = Array.from({ length: split }, (_, i) =>
+    (Array.isArray(payerEmails) && typeof payerEmails[i] === 'string' ? payerEmails[i].trim() : ''));
 
   console.log(`[admin-bookings/create] especial=${isEspecial} chargeValue=${chargeValue} split=${split} dur=${duration}`);
 
@@ -3248,6 +3381,7 @@ async function handleCreate(req: VercelRequest, res: VercelResponse, auth: { use
             payerNames:         names,   // 1 nome por link (paralelo a sessionsJoined)
             payerValues:        linkValues,               // valor de cada pagador (Especial)
             payerUrls:          createdLinks.map(l => l.url),  // URL de cada link (p/ página pública)
+            payerEmails:        emails,  // e-mail de cada pagador (Especial) — p/ avisos
             durationMin:        isEspecial ? duration : undefined,
           }),
         });
@@ -3276,6 +3410,35 @@ async function handleCreate(req: VercelRequest, res: VercelResponse, auth: { use
         method: 'POST', headers: { 'Content-Type': 'text/plain' },
         body: JSON.stringify({ action: 'addLog', message: `${logUser} criou agendamento pendente para ${name} (${date} ${time}) e gerou link de pgmto (${gw})${logSplit}`, origin: 'painel' }),
       }).catch(() => {});
+
+      // Especial: e-mail de criação — cada pagador recebe link do grupo + SEU link
+      // de pagamento + sua parte; o contato principal recebe a página do grupo.
+      // BCC André+Mari em toda mensagem. Erros são logados, não derrubam a criação.
+      if (isEspecial && bookingId) {
+        const shareUrl  = `${SITE_URL}/especial/${bookingId}?t=${especialToken(bookingId)}`;
+        const dateLabel = date.split('-').reverse().join('/');
+        const sends = names.map((pn, i) => ({
+          to:      emails[i],
+          subject: `Sua parte no ensaio de ${dateLabel} — link de pagamento`,
+          html:    buildEspecialEmailHtml('created', {
+            payerName: pn, date, time, endTime, duration, numBailarinas: nb,
+            partValue: linkValues[i].toFixed(2), payUrl: createdLinks[i].url, groupUrl: shareUrl, bookingId,
+          }),
+        }));
+        // Contato principal (organizador) — só se o e-mail dele não for de um pagador (evita duplicar).
+        if (email && !emails.some(e => e.toLowerCase() === email.toLowerCase())) {
+          sends.push({
+            to:      email,
+            subject: `Ensaio especial criado — ${dateLabel} · página do grupo`,
+            html:    buildEspecialEmailHtml('createdContact', {
+              payerName: name, date, time, endTime, duration, numBailarinas: nb,
+              partValue: '', groupUrl: shareUrl, bookingId,
+            }),
+          });
+        }
+        const emailLog = await sendEspecialEmails(sends);
+        console.log('[admin-bookings/create] especial create emails', JSON.stringify(emailLog));
+      }
 
       // Response: mantém `paymentUrl` (compat single-pagador) + adiciona
       // `paymentUrls` (array com todos) + `paymentParts` (URL + valor + ID).
