@@ -600,7 +600,7 @@ export default function App() {
           </motion.h2>
           <ul className="space-y-4">
             {[
-              "Material criado por nossa equipe",
+              "Material de suporte e orientações criado por nossa equipe",
               "Imagens de referências para planejar suas poses",
               "Direção artística durante a sessão",
               "Suporte de uma professora especializada para te auxiliar e corrigir nas poses",
@@ -1257,7 +1257,7 @@ export default function App() {
               { q: "Quanto tempo dura o ensaio?", a: "Nossos ensaios duram entre 30 a 120 minutos, dependendo do pacote escolhido." },
               { q: "O que eu vou receber?", a: (
                 <ul className="list-disc pl-4 space-y-1">
-                  <li>Material criado por nossa equipe</li>
+                  <li>Material de suporte e orientações criado por nossa equipe</li>
                   <li>Imagens de referências para planejar suas poses</li>
                   <li>Direção artística durante a sessão</li>
                   <li>Suporte de uma professora especializada para te auxiliar e corrigir nas poses</li>
