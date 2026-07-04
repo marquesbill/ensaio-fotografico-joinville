@@ -405,6 +405,13 @@ export default function App() {
             <motion.p
               variants={fadeIn}
               style={{ y: heroDateY, color: '#f7f9ff', textShadow: '0 1px 2px rgba(0,0,0,0.85), 0 2px 14px rgba(0,0,0,0.55)' }}
+              className="flex items-center gap-2 text-sm md:text-base font-bold"
+            >
+              ✨ Sem limites de poses e tentativas no ensaio escolhido
+            </motion.p>
+            <motion.p
+              variants={fadeIn}
+              style={{ y: heroDateY, color: '#f7f9ff', textShadow: '0 1px 2px rgba(0,0,0,0.85), 0 2px 14px rgba(0,0,0,0.55)' }}
               className="text-xl md:text-2xl font-semibold"
             >
               20 de Julho a 02 de Agosto
@@ -580,6 +587,34 @@ export default function App() {
         </div>
       </section>
 
+      {/* O que está incluído — resumo de entregáveis logo após a primeira dobra */}
+      <section className="py-16 bg-surface px-6">
+        <div className="container mx-auto max-w-2xl">
+          <motion.h2
+            initial={{ opacity: 0, y: 20 }}
+            whileInView={{ opacity: 1, y: 0 }}
+            viewport={{ once: true }}
+            className="font-headline text-2xl md:text-3xl text-on-surface text-center mb-8"
+          >
+            O que está incluído
+          </motion.h2>
+          <ul className="space-y-4">
+            {[
+              "Material exclusivo com orientações para seu ensaio",
+              "Imagens de referências para planejar suas poses",
+              "Direção artística durante a sessão",
+              "Suporte de uma professora especializada para te auxiliar e corrigir nas poses",
+              "As fotos digitais aprovadas editadas exclusivamente pelo fotógrafo",
+            ].map((item, i) => (
+              <li key={i} className="flex items-center gap-3 text-on-surface-variant font-medium">
+                <CheckCircle className="text-primary w-5 h-5 flex-shrink-0" />
+                {item}
+              </li>
+            ))}
+          </ul>
+        </div>
+      </section>
+
       {/* Prova social — teaser (logo abaixo da primeira dobra) */}
       <section className="py-16 bg-surface flex flex-col items-center px-6">
         <motion.h2
@@ -694,6 +729,10 @@ export default function App() {
                 </li>
                 <li className="flex items-center gap-3 text-sm font-medium">
                   <CheckCircle className="text-primary w-5 h-5" />
+                  ≈ 5 fotos aprovadas e editadas
+                </li>
+                <li className="flex items-center gap-3 text-sm font-medium">
+                  <CheckCircle className="text-primary w-5 h-5" />
                   Pode ser dividido por até 2 pessoas
                 </li>
               </ul>
@@ -743,6 +782,10 @@ export default function App() {
                 </li>
                 <li className="flex items-center gap-3 text-sm font-bold">
                   <CheckCircle className="text-primary w-5 h-5" />
+                  ≈ 12 fotos aprovadas e editadas
+                </li>
+                <li className="flex items-center gap-3 text-sm font-bold">
+                  <CheckCircle className="text-primary w-5 h-5" />
                   Pode ser dividido por até 3 pessoas
                 </li>
               </ul>
@@ -788,6 +831,10 @@ export default function App() {
                 <li className="flex items-center gap-3 text-sm font-medium">
                   <CheckCircle className="text-primary w-5 h-5" />
                   2 horas de sessão
+                </li>
+                <li className="flex items-center gap-3 text-sm font-medium">
+                  <CheckCircle className="text-primary w-5 h-5" />
+                  ≈ 25 fotos aprovadas e editadas
                 </li>
                 <li className="flex items-center gap-3 text-sm font-medium">
                   <CheckCircle className="text-primary w-5 h-5" />
@@ -1208,8 +1255,15 @@ export default function App() {
               { q: "Onde serão feitas as fotos?", a: "No Hotel Le Village, Sala Esmeralda, em Joinville. Um ambiente preparado com infraestrutura completa." },
               { q: "Quem pode fazer o ensaio?", a: "Bailarinos de todas as idades e níveis, desde iniciantes até profissionais, de qualquer modalidade." },
               { q: "Quanto tempo dura o ensaio?", a: "Nossos ensaios duram entre 30 a 120 minutos, dependendo do pacote escolhido." },
-              { q: "O que eu vou receber?", a: "Você receberá fotos editadas em alta resolução em uma galeria online privativa e elegante." },
-              { q: "Serão quantos lotes?", a: "Trabalhamos com 3 lotes: Pré-venda (Lote 0), Lote 1 e Lote 2. Cada lote tem vagas limitadas e o preço aumenta a cada etapa." },
+              { q: "O que eu vou receber?", a: (
+                <ul className="list-disc pl-4 space-y-1">
+                  <li>Material exclusivo com orientações para seu ensaio</li>
+                  <li>Imagens de referências para planejar suas poses</li>
+                  <li>Direção artística durante a sessão</li>
+                  <li>Suporte de uma professora especializada para te auxiliar e corrigir nas poses</li>
+                  <li>As fotos digitais aprovadas editadas exclusivamente pelo fotógrafo</li>
+                </ul>
+              ) },
               { q: "Quais são as formas de pagamento?", a: "Aceitamos PIX e cartões de crédito (com possibilidade de parcelamento)." },
               { q: "Tem pacote especial para grupos?", a: (<>Sim! Oferecemos condições especiais para grupos de bailarinos da mesma escola ou companhia. <a href={`https://wa.me/551151960627?text=${encodeURIComponent('Olá, gostaria de informações sobre ensaio em grupo')}`} target="_blank" rel="noopener noreferrer" className="text-primary font-bold underline hover:opacity-80 transition-opacity">Entre em contato pelo WhatsApp.</a></>) },
             ] as { q: string; a: React.ReactNode }[]).map((faq, i) => (
