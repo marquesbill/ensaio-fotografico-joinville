@@ -831,6 +831,15 @@ function EditBookingModal({
   // numBailarinas tem default seguro, então não bloqueia o save.
   const canSave = name.trim() && email.trim();
 
+  // Especial: o link da página do grupo só aparecia na criação/split — aqui a Mari
+  // consegue consultar e copiar a qualquer momento.
+  const [copiedShare, setCopiedShare] = useState(false);
+  const copyShare = (url: string) => {
+    navigator.clipboard.writeText(url).then(() => {
+      setCopiedShare(true); setTimeout(() => setCopiedShare(false), 2000);
+    });
+  };
+
   return (
     <Overlay onClose={onClose}>
       <div className="flex items-center gap-3 mb-5">
@@ -845,6 +854,20 @@ function EditBookingModal({
           </p>
         </div>
       </div>
+
+      {isEsp && booking.especialShareUrl && (
+        <div className="bg-purple-50 border border-purple-200 rounded-xl p-3 mb-4">
+          <p className="text-xs font-bold text-[#7a3f8f] uppercase tracking-wide mb-1">🔗 Página do grupo — mande este link</p>
+          <div className="bg-white border border-purple-100 rounded-lg px-3 py-2 mb-2 break-all text-[10px] text-gray-700 font-mono select-all">{booking.especialShareUrl}</div>
+          <button
+            onClick={() => copyShare(booking.especialShareUrl!)}
+            className="w-full flex items-center justify-center gap-1.5 py-2 rounded-lg bg-[#7a3f8f] text-white text-xs font-semibold hover:brightness-110 transition-all"
+          >
+            {copiedShare ? <Check size={12} /> : <Copy size={12} />}
+            {copiedShare ? 'Copiado!' : 'Copiar link da página'}
+          </button>
+        </div>
+      )}
 
       <div className="space-y-3">
         <div className="grid grid-cols-2 gap-3">
