@@ -880,6 +880,8 @@ function EditBookingModal({
         </div>
 
         <div className="grid grid-cols-3 gap-3">
+          {/* Especial é grupo (freeform): campos de UMA bailarina não fazem sentido — só Nº. */}
+          {!isEsp && (
           <div className="col-span-2">
             <label className="block text-xs font-semibold text-gray-600 mb-1 uppercase tracking-wide">Nome da bailarina</label>
             <input
@@ -887,7 +889,8 @@ function EditBookingModal({
               value={nomeBailarina} onChange={e => setNomeBailarina(e.target.value)} placeholder="Nome completo"
             />
           </div>
-          <div>
+          )}
+          <div className={isEsp ? 'col-span-3' : ''}>
             <label className="block text-xs font-semibold text-gray-600 mb-1 uppercase tracking-wide">Nº Bailarinas *{isEsp ? '' : ` (máx ${MAX_BAILARINAS[booking.package] ?? 4})`}</label>
             {isEsp ? (
               <input
@@ -908,6 +911,7 @@ function EditBookingModal({
               </select>
             )}
           </div>
+          {!isEsp && (
           <div className="col-span-3">
             <label className="block text-xs font-semibold text-gray-600 mb-1 uppercase tracking-wide">Instagram da bailarina</label>
             <input
@@ -915,11 +919,14 @@ function EditBookingModal({
               value={instagramBailarina} onChange={e => setInstagramBailarina(e.target.value)} placeholder="@bailarina"
             />
           </div>
+          )}
         </div>
       </div>
 
       <p className="text-[10px] text-gray-400 mt-3">
-        Para alterar data, horário ou pacote use o botão <strong>Remarcar</strong>.
+        {isEsp
+          ? <>Para mudar data, duração, valor ou pagadores, <strong>cancele e recrie</strong> o Especial.</>
+          : <>Para alterar data, horário ou pacote use o botão <strong>Remarcar</strong>.</>}
       </p>
 
       <div className="flex gap-3 mt-4">
