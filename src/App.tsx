@@ -587,7 +587,7 @@ export default function App() {
         </div>
       </section>
 
-      {/* O que está incluído — resumo de entregáveis logo após a primeira dobra */}
+      {/* O que está incluso — resumo de entregáveis logo após a primeira dobra */}
       <section className="py-16 bg-surface px-6">
         <div className="container mx-auto max-w-2xl">
           <motion.h2
@@ -596,7 +596,7 @@ export default function App() {
             viewport={{ once: true }}
             className="font-headline text-2xl md:text-3xl text-on-surface text-center mb-8"
           >
-            O que está incluído
+            O que está incluso
           </motion.h2>
           <ul className="space-y-4">
             {[

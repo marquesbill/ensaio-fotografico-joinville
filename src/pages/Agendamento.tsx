@@ -739,7 +739,7 @@ export default function Agendamento() {
               className="w-full max-w-lg mx-auto text-center"
             >
               <CheckCircle className="w-16 h-16 text-primary mx-auto mb-4" />
-              <h2 className="font-headline text-3xl font-black text-on-surface mb-3">Pedido enviado!</h2>
+              <h2 className="font-headline text-3xl font-black text-on-surface mb-3">Enviado!</h2>
               <p className="text-on-surface-variant leading-relaxed mb-2">
                 Recebemos sua solicitação de agendamento{selectedPkg ? <> do pacote <strong className="text-on-surface">{selectedPkg.name}</strong></> : ''}
                 {selectedDate ? <> para <strong className="text-on-surface">{selectedDate.split('-').reverse().join('/')}</strong></> : ''}
