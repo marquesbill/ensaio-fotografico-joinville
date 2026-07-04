@@ -1,6 +1,7 @@
 {
   "functions": {
-    "api/webhook.ts": { "maxDuration": 60 }
+    "api/webhook.ts": { "maxDuration": 60 },
+    "api/admin-bookings.ts": { "maxDuration": 30 }
   },
   "rewrites": [
     { "source": "/api/(.*)", "destination": "/api/$1" },

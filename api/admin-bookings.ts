@@ -669,12 +669,15 @@ function extractDDD(whatsapp: string | null | undefined): string | null {
   return DDD_TO_STATE[ddd] ? ddd : null;
 }
 
-function normalizePackage(p: string | null | undefined): 'lembranca' | 'economico' | 'completo' | 'especial' | 'unknown' {
+function normalizePackage(p: string | null | undefined): 'lembranca' | 'economico' | 'completo' | 'unknown' {
   const s = String(p || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
   if (s.startsWith('lemb')) return 'lembranca';
   if (s.startsWith('econ')) return 'economico';
   if (s.startsWith('comp')) return 'completo';
-  if (s.startsWith('espec')) return 'especial';
+  // ponytail: especial cai em 'unknown' de propósito — os agregados de economics
+  // (confByPkg/pendByPkg/byPackageOut) só têm as 3 chaves fixas + unknown; devolver
+  // 'especial' aqui daria bucket[undefined].ensaios++ → crash. especial é admin-only
+  // e não é um pacote de funil de marketing, então 'unknown' é o balde correto.
   return 'unknown';
 }
 
@@ -4145,7 +4148,17 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   try {
     const url  = `${SCRIPT_URL}?action=bookings&t=${Date.now()}`;
     const r    = await fetch(url, { cache: 'no-store' });
-    const json = await r.json();
+    // Apps Script às vezes devolve HTML (página de erro/reautorização do Google) em
+    // vez de JSON. Fazer r.json() direto estoura e repassava "Unexpected token '<',
+    // <!DOCTYPE…" cru pro admin. Lê como texto e dá mensagem acionável.
+    const body = await r.text();
+    let json: unknown;
+    try {
+      json = JSON.parse(body);
+    } catch {
+      console.error('[admin-bookings] Apps Script não devolveu JSON:', r.status, body.slice(0, 200));
+      return res.status(502).json({ error: 'A planilha (Apps Script) não respondeu corretamente. Atualize em instantes; se persistir, verifique a implantação do Web App.' });
+    }
     // Especial: injeta o link público do grupo (token = HMAC, só o backend calcula).
     if (Array.isArray(json)) {
       for (const b of json as Array<{ id?: string; package?: string; especialShareUrl?: string }>) {

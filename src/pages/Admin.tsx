@@ -1988,6 +1988,11 @@ function Dashboard({
     setLoading(true); setError('');
     try {
       const r    = await fetch(`${API}/api/admin-bookings`, { headers: { Authorization: `Bearer ${token}` } });
+      // Se a function der timeout, a Vercel devolve HTML (<!DOCTYPE…) e r.json()
+      // estouraria com "Unexpected token '<'". Checa o content-type antes.
+      if (!(r.headers.get('content-type') || '').includes('json')) {
+        throw new Error(`Servidor indisponível (HTTP ${r.status}). Atualize em instantes.`);
+      }
       const json = await r.json();
       if (!r.ok) throw new Error(json.error || 'Erro ao carregar');
       // Normalize date/time fields from ISO strings returned by Sheets
