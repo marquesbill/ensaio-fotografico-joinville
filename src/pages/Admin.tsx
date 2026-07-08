@@ -2028,31 +2028,36 @@ function Dashboard({
 
   const fetchBookings = useCallback(async (): Promise<Booking[] | null> => {
     setLoading(true); setError('');
-    try {
-      const r    = await fetch(`${API}/api/admin-bookings`, { headers: { Authorization: `Bearer ${token}` } });
-      // Se a function der timeout, a Vercel devolve HTML (<!DOCTYPE…) e r.json()
-      // estouraria com "Unexpected token '<'". Checa o content-type antes.
-      if (!(r.headers.get('content-type') || '').includes('json')) {
-        throw new Error(`Servidor indisponível (HTTP ${r.status}). Atualize em instantes.`);
+    // Blips do Apps Script/Vercel (504 etc.) duram segundos: 1 retry automático
+    // após 2s resolve a maioria sem o usuário ver erro nenhum.
+    for (let attempt = 1; attempt <= 2; attempt++) {
+      try {
+        const r    = await fetch(`${API}/api/admin-bookings`, { headers: { Authorization: `Bearer ${token}` } });
+        // Se a function der timeout, a Vercel devolve HTML (<!DOCTYPE…) e r.json()
+        // estouraria com "Unexpected token '<'". Checa o content-type antes.
+        if (!(r.headers.get('content-type') || '').includes('json')) {
+          throw new Error(`Servidor indisponível (HTTP ${r.status}). Atualize em instantes.`);
+        }
+        const json = await r.json();
+        if (!r.ok) throw new Error(json.error || 'Erro ao carregar');
+        // Normalize date/time fields from ISO strings returned by Sheets
+        const raw: Booking[] = Array.isArray(json) ? json : (json.bookings ?? []);
+        const normalized = raw.map(b => ({
+          ...b,
+          date:  b.date?.includes('T')  ? b.date.split('T')[0]           : (b.date  ?? ''),
+          start: b.start?.includes('T') ? b.start.split('T')[1].slice(0,5) : (b.start ?? ''),
+          end:   b.end?.includes('T')   ? b.end.split('T')[1].slice(0,5)   : (b.end   ?? ''),
+        }));
+        setBookings(normalized);
+        setLoading(false);
+        return normalized;
+      } catch (e) {
+        if (attempt === 1) { await new Promise(res => setTimeout(res, 2000)); continue; }
+        setError(e instanceof Error ? e.message : 'Erro de conexão');
       }
-      const json = await r.json();
-      if (!r.ok) throw new Error(json.error || 'Erro ao carregar');
-      // Normalize date/time fields from ISO strings returned by Sheets
-      const raw: Booking[] = Array.isArray(json) ? json : (json.bookings ?? []);
-      const normalized = raw.map(b => ({
-        ...b,
-        date:  b.date?.includes('T')  ? b.date.split('T')[0]           : (b.date  ?? ''),
-        start: b.start?.includes('T') ? b.start.split('T')[1].slice(0,5) : (b.start ?? ''),
-        end:   b.end?.includes('T')   ? b.end.split('T')[1].slice(0,5)   : (b.end   ?? ''),
-      }));
-      setBookings(normalized);
-      return normalized;
-    } catch (e) {
-      setError(e instanceof Error ? e.message : 'Erro de conexão');
-      return null;
-    } finally {
-      setLoading(false);
     }
+    setLoading(false);
+    return null;
   }, [token]);
 
   useEffect(() => { fetchBookings(); }, [fetchBookings]);
@@ -2508,18 +2513,27 @@ function Dashboard({
 
         {/* Content — fills remaining height, scrolls internally */}
         <div className="flex-1 overflow-hidden bg-white rounded-2xl border border-gray-100 shadow-sm">
-          {error ? (
+          {/* Tela de erro cheia SÓ sem dados; com dados carregados, um blip do
+              backend vira banner discreto e a agenda continua visível (stale). */}
+          {error && bookings.length === 0 ? (
             <div className="flex items-center justify-center h-full">
               <div className="text-center text-red-600 text-sm">
                 <AlertCircle size={20} className="mx-auto mb-2" /> {error}
               </div>
             </div>
-          ) : loading ? (
+          ) : loading && bookings.length === 0 ? (
             <div className="flex items-center justify-center h-full">
               <Loader2 size={24} className="animate-spin text-[#7a3f8f]" />
             </div>
           ) : (
-            <div className={`h-full p-5 ${view === 'timeline' ? 'overflow-hidden' : 'overflow-auto'}`}>
+            <div className={`h-full flex flex-col ${view === 'timeline' ? 'overflow-hidden' : ''}`}>
+              {error && (
+                <div className="mx-5 mt-3 flex items-center gap-2 bg-amber-50 border border-amber-200 text-amber-800 text-xs rounded-lg px-3 py-2">
+                  <AlertCircle size={13} className="shrink-0" />
+                  Não consegui atualizar agora ({error}) — mostrando os últimos dados carregados.
+                </div>
+              )}
+            <div className={`flex-1 p-5 ${view === 'timeline' ? 'overflow-hidden' : 'overflow-auto'}`}>
               {view === 'timeline'
                 ? <TimelineView bookings={bookings} onCancel={setCancelTarget} onReschedule={setRescheduleTarget}
                                 onGetPaymentLink={handleGetPaymentLink} onConfirmPayment={handleConfirmPayment} onEdit={setEditTarget}
@@ -2528,6 +2542,7 @@ function Dashboard({
                                 onGetPaymentLink={handleGetPaymentLink} onConfirmPayment={handleConfirmPayment} onEdit={setEditTarget}
                                 onResendEmail={handleResendEmail} onShowSplit={setSplitTarget} />
               }
+            </div>
             </div>
           )}
         </div>
