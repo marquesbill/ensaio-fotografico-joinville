@@ -25,7 +25,6 @@ import { currentTierPrices, FULL_PRICES, nextPriceSwitchMs, usePriceTierTick } f
 // ⬇️ ESCASSEZ — edite o texto aqui (1 lugar) e troca em todos os pontos do site.
 const SCARCITY = {
   geral:    'Mais de 50% das vagas preenchidas.', // hero + pacotes Lembrança/Econômico
-  completo: 'Restam apenas 2 vagas.',             // pacote Completo
 };
 
 // Chamariz de escassez: pulso de escala + glow vermelho atrás, ACOPLADOS — o glow é
@@ -806,27 +805,27 @@ export default function App() {
               >Selecionar</a>
             </motion.div>
 
-            {/* Package 3 */}
+            {/* Package 3 — ESGOTADO (jul/2026): vendas do Completo interrompidas, agenda cheia */}
             <motion.div
-              className="glass-card p-10 rounded-[2.5rem] border border-white/60 flex flex-col h-full hover:scale-[1.02] transition-transform duration-500 order-3 bg-white/70" style={{ boxShadow: '0 8px 32px rgba(0,0,0,0.22), 0 2px 8px rgba(0,0,0,0.14)' }}
+              className="glass-card p-10 rounded-[2.5rem] border border-white/60 flex flex-col h-full order-3 bg-white/70 relative overflow-hidden" style={{ boxShadow: '0 8px 32px rgba(0,0,0,0.22), 0 2px 8px rgba(0,0,0,0.14)' }}
               initial={{ opacity: 0, x: 50 }}
               whileInView={{ opacity: 1, x: 0 }}
               viewport={{ once: true }}
             >
+              {/* Faixa diagonal berrante */}
+              <div className="absolute top-7 -right-14 rotate-[35deg] bg-red-600 text-white text-sm font-black uppercase tracking-[0.3em] px-16 py-2 shadow-lg z-10">
+                Esgotado
+              </div>
+              <div className="grayscale opacity-50 flex flex-col h-full">
               <div className="mb-6">
                 <h3 className="font-headline text-2xl text-on-surface mb-3">Completo</h3>
                 <div className="rounded-2xl px-4 py-3 mb-2" style={{ background: '#FFFDF4', border: '1px solid #EAD58B' }}>
-                  {prices.completo.full > prices.completo.sale && (
-                    <p className="text-sm line-through" style={{ color: '#A09CA3' }}>de {brl(prices.completo.full)}</p>
-                  )}
-                  <p className="font-black text-4xl leading-tight" style={{ color: '#352D39' }}>{brl(prices.completo.sale)}</p>
-                  {prices.completo.full > prices.completo.sale && (
-                    <p className="font-bold text-xs uppercase tracking-wide mt-1" style={{ color: '#8B6A56' }}>🔥 Aproveite preços do Lote 1</p>
-                  )}
+                  <p className="font-black text-4xl leading-tight line-through" style={{ color: '#352D39' }}>{brl(prices.completo.sale)}</p>
                 </div>
-                <CountdownTimer />
               </div>
-              <ScarcityBadge text={SCARCITY.completo} strong />
+              <div className="rounded-xl px-4 py-2.5 mb-6 text-center bg-red-50 border border-red-200">
+                <p className="text-sm font-black uppercase tracking-wide text-red-700">🚫 Vagas esgotadas</p>
+              </div>
               <ul className="space-y-4 mb-10 flex-grow">
                 <li className="flex items-center gap-3 text-sm font-medium">
                   <CheckCircle className="text-primary w-5 h-5" />
@@ -841,21 +840,10 @@ export default function App() {
                   Pode ser dividido por até 4 pessoas
                 </li>
               </ul>
-              <a
-                href="/agendamento"
-                onClick={() => {
-                  trackEvent('InitiateCheckout', { content_name: 'Pacote Completo', value: prices.completo.sale, currency: 'BRL' });
-                  track.event('package_select_completo');
-                  track.tag('package_interest', 'completo');
-                  track.tag('package_value_brl', prices.completo.sale);
-                  track.upgrade('package_selected');
-                  track.ecommerce('select_item', {
-                    item_id: 'completo', item_name: 'Pacote Completo', price: prices.completo.sale,
-                    item_list_id: 'home_packages', item_list_name: 'Home — Escolha seu Pacote',
-                  });
-                }}
-                className="block text-center w-full py-4 rounded-full border-2 border-primary text-primary font-bold hover:bg-primary hover:text-white transition-colors"
-              >Selecionar</a>
+              <span className="block text-center w-full py-4 rounded-full border-2 border-gray-300 text-gray-400 font-bold cursor-not-allowed select-none">
+                Esgotado
+              </span>
+              </div>
             </motion.div>
           </div>
         </div>

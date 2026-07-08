@@ -338,7 +338,8 @@ function RescheduleModal({
             className="w-full border border-gray-200 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-purple-200"
             value={pkgKey} onChange={e => { setPkgKey(e.target.value); setNewTime(''); }}
           >
-            {PACKAGES.map(p => (
+            {/* Completo esgotado (jul/2026): só aparece se o booking JÁ é completo */}
+            {PACKAGES.filter(p => p.key !== 'completo' || PKG_KEY[booking.package] === 'completo').map(p => (
               <option key={p.key} value={p.key}>{p.name} — {p.duration}min — R$ {p.price}</option>
             ))}
           </select>
@@ -585,7 +586,8 @@ function NewBookingModal({
               setCustomValue(PACKAGES.find(p => p.key === k)?.price ?? 0);
             }}
           >
-            {PACKAGES.map(p => (
+            {/* Completo esgotado (jul/2026): criação fechada, inclusive admin */}
+            {PACKAGES.filter(p => p.key !== 'completo').map(p => (
               <option key={p.key} value={p.key}>{p.name} — {p.duration}min — R$ {p.price.toLocaleString('pt-BR')}</option>
             ))}
           </select>

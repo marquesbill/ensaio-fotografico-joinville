@@ -351,9 +351,14 @@ export default function Agendamento() {
             >
               <h2 className="text-xl font-bold text-on-surface mb-5 text-center">Escolha seu pacote</h2>
               <div className="space-y-4">
-                {PACKAGES.map(p => (
+                {PACKAGES.map(p => {
+                  // Completo ESGOTADO (jul/2026): card fica visível mas inclicável.
+                  const soldOut = p.key === 'completo';
+                  return (
                   <button key={p.key} type="button"
+                    disabled={soldOut}
                     onClick={() => {
+                      if (soldOut) return;
                       track.event(`agendamento_pacote_${p.key}`);
                       track.tag('chosen_package', p.key);
                       track.tag('package_value_brl', p.price);
@@ -364,9 +369,15 @@ export default function Agendamento() {
                       setPkg(p.key);
                     }}
                     className={`w-full text-left rounded-2xl border-2 p-5 transition-all relative
-                      ${pkg === p.key ? 'border-primary bg-primary/5 shadow-md' : 'border-outline-variant bg-white/80 hover:border-primary/50'}`}
+                      ${soldOut ? 'border-red-200 bg-white/60 opacity-60 grayscale cursor-not-allowed overflow-hidden'
+                        : pkg === p.key ? 'border-primary bg-primary/5 shadow-md' : 'border-outline-variant bg-white/80 hover:border-primary/50'}`}
                   >
-                    {p.popular && (
+                    {soldOut && (
+                      <span className="absolute top-4 -right-10 rotate-[30deg] bg-red-600 text-white text-xs font-black uppercase tracking-[0.2em] px-12 py-1 shadow-md">
+                        Esgotado
+                      </span>
+                    )}
+                    {p.popular && !soldOut && (
                       <span className="absolute -top-3 left-6 text-[10px] font-bold uppercase tracking-widest px-3 py-1 rounded-full text-white"
                         style={{ background: 'linear-gradient(135deg,#7a3f8f,#e87060)' }}>Mais Procurado</span>
                     )}
@@ -395,7 +406,8 @@ export default function Agendamento() {
                       </div>
                     </div>
                   </button>
-                ))}
+                  );
+                })}
               </div>
               <motion.button
                 disabled={!canGoStep2}

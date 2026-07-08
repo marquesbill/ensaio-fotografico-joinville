@@ -3169,6 +3169,12 @@ async function handleCreate(req: VercelRequest, res: VercelResponse, auth: { use
 
   const pkg = isEspecial ? null : PACKAGES[packageKey as PkgKey];
   if (!isEspecial && !pkg) return res.status(400).json({ error: 'Pacote inválido' });
+  // Venda do Completo INTERROMPIDA (agenda cheia, jul/2026) — fecha geral,
+  // inclusive admin (decisão do André). Bookings de completo JÁ existentes
+  // seguem operáveis (cancelar/confirmar/remarcar); só a CRIAÇÃO é bloqueada.
+  if (packageKey === 'completo') {
+    return res.status(400).json({ error: 'Pacote Completo esgotado — vendas interrompidas.' });
+  }
 
   const nb = Number(numBailarinas);
   const maxNb = isEspecial ? Infinity : pkg!.maxBailarinas;
