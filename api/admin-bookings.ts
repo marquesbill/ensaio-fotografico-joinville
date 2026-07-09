@@ -205,8 +205,10 @@ async function createAsaasPaymentLinkAdmin(opts: {
 }): Promise<{ id: string; url: string }> {
   const DAYS = 7;
   const endDate = new Date(Date.now() + DAYS * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+  // Especial: André oferece até 3x sem juros (ele absorve os juros). INSTALLMENT
+  // deixa a pagadora escolher 1x..3x no cartão; PIX segue à vista.
   const maxInstallments = Math.min(
-    Math.max(parseInt(process.env.ASAAS_MAX_INSTALLMENTS || '6', 10) || 6, 1),
+    Math.max(parseInt(process.env.ASAAS_ESPECIAL_MAX_INSTALLMENTS || '3', 10) || 3, 1),
     12,
   );
   return asaasApi<{ id: string; url: string }>('/paymentLinks', {
@@ -215,7 +217,7 @@ async function createAsaasPaymentLinkAdmin(opts: {
       name:                 opts.name,
       description:          opts.description || '',
       billingType:          'UNDEFINED',
-      chargeType:           'DETACHED',
+      chargeType:           'INSTALLMENT',
       value:                opts.value,
       dueDateLimitDays:     DAYS,
       endDate,
