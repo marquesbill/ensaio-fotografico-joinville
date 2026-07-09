@@ -24,6 +24,7 @@ interface Booking {
   paidSessions?:        string[]; // subset de stripeSessions que pagaram
   payerNames?:          string[]; // nome de cada pagador (paralelo a stripeSessions)
   payerEmails?:         string[]; // e-mail de cada pagador (Especial) — só admin vê
+  payerValues?:         string[]; // valor custom de cada pagador (Especial), "250.00"
   splitCount?:          number;   // = stripeSessions.length
   paidCount?:           number;   // = paidSessions.length
   status:               string;   // "Confirmado" | "Pendente" | "Cancelado" | "Pago Parcial"
@@ -1344,7 +1345,11 @@ function SplitDetailsModal({
       <div className="space-y-2 max-h-[60vh] overflow-y-auto">
         {sessions.map((sessId, idx) => {
           const isPaid       = paidSet.has(sessId);
-          const value        = idx === total - 1 ? lastLink : perLink;
+          // Especial: valores custom por pagador (payerValues); senão split igual.
+          const customVal    = parseFloat((booking.payerValues ?? [])[idx] || '');
+          const value        = Number.isFinite(customVal) && customVal > 0
+            ? customVal
+            : (idx === total - 1 ? lastLink : perLink);
           const newUrl       = regenerated[sessId];
           const isRegenerating = regenerating === sessId;
           const payerName    = (booking.payerNames ?? [])[idx] || '';
@@ -2288,11 +2293,16 @@ function Dashboard({
     // Mesma fórmula do backend (floor 2 casas; o último absorve o resto)
     const perLink = total > 1 ? Math.floor((totalValue / total) * 100) / 100 : totalValue;
     const idx = (booking.stripeSessions ?? []).indexOf(oldSessionId);
-    const partValue = idx === total - 1
-      ? Number((totalValue - perLink * (total - 1)).toFixed(2))
-      : perLink;
-    // Nome do pagador dessa posição — pra carregar no link regerado
-    const payerName = idx >= 0 ? (booking.payerNames ?? [])[idx] || '' : '';
+    // Especial: usa o valor CUSTOM daquele pagador (split igual regeraria errado).
+    const customVal = idx >= 0 ? parseFloat((booking.payerValues ?? [])[idx] || '') : NaN;
+    const partValue = Number.isFinite(customVal) && customVal > 0
+      ? customVal
+      : (idx === total - 1
+        ? Number((totalValue - perLink * (total - 1)).toFixed(2))
+        : perLink);
+    // Nome/e-mail do pagador dessa posição — carregam no link e no aviso por e-mail
+    const payerName  = idx >= 0 ? (booking.payerNames  ?? [])[idx] || '' : '';
+    const payerEmail = idx >= 0 ? (booking.payerEmails ?? [])[idx] || '' : '';
 
     setRegenSession(oldSessionId);
     try {
@@ -2312,6 +2322,8 @@ function Dashboard({
           email:            booking.email ?? '',
           whatsapp:         booking.whatsapp ?? '',
           payerName,
+          payerEmail,
+          endTime:          booking.end,
         }),
       });
       const json = await r.json() as { url?: string; sessionId?: string; error?: string };

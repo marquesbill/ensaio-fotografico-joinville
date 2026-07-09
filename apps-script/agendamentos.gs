@@ -1229,7 +1229,7 @@ function cancelBooking(data) {
  * (não faz sentido regerar um link que já foi pago).
  */
 function regenerateSplitLink(data) {
-  const { bookingId, oldStripeSession, newStripeSession } = data;
+  const { bookingId, oldStripeSession, newStripeSession, newPayerUrl } = data;
   if (!bookingId || !oldStripeSession || !newStripeSession) {
     throw new Error('Parâmetros faltando: bookingId/oldStripeSession/newStripeSession');
   }
@@ -1258,6 +1258,15 @@ function regenerateSplitLink(data) {
 
   sessions[pos] = newStripeSession;
   sa.getRange(shRow, _col1(cm, 'Stripe Session', 13)).setValue(sessions.join(','));
+  // Página do grupo: troca também a URL do pagador (coluna "Links Pagadores",
+  // pipe-separated, paralela às sessions). Sem isto o link regerado não chegava
+  // à página pública — ela continuava apontando pro link expirado.
+  if (newPayerUrl && cm['Links Pagadores'] !== undefined) {
+    var urls = String(_val(row, cm, 'Links Pagadores') || '').split('|');
+    while (urls.length < sessions.length) urls.push('');
+    urls[pos] = String(newPayerUrl);
+    sa.getRange(shRow, cm['Links Pagadores'] + 1).setValue(urls.join('|'));
+  }
   sa.getRange(shRow, _col1(cm, 'Atualizado em',  18)).setValue(nowIso());
   addLog('LINK_REGERADO', bookingId,
     'Pagador ' + (pos + 1) + '/' + sessions.length + ' — ' + oldStripeSession + ' → ' + newStripeSession,
@@ -2110,6 +2119,7 @@ function doGet(e) {
         const iPaidSes  = ci['Sessões Pagas']        ?? -1;
         const iPayerNm  = ci['Nomes Pagadores']      ?? -1;
         const iPayerEm  = ci['Emails Pagadores']     ?? -1;
+        const iPayerVal = ci['Valores Pagadores']    ?? -1;
         const splitCsv  = function(v) {
           return String(v || '').split(',').map(function(s) { return s.trim(); }).filter(function(s) { return !!s; });
         };
@@ -2135,6 +2145,9 @@ function doGet(e) {
           var payerEmails = iPayerEm >= 0
             ? String(r[iPayerEm] || '').split(',').map(function(s) { return s.trim(); })
             : [];
+          var payerValues = iPayerVal >= 0
+            ? String(r[iPayerVal] || '').split(',').map(function(s) { return s.trim(); })
+            : [];
           return {
             id:                  r[iId],
             date:                fmtDate(r[iDate]),
@@ -2154,6 +2167,7 @@ function doGet(e) {
             paidSessions:        paidList,       // array (subset de stripeSessions)
             payerNames:          payerNames,     // array paralelo a stripeSessions
             payerEmails:         payerEmails,    // idem (Especial) — só admin vê
+            payerValues:         payerValues,    // idem (Especial) — valor custom por pagador
             splitCount:          sessions.length,
             paidCount:           paidList.length,
             status:              r[iStatus],

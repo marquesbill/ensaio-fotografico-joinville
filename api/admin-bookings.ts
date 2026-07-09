@@ -191,6 +191,41 @@ async function createAsaasCheckoutAdmin(opts: {
   return asaasApi<AsaasCheckout>('/checkouts', { method: 'POST', body });
 }
 
+/**
+ * Cria um Payment Link ASAAS de VIDA LONGA (7 dias a partir da criação).
+ * Usado nos links de pagador do ESPECIAL: o Checkout expira em no máx. 24h
+ * (teto da modalidade) — curto demais pra um grupo se coordenar. O webhook
+ * já pareia payment.paymentLink, então a confirmação funciona igual.
+ * Trade-off conhecido: o Payment Link não oferece o parcelamento 6x na
+ * mesma página como o Checkout (motivo da migração antiga) — pagador do
+ * especial paga a própria parte à vista (PIX/cartão).
+ */
+async function createAsaasPaymentLinkAdmin(opts: {
+  name: string; description?: string; value: number; externalReference: string;
+}): Promise<{ id: string; url: string }> {
+  const DAYS = 7;
+  const endDate = new Date(Date.now() + DAYS * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+  const maxInstallments = Math.min(
+    Math.max(parseInt(process.env.ASAAS_MAX_INSTALLMENTS || '6', 10) || 6, 1),
+    12,
+  );
+  return asaasApi<{ id: string; url: string }>('/paymentLinks', {
+    method: 'POST',
+    body: {
+      name:                 opts.name,
+      description:          opts.description || '',
+      billingType:          'UNDEFINED',
+      chargeType:           'DETACHED',
+      value:                opts.value,
+      dueDateLimitDays:     DAYS,
+      endDate,
+      maxInstallmentCount:  maxInstallments,
+      externalReference:    opts.externalReference,
+      notificationDisabled: true,
+    },
+  });
+}
+
 /* ───────── fim ASAAS helpers ───────── */
 const ANDRE_EMAIL     = 'andreffotografia@gmail.com';
 const MARIANE_EMAIL   = 'mariane.sslourenco@gmail.com';
@@ -1512,13 +1547,13 @@ async function handleGa4Funnel(req: VercelRequest, res: VercelResponse) {
 
   type PkgStats = { id: string; selects: number; purchases: number; revenue: number };
   const pkgMap: Record<string, PkgStats> = {};
-  (selectByPkg.rows || []).forEach(r => {
+  (selectByPkg[0].rows || []).forEach(r => {
     const id = r.dimensionValues?.[0]?.value || '';
     if (!id) return;
     pkgMap[id] = pkgMap[id] || { id, selects: 0, purchases: 0, revenue: 0 };
     pkgMap[id].selects = Number(r.metricValues?.[0]?.value || 0);
   });
-  (purchaseByPkg.rows || []).forEach(r => {
+  (purchaseByPkg[0].rows || []).forEach(r => {
     const id = r.dimensionValues?.[0]?.value || '';
     if (!id) return;
     pkgMap[id] = pkgMap[id] || { id, selects: 0, purchases: 0, revenue: 0 };
@@ -2237,7 +2272,7 @@ async function handleGa4Behavior(req: VercelRequest, res: VercelResponse) {
     sessions: dowMap[String(d)] || 0,
   }));
 
-  const cities = (cityReport.rows || []).map(r => ({
+  const cities = (cityReport[0].rows || []).map(r => ({
     city:     r.dimensionValues?.[0]?.value || '(unknown)',
     country:  r.dimensionValues?.[1]?.value || '(unknown)',
     sessions: Number(r.metricValues?.[0]?.value || 0),
@@ -3305,6 +3340,17 @@ async function handleCreate(req: VercelRequest, res: VercelResponse, auth: { use
           const asaasItemName = (split > 1 && payerName)
             ? `${pkgLabel}: ${payerName}`.slice(0, 30)
             : `Pacote ${pkgLabel}`.slice(0, 30);
+          // ESPECIAL: Payment Link (7 dias) em vez de Checkout (24h) — o grupo
+          // precisa de tempo pra se coordenar; Checkout expirava antes de todos pagarem.
+          if (isEspecial) {
+            const link = await createAsaasPaymentLinkAdmin({
+              name:              asaasItemName,
+              description:       `${dateLabel} · ${duration} min · ${nb} ${nb === 1 ? 'bailarina' : 'bailarinas'}${partLabel}`,
+              value:             partValue,
+              externalReference: encodeAsaasRefAdmin({ date, time, packageKey, numBailarinas: nb, name, email, whatsapp }),
+            });
+            return { url: link.url, id: link.id };
+          }
           const checkout = await createAsaasCheckoutAdmin({
             itemName:          asaasItemName,
             itemDescription:   `${dateLabel} · ${duration} min · ${nb} ${nb === 1 ? 'bailarina' : 'bailarinas'}${partLabel}`,
@@ -3904,13 +3950,17 @@ async function handleReschedule(req: VercelRequest, res: VercelResponse, auth: {
  */
 async function handleRegenerateSplitLink(req: VercelRequest, res: VercelResponse, auth: { user: string }) {
   const { bookingId, oldStripeSession, gateway, partValue,
-          date, time, packageKey, numBailarinas, name, email, whatsapp, payerName } = req.body as {
+          date, time, packageKey, numBailarinas, name, email, whatsapp, payerName,
+          payerEmail, endTime } = req.body as {
     bookingId: string; oldStripeSession: string;
     gateway?: 'mp' | 'asaas'; partValue: number;
-    date: string; time: string; packageKey: PkgKey; numBailarinas?: number;
+    date: string; time: string; packageKey: PkgKey | 'especial'; numBailarinas?: number;
     name: string; email: string; whatsapp?: string;
     payerName?: string;   // nome do pagador desse link (pra carregar no item)
+    payerEmail?: string;  // Especial: pagador recebe o link novo por e-mail
+    endTime?: string;     // Especial: fim do bloco (pro e-mail; catálogo tem duration 0)
   };
+  const isEspecial = packageKey === 'especial';
 
   if (!bookingId || !oldStripeSession || !date || !time || !packageKey || !name || !email) {
     return res.status(400).json({ error: 'Campos obrigatórios faltando' });
@@ -3957,6 +4007,17 @@ async function handleRegenerateSplitLink(req: VercelRequest, res: VercelResponse
       const asaasItemName = pName
         ? `${pkg.name}: ${pName}`.slice(0, 30)
         : `Pacote ${pkg.name}`.slice(0, 30);
+      if (isEspecial) {
+        // Payment Link (7 dias) — Checkout (24h) expirava antes do grupo se coordenar.
+        const link = await createAsaasPaymentLinkAdmin({
+          name:              asaasItemName,
+          description:       `${dateLbl}${pName ? ` · ${pName}` : ''} (link regerado)`,
+          value:             partValue,
+          externalReference: encodeAsaasRefAdmin({ date, time, packageKey, numBailarinas: nb, name, email, whatsapp: whatsapp || '' }),
+        });
+        newUrl = link.url;
+        newId  = link.id;
+      } else {
       const checkout = await createAsaasCheckoutAdmin({
         itemName:          asaasItemName,
         itemDescription:   `${dateLbl} · ${pkg.duration} min · ${nb} ${nb === 1 ? 'bailarina' : 'bailarinas'}${pName ? ` · ${pName}` : ''} (link regerado)`,
@@ -3967,6 +4028,7 @@ async function handleRegenerateSplitLink(req: VercelRequest, res: VercelResponse
       });
       newUrl = checkout.link;
       newId  = checkout.id;
+      }
     } else {
       const expiry = new Date(Date.now() + 3 * 24 * 60 * 60 * 1000).toISOString();
       const prefRes = await fetch('https://api.mercadopago.com/checkout/preferences', {
@@ -4009,6 +4071,7 @@ async function handleRegenerateSplitLink(req: VercelRequest, res: VercelResponse
           bookingId,
           oldStripeSession,
           newStripeSession: newId,
+          newPayerUrl:      newUrl,   // atualiza a página do grupo (Links Pagadores)
         }),
       });
       if (!updRes.ok) throw new Error(`Sheets HTTP ${updRes.status}`);
@@ -4040,6 +4103,23 @@ async function handleRegenerateSplitLink(req: VercelRequest, res: VercelResponse
         origin:  'painel',
       }),
     }).catch(() => {});
+
+    // Especial: o pagador recebe o link NOVO por e-mail (mesmo template da
+    // criação, com botão de pagar + página do grupo). BCC André+Mari.
+    if (isEspecial && payerEmail) {
+      const toMin = (t: string) => { const [h, m] = String(t || '').split(':').map(Number); return (h || 0) * 60 + (m || 0); };
+      const dur   = (endTime && time) ? Math.max(0, toMin(endTime) - toMin(time)) : 0;
+      const emailLog = await sendEspecialEmails([{
+        to:      payerEmail,
+        subject: `Novo link de pagamento — ensaio de ${date.split('-').reverse().join('/')}`,
+        html:    buildEspecialEmailHtml('created', {
+          payerName: pName, date, time, endTime: endTime || time, duration: dur,
+          numBailarinas: nb, partValue: partValue.toFixed(2), payUrl: newUrl,
+          groupUrl: `${SITE_URL}/especial/${bookingId}?t=${especialToken(bookingId)}`, bookingId,
+        }),
+      }]);
+      console.log('[regenerateSplitLink] email link novo', JSON.stringify(emailLog));
+    }
 
     return res.status(200).json({ url: newUrl, sessionId: newId });
   } catch (err) {
