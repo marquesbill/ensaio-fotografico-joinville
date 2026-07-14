@@ -131,10 +131,10 @@ function fmtTime(t: string) {
   return t.substring(0, 5);
 }
 
-const RANGE_START = '2026-07-20';
+const RANGE_START = '2026-07-19';  // 19/07: dia extra só-admin (cliente especial à noite)
 const RANGE_END   = '2026-08-02';
 const DAY_FROM    = 8;    // 08:00
-const DAY_TO      = 20;   // 20:00
+const DAY_TO      = 22;   // 22:00 (cobre a janela noturna do dia 19)
 const SLOT_PX     = 11;   // px per 15-min slot  (aumentado para caber tudo sem scroll da página)
 const COL_PX      = 72;   // px per day column
 const GUTTER_PX   = 38;   // px for time-label column

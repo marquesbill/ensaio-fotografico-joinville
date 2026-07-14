@@ -249,7 +249,16 @@ function buildClientesSheet() {
 
 // ── Disponibilidade ───────────────────────────────────────────
 function getWorkIntervals(dateStr) {
-  const intervals = [{ start: CFG.WORK_START_H * 60, end: CFG.WORK_END_H * 60 }];
+  // Dias FORA da janela padrão com expediente próprio (em minutos). Só o admin
+  // alcança essas datas (o site público nunca as oferece no strip de datas) —
+  // portanto, na prática, agendável só por André/Mari via painel.
+  // 2026-07-19: cliente especial à noite, 17:30–22:00 (pedido do André, jul/9).
+  const SPECIAL_DAYS = {
+    '2026-07-19': [{ start: 17 * 60 + 30, end: 22 * 60 }],
+  };
+  const intervals = SPECIAL_DAYS[dateStr]
+    ? SPECIAL_DAYS[dateStr].map(function(iv) { return { start: iv.start, end: iv.end }; })
+    : [{ start: CFG.WORK_START_H * 60, end: CFG.WORK_END_H * 60 }];
   const blocks = getSheet('Bloqueios');
   if (!blocks || blocks.getLastRow() < 2) return intervals;
 

@@ -63,6 +63,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (packageKey === 'completo') {
     return res.status(400).json({ error: 'O pacote Completo está esgotado.' });
   }
+  // Datas fora da janela pública (ex.: 19/07, dia extra só-admin) não são
+  // solicitáveis pelo site — a UI nem as oferece; trava explícita por garantia.
+  if (date < '2026-07-20' || date > '2026-08-02') {
+    return res.status(400).json({ error: 'Data fora do período de agendamento.' });
+  }
   const nb = Number(numBailarinas);
   if (!Number.isInteger(nb) || nb < 1 || nb > pkg.maxBailarinas) {
     return res.status(400).json({ error: `Nº Bailarinas deve estar entre 1 e ${pkg.maxBailarinas} para o pacote ${pkg.name}` });
