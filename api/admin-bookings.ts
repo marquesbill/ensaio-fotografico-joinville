@@ -1594,7 +1594,6 @@ async function handleMetaLeads(req: VercelRequest, res: VercelResponse) {
   if (!token || !accountId) {
     return res.status(200).json({ configured: false, details: 'META_ADS_TOKEN ou META_ADS_ACCOUNT_ID ausentes nas env vars do Vercel' });
   }
-  const acctPath = accountId.startsWith('act_') ? accountId : `act_${accountId}`;
   const days = Math.min(Math.max(parseInt(String(req.query.range || '30'), 10) || 30, 1), 90);
   const sinceMs = Date.now() - days * 86400000;
 
@@ -1617,10 +1616,18 @@ async function handleMetaLeads(req: VercelRequest, res: VercelResponse) {
     return json as { data?: MetaAdRow[]; paging?: { next?: string } };
   };
 
-  // Anúncios da conta com o edge leads embutido. O filtro por data é aplicado
-  // no loop abaixo (filtering() na URL tem encoding traiçoeiro na Graph API).
-  let url: string | undefined =
-    `https://graph.facebook.com/v19.0/${acctPath}/ads?fields=id,name,adset{id,name},campaign{id,name},` +
+  // Varre TODAS as contas de anúncio visíveis ao token (os leads podem viver
+  // em outra conta que não a META_ADS_ACCOUNT_ID dos insights). Fallback: env.
+  let accounts: string[] = [];
+  try {
+    const accRes = await fetch(`https://graph.facebook.com/v19.0/me/adaccounts?fields=id&limit=25&access_token=${token}`);
+    const accJson = await accRes.json() as { data?: Array<{ id: string }> };
+    accounts = (accJson.data || []).map(a => a.id);
+  } catch { /* fallback abaixo */ }
+  if (accounts.length === 0) accounts = [accountId.startsWith('act_') ? accountId : `act_${accountId}`];
+
+  const adsUrl = (acct: string) =>
+    `https://graph.facebook.com/v19.0/${acct}/ads?fields=id,name,adset{id,name},campaign{id,name},` +
     `leads.limit(100){id,created_time,field_data}` +
     `&limit=100&access_token=${token}`;
 
@@ -1631,6 +1638,8 @@ async function handleMetaLeads(req: VercelRequest, res: VercelResponse) {
   }> = [];
 
   const norm = (k: string) => k.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z]/g, '');
+  for (const acct of accounts) {
+  let url: string | undefined = adsUrl(acct);
   let pages = 0;
   while (url && pages < 10) {
     pages++;
@@ -1682,6 +1691,7 @@ async function handleMetaLeads(req: VercelRequest, res: VercelResponse) {
       }
     }
     url = json.paging?.next;
+  }
   }
 
   leads.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
