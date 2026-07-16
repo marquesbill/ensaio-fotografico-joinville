@@ -1645,23 +1645,32 @@ async function handleMetaLeads(req: VercelRequest, res: VercelResponse) {
           if (new Date(ld.created_time).getTime() < sinceMs) continue;
           const fields: Record<string, string> = {};
           (ld.field_data || []).forEach(f => { fields[norm(f.name)] = (f.values || []).join(', '); });
-          const phone = fields['telefone'] || fields['phonenumber'] || fields['celular'] || fields['whatsapp'] || '';
-          let estado  = fields['estado'] || fields['uf'] || fields['state'] || '';
+          // Match por INCLUSÃO: os nomes de campo variam por formulário
+          // ('nome_próprio', 'número_de_telefone', 'e-mail'... — visto no JOIN 26).
+          const keys = Object.keys(fields);
+          const pick = (test: (k: string) => boolean) => { const k = keys.find(test); return k ? { k, v: fields[k] } : null; };
+          const phoneF  = pick(k => /telefone|phone|celular|whatsapp/.test(k));
+          const emailF  = pick(k => /email/.test(k));
+          const estadoF = pick(k => k === 'estado' || k === 'uf' || k === 'state');
+          const cidadeF = pick(k => /cidade|city/.test(k));
+          const nameF   = pick(k => /nome|name/.test(k) && k !== phoneF?.k && k !== emailF?.k);
+          const phone = phoneF?.v || '';
+          let estado  = estadoF?.v || '';
           if (!estado && phone) {
             const ddd = extractDDD(phone);
             if (ddd && DDD_TO_STATE[ddd]) estado = DDD_TO_STATE[ddd].state;
           }
-          const known = new Set(['nomecompleto', 'nome', 'fullname', 'telefone', 'phonenumber', 'celular', 'whatsapp', 'email', 'emailaddress', 'estado', 'uf', 'state', 'cidade', 'city']);
+          const known = new Set([phoneF?.k, emailF?.k, estadoF?.k, cidadeF?.k, nameF?.k].filter(Boolean));
           const extra: Record<string, string> = {};
           Object.entries(fields).forEach(([k, v]) => { if (!known.has(k)) extra[k] = v; });
           leads.push({
             id:        ld.id,
             createdAt: ld.created_time,
-            name:      fields['nomecompleto'] || fields['nome'] || fields['fullname'] || '',
+            name:      nameF?.v || '',
             phone,
-            email:     fields['email'] || fields['emailaddress'] || '',
+            email:     emailF?.v || '',
             estado,
-            cidade:    fields['cidade'] || fields['city'] || '',
+            cidade:    cidadeF?.v || '',
             extra,
             campaign:  ad.campaign?.name || '—',
             adset:     ad.adset?.name || '—',
