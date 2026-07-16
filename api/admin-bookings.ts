@@ -1582,6 +1582,103 @@ async function handleGa4Funnel(req: VercelRequest, res: VercelResponse) {
 
 /* ───────── Meta Ads (custo por lead em Aquisição) ───────── */
 
+/* ───────── Meta Leads (formulários nativos de cadastro) ─────────
+ * Busca os leads dos instant forms via edge `leads` dos anúncios da conta.
+ * Requer a permissão `leads_retrieval` no META_ADS_TOKEN (e acesso à Página);
+ * sem ela a Meta devolve erro — repassamos a mensagem pra aba mostrar o que falta.
+ * Normaliza field_data (nome/telefone/email/estado etc.) + campanha/conjunto/
+ * criativo; estado ausente é derivado do DDD do telefone (DDD_TO_STATE). */
+async function handleMetaLeads(req: VercelRequest, res: VercelResponse) {
+  const token     = process.env.META_ADS_TOKEN;
+  const accountId = process.env.META_ADS_ACCOUNT_ID;
+  if (!token || !accountId) {
+    return res.status(200).json({ configured: false, details: 'META_ADS_TOKEN ou META_ADS_ACCOUNT_ID ausentes nas env vars do Vercel' });
+  }
+  const acctPath = accountId.startsWith('act_') ? accountId : `act_${accountId}`;
+  const days = Math.min(Math.max(parseInt(String(req.query.range || '30'), 10) || 30, 1), 90);
+  const sinceMs = Date.now() - days * 86400000;
+
+  type MetaLeadRow = { id: string; created_time: string; field_data?: Array<{ name: string; values: string[] }> };
+  type MetaAdRow = {
+    id: string; name?: string;
+    adset?: { id: string; name: string }; campaign?: { id: string; name: string };
+    leads?: { data?: MetaLeadRow[]; paging?: { next?: string } };
+  };
+
+  const fetchJson = async (url: string) => {
+    const r = await fetch(url);
+    const body = await r.text();
+    let json: unknown;
+    try { json = JSON.parse(body); } catch { throw new Error(`Meta API ${r.status}: resposta não-JSON`); }
+    if (!r.ok) {
+      const errMsg = (json as { error?: { message?: string } }).error?.message || body.slice(0, 300);
+      throw new Error(`Meta API ${r.status}: ${errMsg}`);
+    }
+    return json as { data?: MetaAdRow[]; paging?: { next?: string } };
+  };
+
+  // Anúncios da conta com o edge leads embutido. O filtro por data é aplicado
+  // no loop abaixo (filtering() na URL tem encoding traiçoeiro na Graph API).
+  let url: string | undefined =
+    `https://graph.facebook.com/v19.0/${acctPath}/ads?fields=id,name,adset{id,name},campaign{id,name},` +
+    `leads.limit(100){id,created_time,field_data}` +
+    `&limit=100&access_token=${token}`;
+
+  const leads: Array<{
+    id: string; createdAt: string; name: string; phone: string; email: string;
+    estado: string; cidade: string; extra: Record<string, string>;
+    campaign: string; adset: string; ad: string;
+  }> = [];
+
+  const norm = (k: string) => k.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z]/g, '');
+  let pages = 0;
+  while (url && pages < 10) {
+    pages++;
+    const json = await fetchJson(url);
+    for (const ad of json.data || []) {
+      // pagina interna de leads do anúncio (se >100)
+      let leadPage: { data?: MetaLeadRow[]; paging?: { next?: string } } | undefined = ad.leads;
+      let inner = 0;
+      while (leadPage && inner < 10) {
+        inner++;
+        for (const ld of leadPage.data || []) {
+          if (new Date(ld.created_time).getTime() < sinceMs) continue;
+          const fields: Record<string, string> = {};
+          (ld.field_data || []).forEach(f => { fields[norm(f.name)] = (f.values || []).join(', '); });
+          const phone = fields['telefone'] || fields['phonenumber'] || fields['celular'] || fields['whatsapp'] || '';
+          let estado  = fields['estado'] || fields['uf'] || fields['state'] || '';
+          if (!estado && phone) {
+            const ddd = extractDDD(phone);
+            if (ddd && DDD_TO_STATE[ddd]) estado = DDD_TO_STATE[ddd].state;
+          }
+          const known = new Set(['nomecompleto', 'nome', 'fullname', 'telefone', 'phonenumber', 'celular', 'whatsapp', 'email', 'emailaddress', 'estado', 'uf', 'state', 'cidade', 'city']);
+          const extra: Record<string, string> = {};
+          Object.entries(fields).forEach(([k, v]) => { if (!known.has(k)) extra[k] = v; });
+          leads.push({
+            id:        ld.id,
+            createdAt: ld.created_time,
+            name:      fields['nomecompleto'] || fields['nome'] || fields['fullname'] || '',
+            phone,
+            email:     fields['email'] || fields['emailaddress'] || '',
+            estado,
+            cidade:    fields['cidade'] || fields['city'] || '',
+            extra,
+            campaign:  ad.campaign?.name || '—',
+            adset:     ad.adset?.name || '—',
+            ad:        ad.name || '—',
+          });
+        }
+        const nextUrl: string | undefined = leadPage.paging?.next;
+        leadPage = nextUrl ? await fetchJson(nextUrl) as { data?: MetaLeadRow[]; paging?: { next?: string } } : undefined;
+      }
+    }
+    url = json.paging?.next;
+  }
+
+  leads.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+  return res.status(200).json({ configured: true, rangeDays: days, total: leads.length, leads });
+}
+
 async function handleMetaAds(req: VercelRequest, res: VercelResponse) {
   const token     = process.env.META_ADS_TOKEN;
   const accountId = process.env.META_ADS_ACCOUNT_ID;
@@ -4258,6 +4355,15 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       console.error('[admin-bookings/ga4-behavior]', msg);
+      return res.status(500).json({ error: msg });
+    }
+  }
+  if (endpoint === 'meta-leads') {
+    try {
+      return await handleMetaLeads(req, res);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      console.error('[admin-bookings/meta-leads]', msg);
       return res.status(500).json({ error: msg });
     }
   }

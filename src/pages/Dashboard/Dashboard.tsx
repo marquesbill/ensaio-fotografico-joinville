@@ -22,6 +22,7 @@ import {
   CreditCard,
   MousePointerClick,
   Smartphone,
+  Users,
   LogOut,
   Loader2,
   Menu,
@@ -31,17 +32,19 @@ import {
 
 import { Overview } from './pages/Overview';
 import { Acquisition } from './pages/Acquisition';
+import { Leads } from './pages/Leads';
 import { Funnel } from './pages/Funnel';
 import { Engagement } from './pages/Engagement';
 import { Payments } from './pages/Payments';
 import { Behavior } from './pages/Behavior';
 import { generateFullReport, downloadMarkdown, reportFilename } from './lib/report';
 
-type DashboardPage = 'overview' | 'acquisition' | 'funnel' | 'engagement' | 'payments' | 'behavior';
+type DashboardPage = 'overview' | 'acquisition' | 'leads' | 'funnel' | 'engagement' | 'payments' | 'behavior';
 
 const NAV: Array<{ key: DashboardPage; label: string; icon: typeof LayoutGrid; status: 'live' | 'wip' }> = [
   { key: 'overview',    label: 'Visão Geral',    icon: LayoutGrid,        status: 'live' },
   { key: 'acquisition', label: 'Aquisição',      icon: TrendingUp,         status: 'live' },
+  { key: 'leads',       label: 'Leads',          icon: Users,              status: 'live' },
   { key: 'funnel',      label: 'Funil de Pacotes', icon: Filter,           status: 'live' },
   { key: 'engagement',  label: 'Engajamento',    icon: MousePointerClick, status: 'live' },
   { key: 'payments',    label: 'Pagamentos',     icon: CreditCard,        status: 'live' },
@@ -264,11 +267,12 @@ function DashboardShell({ token, user, onLogout }: { token: string; user: string
       <main className="flex-1 overflow-x-hidden pt-12 lg:pt-0">
         {activePage === 'overview'    && <Overview token={token} />}
         {activePage === 'acquisition' && <Acquisition token={token} />}
+        {activePage === 'leads'       && <Leads token={token} />}
         {activePage === 'funnel'      && <Funnel token={token} />}
         {activePage === 'engagement'  && <Engagement token={token} />}
         {activePage === 'payments'    && <Payments token={token} />}
         {activePage === 'behavior'    && <Behavior token={token} />}
-        {activePage !== 'overview' && activePage !== 'acquisition' && activePage !== 'funnel' && activePage !== 'engagement' && activePage !== 'payments' && activePage !== 'behavior' && (
+        {activePage !== 'overview' && activePage !== 'acquisition' && activePage !== 'leads' && activePage !== 'funnel' && activePage !== 'engagement' && activePage !== 'payments' && activePage !== 'behavior' && (
           <div className="p-10 flex items-center justify-center h-full">
             <div className="text-center">
               <p className="text-[#c5a3d4]/60 text-sm uppercase tracking-widest">Em construção</p>
