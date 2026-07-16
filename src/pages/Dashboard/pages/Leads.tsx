@@ -207,7 +207,9 @@ export function Leads({ token }: { token: string }) {
   const showPermissionHint = !!error && /403|leads_retrieval/i.test(error);
 
   return (
-    <div className="px-8 py-6 text-white max-w-7xl mx-auto">
+    // ponytail: página full-width (sem max-w-7xl das outras) — a tabela tem 10
+    // colunas e o espaço lateral elimina a rolagem horizontal na maioria das telas.
+    <div className="px-8 py-6 text-white">
       {/* Header */}
       <div className="flex flex-wrap items-end justify-between gap-4 mb-6">
         <div>
