@@ -136,7 +136,8 @@ function initSheets() {
     'ID','Data','Início','Fim','Pacote','Duração (min)','Valor (R$)',
     'Nome','E-mail','WhatsApp','Instagram Cliente','Instagram Bailarina','Nome Bailarina','Nº Bailarinas',
     'Stripe Session','Stripe Payment','Status','Criado em','Atualizado em',
-    'Rem1Sent','Rem2Sent','Rem3Sent','AndreNotified','ExpiryWarnSent','Source','Sessões Pagas','Nomes Pagadores','Valores Pagadores','Links Pagadores','Emails Pagadores'
+    'Rem1Sent','Rem2Sent','Rem3Sent','AndreNotified','ExpiryWarnSent','Source','Sessões Pagas','Nomes Pagadores','Valores Pagadores','Links Pagadores','Emails Pagadores',
+    'Aceite Contrato','Aceite CPF','Aceite IP'
   ];
   ensureSheet('Agendamentos', agHeaders, '#4CAF50');
   ensureSheet('Bloqueios',    ['Data','Início','Fim','Motivo'],                '#FF9800');
@@ -385,6 +386,77 @@ function getEspecialPublic(id) {
     };
   }
   return null;
+}
+
+/* ───────── Aceite de contrato (página pública /contrato/:id) ─────────
+ * contratoById: dados do booking p/ a página de aceite (não expõe nada sensível).
+ * recordContractAcceptance: grava nome/CPF/data-hora/IP+versão na linha e devolve
+ * o link de pagamento — que só é entregue DEPOIS do aceite (Opção A). */
+var _PKG_LABEL = { lembranca: 'Lembrança', economico: 'Econômico', completo: 'Completo', especial: 'Especial' };
+
+function getContratoById(id) {
+  const sa = getSheet('Agendamentos');
+  if (!sa || sa.getLastRow() < 2) return null;
+  const cm   = _colMap(sa);
+  const data = sa.getRange(2, 1, sa.getLastRow() - 1, sa.getLastColumn()).getValues();
+  for (let r = 0; r < data.length; r++) {
+    const row = data[r];
+    if (String(_val(row, cm, 'ID') || '') !== id) continue;
+    const dRaw    = _val(row, cm, 'Data');
+    const dateStr = dRaw ? (typeof dRaw === 'string'
+      ? dRaw : Utilities.formatDate(dRaw, 'America/Sao_Paulo', 'yyyy-MM-dd')) : '';
+    const pkgKey  = String(_val(row, cm, 'Pacote') || '');
+    const payUrl  = String(_val(row, cm, 'Links Pagadores') || '').split('|')[0].trim();
+    const accept  = String(_val(row, cm, 'Aceite Contrato') || '').trim();
+    return {
+      clientName:  _val(row, cm, 'Nome') || '',
+      date:        dateStr,
+      start:       _toHHMM(_val(row, cm, 'Início')),
+      end:         _toHHMM(_val(row, cm, 'Fim')),
+      packageName: _PKG_LABEL[pkgKey] || pkgKey,
+      value:       Number(_val(row, cm, 'Valor (R$)') || 0),
+      payUrl:      payUrl,
+      accepted:    !!accept,
+    };
+  }
+  return null;
+}
+
+function recordContractAcceptance(data) {
+  const id  = String(data.id || '').trim();
+  const cpf = String(data.cpf || '').replace(/\D/g, '');
+  if (!id)  throw new Error('id é obrigatório');
+  if (cpf.length !== 11) throw new Error('CPF inválido');
+
+  const sa = getSheet('Agendamentos');
+  if (!sa || sa.getLastRow() < 2) throw new Error('Planilha vazia');
+  _ensureColumn(sa, 'Aceite Contrato');
+  _ensureColumn(sa, 'Aceite CPF');
+  _ensureColumn(sa, 'Aceite IP');
+
+  const cm      = _colMap(sa);
+  const numCols = sa.getLastColumn();
+  const rows    = sa.getRange(2, 1, sa.getLastRow() - 1, numCols).getValues();
+  const iId     = cm['ID'] !== undefined ? cm['ID'] : 0;
+  const idx     = rows.findIndex(function(r) { return String(r[iId] || '') === id; });
+  if (idx < 0) throw new Error('Booking não encontrado: ' + id);
+
+  const row    = rows[idx];
+  const shRow  = idx + 2;
+  const payUrl = String(_val(row, cm, 'Links Pagadores') || '').split('|')[0].trim();
+
+  // Idempotente: se já aceitou, não sobrescreve o registro original — só devolve o link.
+  const prev = String(_val(row, cm, 'Aceite Contrato') || '').trim();
+  if (!prev) {
+    const stamp = nowIso() + ' | v' + String(data.contractVersion || '');
+    const ipUa  = String(data.ip || 'desconhecido') + (data.userAgent ? ' · ' + data.userAgent : '');
+    sa.getRange(shRow, cm['Aceite Contrato'] + 1).setValue(stamp);
+    sa.getRange(shRow, cm['Aceite CPF']      + 1).setValue("'" + cpf); // aspas → texto, preserva zeros
+    sa.getRange(shRow, cm['Aceite IP']       + 1).setValue(ipUa);
+    sa.getRange(shRow, _col1(cm, 'Atualizado em', 18)).setValue(nowIso());
+    addLog('CONTRATO_ACEITO', id, 'CPF ' + cpf + ' · ' + ipUa, 'aceite');
+  }
+  return { ok: true, payUrl: payUrl, alreadyAccepted: !!prev };
 }
 
 function computeAvailableSlots(dateStr, pkgKey, durationOverride) {
@@ -819,6 +891,9 @@ function createPending(data) {
   _ensureColumn(sa, 'Valores Pagadores');   // valor cobrado de cada pagador (paralelo aos nomes)
   _ensureColumn(sa, 'Links Pagadores');     // URL de pagamento de cada pagador (p/ página pública)
   _ensureColumn(sa, 'Emails Pagadores');    // e-mail de cada pagador (paralelo aos nomes) — Especial
+  _ensureColumn(sa, 'Aceite Contrato');     // timestamp + versão do aceite do contrato (página /contrato)
+  _ensureColumn(sa, 'Aceite CPF');          // CPF informado no aceite
+  _ensureColumn(sa, 'Aceite IP');           // IP + user-agent do aceite (evidência)
   const cm = _colMap(sa);
 
   // payerNames pode chegar como array ou string comma-separated — normaliza pra
@@ -2098,6 +2173,12 @@ function doGet(e) {
       const id = e.parameter.id;
       if (!id) throw new Error('id é obrigatório');
       result = getEspecialPublic(id);
+    } else if (action === 'contratoById') {
+      // Dados de UM booking p/ a página pública de aceite do contrato.
+      const id = e.parameter.id;
+      if (!id) throw new Error('id é obrigatório');
+      result = getContratoById(id);
+      if (!result) throw new Error('Booking não encontrado');
     } else if (action === 'bookings') {
       const sa = getSheet('Agendamentos');
       if (!sa || sa.getLastRow() < 2) { result = []; }
@@ -2260,6 +2341,7 @@ function doPost(e) {
     else if (action === 'cancelBooking')        result = cancelBooking(body);
     else if (action === 'editBooking')          result = editBooking(body);
     else if (action === 'regenerateSplitLink')  result = regenerateSplitLink(body);
+    else if (action === 'recordContractAcceptance') result = recordContractAcceptance(body);
     else if (action === 'resendConfirmation') result = resendBookingConfirmationEmail(body.bookingId, body.extraCc);
     else if (action === 'releasePending')  result = releasePendingSlots();
     else if (action === 'initSheets')      { initSheets(); result = { ok: true }; }

@@ -18,6 +18,7 @@ const AgendamentoSucesso = lazy(() =>
 const Admin = lazy(() => import('./pages/Admin.tsx'));
 const Dashboard = lazy(() => import('./pages/Dashboard/Dashboard.tsx'));
 const Especial = lazy(() => import('./pages/Especial.tsx'));   // página pública do pacote Especial (token)
+const Contrato = lazy(() => import('./pages/Contrato.tsx'));   // página pública de aceite do contrato (token)
 
 // Loader enquanto o chunk da rota baixa (a home nunca o mostra — App é eager).
 function PageLoader() {
@@ -45,6 +46,7 @@ createRoot(document.getElementById('root')!).render(
             <Route path="/admin" element={<Admin />} />
             <Route path="/dashboard" element={<Dashboard />} />
             <Route path="/especial/:id" element={<Especial />} />
+            <Route path="/contrato/:id" element={<Contrato />} />
           </Routes>
         </Suspense>
       </BrowserRouter>

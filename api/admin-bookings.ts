@@ -36,6 +36,10 @@ const SECRET          = process.env.ADMIN_SECRET || 'dev-secret-change-me';
 function especialToken(id: string): string {
   return createHmac('sha256', SECRET).update('especial:' + id).digest('hex').slice(0, 24);
 }
+// Token do link de aceite do contrato (/contrato/:id). Duplicado em api/contrato.ts.
+function contratoToken(id: string): string {
+  return createHmac('sha256', SECRET).update('contrato:' + id).digest('hex').slice(0, 24);
+}
 const TOKEN_TTL       = 8 * 60 * 60 * 1000; // 8 h
 const SCRIPT_URL      = process.env.SHEETS_SCRIPT_URL!;
 const SITE_URL        = process.env.SITE_URL || 'https://www.ensaiofotograficoemjoinville.com';
@@ -3621,6 +3625,8 @@ async function handleCreate(req: VercelRequest, res: VercelResponse, auth: { use
         externalId:  primaryExternalId,
         // Especial: link público (token) que a Mari manda pro grupo acompanhar/pagar.
         especialShareUrl: isEspecial ? `${SITE_URL}/especial/${bookingId}?t=${especialToken(bookingId)}` : undefined,
+        // Opção A: link de ACEITE que a Mari manda ao cliente (o pagamento só libera após o aceite).
+        contratoUrl: `${SITE_URL}/contrato/${bookingId}?t=${contratoToken(bookingId)}`,
       });
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);

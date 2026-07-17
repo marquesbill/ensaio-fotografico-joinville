@@ -1135,18 +1135,22 @@ function NewEspecialModal({
 }
 
 function PaymentLinkModal({
-  url, parts, gateway, especialShareUrl, onClose,
+  url, parts, gateway, especialShareUrl, contratoUrl, onClose,
 }: {
   url: string;
   parts?: Array<{ url: string; sessionId: string; value: number; payerName?: string }>;
   gateway: 'mp' | 'asaas';
   especialShareUrl?: string;
+  contratoUrl?: string;
   onClose: () => void;
 }) {
   const [copiedIdx, setCopiedIdx] = useState<number | null>(null);
   const gatewayLabel = gateway === 'mp' ? 'Mercado Pago' : 'ASAAS';
   const validade     = gateway === 'mp' ? '3 dias' : '24 horas';
   const isSplit = !!(parts && parts.length > 1);
+  // Opção A: no booking normal (single-pagador, não-especial), a Mari manda o link
+  // de ACEITE — o cliente lê o contrato, aceita e só então chega ao pagamento.
+  const showContrato = !!contratoUrl && !especialShareUrl && !isSplit;
 
   function copy(target: string, idx: number) {
     navigator.clipboard.writeText(target).then(() => {
@@ -1169,6 +1173,21 @@ function PaymentLinkModal({
           <p className="text-xs text-gray-500">Válido por {validade} · {gatewayLabel}{isSplit && ' · cada link é individual'}</p>
         </div>
       </div>
+
+      {showContrato && (
+        <div className="mb-4 rounded-xl p-3 border-2 border-[#7a3f8f]" style={{ background: '#f5edfb' }}>
+          <p className="text-xs font-bold text-[#7a3f8f] uppercase tracking-wide mb-1">📄 Link de aceite — mande ESTE ao cliente</p>
+          <p className="text-[11px] text-gray-600 mb-2">O cliente lê o contrato, aceita e só então chega ao pagamento. O link abaixo é onde ele cai depois — não precisa enviar.</p>
+          <div className="bg-white border border-purple-100 rounded-lg px-3 py-2 mb-2 break-all text-[10px] text-gray-700 font-mono select-all">{contratoUrl}</div>
+          <button
+            onClick={() => copy(contratoUrl!, -2)}
+            className="w-full flex items-center justify-center gap-1.5 py-2 rounded-lg bg-[#7a3f8f] text-white text-xs font-semibold hover:brightness-110 transition-all"
+          >
+            {copiedIdx === -2 ? <Check size={12} /> : <Copy size={12} />}
+            {copiedIdx === -2 ? 'Copiado!' : 'Copiar link de aceite'}
+          </button>
+        </div>
+      )}
 
       {especialShareUrl && (
         <div className="mb-4 rounded-xl p-3 border-2 border-[#7a3f8f]" style={{ background: '#f5edfb' }}>
@@ -2022,6 +2041,7 @@ function Dashboard({
     parts?:  Array<{ url: string; sessionId: string; value: number; payerName?: string }>;
     gateway: 'mp' | 'asaas';
     especialShareUrl?: string;   // Especial: link público da página do grupo
+    contratoUrl?: string;        // link de aceite do contrato (Opção A: manda ESTE ao cliente)
   } | null>(null);
   const [showNewEspecial,  setShowNewEspecial]  = useState(false);
   const [gatewayPicker,    setGatewayPicker]    = useState<Booking | null>(null);
@@ -2190,7 +2210,7 @@ function Dashboard({
       const json = await r.json() as {
         bookingId?: string; paymentUrl?: string; paymentUrls?: string[];
         paymentParts?: Array<{ url: string; sessionId: string; value: number; payerName?: string }>;
-        splitCount?: number; especialShareUrl?: string; error?: string;
+        splitCount?: number; especialShareUrl?: string; contratoUrl?: string; error?: string;
       };
       if (!r.ok) throw new Error(json.error || 'Erro');
       setShowNewBooking(false);
@@ -2202,6 +2222,7 @@ function Dashboard({
           parts:  json.paymentParts && json.paymentParts.length > 1 ? json.paymentParts : undefined,
           gateway: gateway ?? 'asaas',
           especialShareUrl: json.especialShareUrl,
+          contratoUrl: json.contratoUrl,
         });
       } else {
         setToast({ msg: `Agendamento de ${data.name} criado e confirmado`, type: 'ok' });
@@ -2618,6 +2639,7 @@ function Dashboard({
           parts={paymentLink.parts}
           gateway={paymentLink.gateway}
           especialShareUrl={paymentLink.especialShareUrl}
+          contratoUrl={paymentLink.contratoUrl}
           onClose={() => setPaymentLink(null)}
         />
       )}
