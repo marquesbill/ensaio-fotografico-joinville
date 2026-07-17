@@ -1176,8 +1176,8 @@ function PaymentLinkModal({
 
       {showContrato && (
         <div className="mb-4 rounded-xl p-3 border-2 border-[#7a3f8f]" style={{ background: '#f5edfb' }}>
-          <p className="text-xs font-bold text-[#7a3f8f] uppercase tracking-wide mb-1">📄 Link de aceite — mande ESTE ao cliente</p>
-          <p className="text-[11px] text-gray-600 mb-2">O cliente lê o contrato, aceita e só então chega ao pagamento. O link abaixo é onde ele cai depois — não precisa enviar.</p>
+          <p className="text-xs font-bold text-[#7a3f8f] uppercase tracking-wide mb-1">📄 Link de aceite — já enviado por e-mail ao cliente</p>
+          <p className="text-[11px] text-gray-600 mb-2">O cliente recebeu este link por e-mail: ele lê o contrato, aceita e só então chega ao pagamento. Use o botão abaixo se quiser reenviar por WhatsApp.</p>
           <div className="bg-white border border-purple-100 rounded-lg px-3 py-2 mb-2 break-all text-[10px] text-gray-700 font-mono select-all">{contratoUrl}</div>
           <button
             onClick={() => copy(contratoUrl!, -2)}

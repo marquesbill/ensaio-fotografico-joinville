@@ -360,6 +360,41 @@ function buildBookingEmailHtml(data: {
 </table></td></tr></table></body></html>`;
 }
 
+/* ───────── E-mail de reserva criada (link de ACEITE do contrato) ─────────
+ * Enviado quando a Mari cria um booking normal (não-especial, 1 pagador).
+ * Mesma casca do buildBookingEmailHtml, mas o CTA leva à página /contrato —
+ * o cliente lê o contrato, aceita e só então chega ao pagamento (Opção A). */
+function buildContratoEmailHtml(data: {
+  name: string; date: string; time: string; endTime: string;
+  packageName: string; duration: number; price: string; bookingId: string;
+  numBailarinas: number; contratoUrl: string;
+}): string {
+  const firstName = String(data.name || '').trim().split(/\s+/)[0] || data.name;
+  return `<!DOCTYPE html>
+<html lang="pt-BR"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Reserva recebida</title></head>
+<body style="margin:0;padding:0;background:#f5f0fa;font-family:Georgia,'Cormorant Garamond','Times New Roman',serif;color:#1a1a1a;">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background:#f5f0fa;padding:32px 12px;">
+<tr><td align="center">
+<table role="presentation" width="600" cellpadding="0" cellspacing="0" border="0" style="max-width:600px;background:#ffffff;border-radius:6px;overflow:hidden;box-shadow:0 4px 24px rgba(0,0,0,0.06);">
+<tr><td style="line-height:0;"><img src="${HERO_IMG_URL}" alt="" width="600" style="display:block;width:100%;max-width:600px;height:auto;border:0;outline:none;text-decoration:none;"></td></tr>
+<tr><td style="padding:36px 40px 0;text-align:center;"><span style="display:inline-block;font-family:Georgia,'Times New Roman',serif;font-size:11px;letter-spacing:3px;text-transform:uppercase;color:#7a3f8f;border:1px solid #e8d8f0;border-radius:30px;padding:6px 16px;">Reserva recebida</span></td></tr>
+<tr><td style="padding:24px 40px 4px;text-align:center;"><p style="margin:0;font-family:Georgia,'Cormorant Garamond',serif;font-size:30px;line-height:1.2;color:#1a1a1a;font-weight:400;font-style:italic;">Olá, <strong style="font-weight:600;">${firstName}</strong>.</p></td></tr>
+<tr><td style="padding:18px 56px 28px;text-align:center;"><p style="margin:0;font-family:Georgia,serif;font-size:14px;line-height:1.65;color:#555;">Seu horário está reservado! Para confirmar, leia o termo de contratação e conclua o pagamento — é tudo no mesmo link, leva 2 minutos.</p></td></tr>
+<tr><td style="padding:0 40px 8px;"><table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="border-top:1px solid #eee;">
+<tr><td style="padding:18px 0;border-bottom:1px solid #eee;"><p style="margin:0 0 4px;font-family:Georgia,serif;font-size:11px;letter-spacing:2px;text-transform:uppercase;color:#999;">Data</p><p style="margin:0;font-family:Georgia,serif;font-size:16px;color:#1a1a1a;">${fmtDateLong(data.date)}</p></td></tr>
+<tr><td style="padding:18px 0;border-bottom:1px solid #eee;"><p style="margin:0 0 4px;font-family:Georgia,serif;font-size:11px;letter-spacing:2px;text-transform:uppercase;color:#999;">Horário</p><p style="margin:0;font-family:Georgia,serif;font-size:16px;color:#1a1a1a;">${data.time} — ${data.endTime}</p></td></tr>
+<tr><td style="padding:18px 0;border-bottom:1px solid #eee;"><p style="margin:0 0 4px;font-family:Georgia,serif;font-size:11px;letter-spacing:2px;text-transform:uppercase;color:#999;">Pacote</p><p style="margin:0;font-family:Georgia,serif;font-size:16px;color:#1a1a1a;">${data.packageName} · ${data.duration} minutos</p></td></tr>
+<tr><td style="padding:18px 0;border-bottom:1px solid #eee;"><p style="margin:0 0 4px;font-family:Georgia,serif;font-size:11px;letter-spacing:2px;text-transform:uppercase;color:#999;">Grupo</p><p style="margin:0;font-family:Georgia,serif;font-size:16px;color:#1a1a1a;">${data.numBailarinas} ${data.numBailarinas === 1 ? 'bailarina' : 'bailarinas'}</p></td></tr>
+<tr><td style="padding:18px 0;"><p style="margin:0 0 4px;font-family:Georgia,serif;font-size:11px;letter-spacing:2px;text-transform:uppercase;color:#999;">Valor</p><p style="margin:0;font-family:Georgia,serif;font-size:18px;color:#7a3f8f;font-weight:600;">R$ ${data.price}</p></td></tr>
+</table></td></tr>
+<tr><td style="padding:8px 40px 8px;text-align:center;"><a href="${data.contratoUrl}" style="display:inline-block;background:#7a3f8f;color:#ffffff;font-family:Georgia,serif;font-size:16px;text-decoration:none;padding:14px 40px;border-radius:30px;">Ler contrato e concluir o pagamento</a></td></tr>
+<tr><td style="padding:4px 56px 28px;text-align:center;"><p style="margin:0;font-family:Georgia,serif;font-size:12px;line-height:1.6;color:#999;">O link de pagamento aparece logo após o aceite do termo. A vaga fica garantida com a confirmação do pagamento.</p></td></tr>
+<tr><td style="padding:24px 40px 24px;text-align:center;border-top:1px solid #eee;"><p style="margin:0;font-family:Georgia,serif;font-size:13px;line-height:1.6;color:#666;">Em caso de dúvida, fale conosco pelo</p><p style="margin:6px 0 0;font-family:Georgia,serif;font-size:14px;line-height:1.6;"><a href="https://wa.me/5511519606272" style="color:#128C7E;text-decoration:none;font-weight:600;white-space:nowrap;">WhatsApp (11) 5196-0627</a></p></td></tr>
+<tr><td style="padding:0 40px 24px;text-align:center;"><p style="margin:0;font-family:Georgia,serif;font-size:10px;letter-spacing:2px;text-transform:uppercase;color:#bbb;">Código da reserva · <span style="color:#777;font-family:monospace;letter-spacing:1px;">${data.bookingId}</span></p></td></tr>
+<tr><td style="padding:20px 40px 28px;text-align:center;background:#fafafa;border-top:1px solid #eee;"><p style="margin:0;font-family:Georgia,serif;font-size:12px;color:#999;">© 2026 André Ferreira Fotografia</p><p style="margin:4px 0 0;font-family:Georgia,serif;font-size:12px;"><a href="https://www.instagram.com/affotografia" style="color:#7a3f8f;text-decoration:none;">@affotografia</a></p></td></tr>
+</table></td></tr></table></body></html>`;
+}
+
 /* ───────── E-mail do pacote Especial (multi-pagador) ─────────
  * Mesma casca visual do buildBookingEmailHtml (hero + Georgia + roxo), mas com
  * a PARTE INDIVIDUAL de cada pagador, botão de pagamento e link da página do
@@ -3612,6 +3647,36 @@ async function handleCreate(req: VercelRequest, res: VercelResponse, auth: { use
         }
         const emailLog = await sendEspecialEmails(sends);
         console.log('[admin-bookings/create] especial create emails', JSON.stringify(emailLog));
+      }
+
+      // Booking normal (1 pagador): e-mail automático ao cliente com o link de
+      // ACEITE do contrato (Opção A — o pagamento só aparece depois do aceite).
+      // Split>1 não-especial segue manual (a página /contrato só revela o 1º link).
+      // Erro de e-mail não derruba a criação — a Mari ainda tem o link no modal.
+      if (!isEspecial && split === 1 && bookingId && email) {
+        const contratoUrl = `${SITE_URL}/contrato/${bookingId}?t=${contratoToken(bookingId)}`;
+        const html = buildContratoEmailHtml({
+          name, date, time, endTime,
+          packageName: pkgLabel,
+          duration,
+          price: chargeValue.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }),
+          bookingId,
+          numBailarinas: nb,
+          contratoUrl,
+        });
+        try {
+          const { error } = await resend.emails.send({
+            from:    FROM_EMAIL,
+            to:      email,
+            bcc:     [ANDRE_EMAIL, MARIANE_EMAIL],
+            subject: `Seu horário está reservado — leia o termo e conclua o pagamento · ${fmtDate(date)} às ${time}`,
+            html,
+          });
+          if (error != null) console.error('[admin-bookings/create] contrato email error', email, JSON.stringify(error));
+          else console.log('[admin-bookings/create] contrato email enviado', email);
+        } catch (e) {
+          console.error('[admin-bookings/create] contrato email throw', email, e);
+        }
       }
 
       // Response: mantém `paymentUrl` (compat single-pagador) + adiciona
