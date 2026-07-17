@@ -33,9 +33,9 @@ const HTML = `<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "ht
   }
 </style>
 </head>
-<body style="margin:0;padding:0;background:#e2dbd3;-webkit-font-smoothing:antialiased;">
-<div style="display:none;font-size:1px;color:#e2dbd3;line-height:1px;max-height:0;max-width:0;opacity:0;overflow:hidden;">Tudo para brilhar em frente à câmera. Leia com calma, alguns dias antes do ensaio.&nbsp;&#8203;&nbsp;&#8203;&nbsp;&#8203;&nbsp;&#8203;&nbsp;&#8203;&nbsp;&#8203;&nbsp;&#8203;&nbsp;&#8203;</div>
-<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background:#e2dbd3;">
+<body style="margin:0;padding:0;background:#ffffff;-webkit-font-smoothing:antialiased;">
+<div style="display:none;font-size:1px;color:#ffffff;line-height:1px;max-height:0;max-width:0;opacity:0;overflow:hidden;">Tudo para brilhar em frente à câmera. Leia com calma, alguns dias antes do ensaio.&nbsp;&#8203;&nbsp;&#8203;&nbsp;&#8203;&nbsp;&#8203;&nbsp;&#8203;&nbsp;&#8203;&nbsp;&#8203;&nbsp;&#8203;</div>
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background:#ffffff;">
 <tr><td align="center" style="padding:36px 12px 48px;">
 
 <table role="presentation" class="card" width="620" cellpadding="0" cellspacing="0" border="0" style="width:620px;max-width:620px;background:#f8f5f2;">
