@@ -24,7 +24,7 @@ import { currentTierPrices, FULL_PRICES, nextPriceSwitchMs, usePriceTierTick } f
 
 // ⬇️ ESCASSEZ — edite o texto aqui (1 lugar) e troca em todos os pontos do site.
 const SCARCITY = {
-  geral:    'Mais de 50% das vagas preenchidas.', // hero + pacotes Lembrança/Econômico
+  geral:    'Mais de 70% das vagas preenchidas.', // hero + pacotes Lembrança/Econômico
 };
 
 // Chamariz de escassez: pulso de escala + glow vermelho atrás, ACOPLADOS — o glow é
@@ -728,7 +728,7 @@ export default function App() {
                 </li>
                 <li className="flex items-center gap-3 text-sm font-medium">
                   <CheckCircle className="text-primary w-5 h-5" />
-                  ≈ 5 fotos editadas
+                  Aprox. 5 fotos editadas
                 </li>
                 <li className="flex items-center gap-3 text-sm font-medium">
                   <CheckCircle className="text-primary w-5 h-5" />
@@ -781,7 +781,7 @@ export default function App() {
                 </li>
                 <li className="flex items-center gap-3 text-sm font-bold">
                   <CheckCircle className="text-primary w-5 h-5" />
-                  ≈ 12 fotos editadas
+                  Aprox. 12 fotos editadas
                 </li>
                 <li className="flex items-center gap-3 text-sm font-bold">
                   <CheckCircle className="text-primary w-5 h-5" />
@@ -833,7 +833,7 @@ export default function App() {
                 </li>
                 <li className="flex items-center gap-3 text-sm font-medium">
                   <CheckCircle className="text-primary w-5 h-5" />
-                  ≈ 25 fotos editadas
+                  Aprox. 25 fotos editadas
                 </li>
                 <li className="flex items-center gap-3 text-sm font-medium">
                   <CheckCircle className="text-primary w-5 h-5" />
