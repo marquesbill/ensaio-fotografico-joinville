@@ -23,7 +23,7 @@ const LOTE2_START_MS = new Date('2026-06-01T00:00:00-03:00').getTime();
 const CFG = {
   WORK_START_H: 9,
   WORK_END_H: 19,
-  BUFFER_MIN: 10,
+  BUFFER_MIN: 0,            // era 10 — zerado em 22/07 (meio do festival): Mari precisa encaixar horários coladinhos
   SLOT_STEP_MIN: 10,
   PENDING_BLOCK_H: 168,         // horas que o slot fica bloqueado p/ pgmto pendente (7d — cobre validade do boleto MP)
   ANDRE_NOTIFY_MIN: 30,         // minutos até Mariane receber aviso de pagamento não concluído
