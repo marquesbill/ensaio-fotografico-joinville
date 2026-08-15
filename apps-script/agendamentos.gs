@@ -588,6 +588,121 @@ function listGalerias() {
   return { ok: true, rows: rows };
 }
 
+// ── E-mail de entrega da galeria — reaproveita _emailHeader/_emailFooter/sendEmailViaResend
+// (definidos mais abaixo; funções soltas no Apps Script enxergam umas às outras sem import). ──
+// Idempotente: 'Galeria Email Enviado' preenchida nunca reenvia sozinha — só de novo se
+// alguém apagar a célula à mão. testTo desvia o envio real para um único endereço e NÃO marca
+// como enviado (dry-run de verdade, útil pra conferir o HTML antes do lote pra clientes reais).
+function _escapeHtml(s) {
+  return String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+function _galeriaEntregaEmailHtml(nome, link, numFotos) {
+  const primeiro = _escapeHtml(String(nome || '').trim().split(/\s+/)[0] || nome);
+  return `<!DOCTYPE html><html lang="pt-BR"><head><meta charset="UTF-8"></head>
+<body style="margin:0;padding:0;background:#f4f4f5;font-family:Arial,sans-serif;">
+<table width="100%" cellpadding="0" cellspacing="0" style="background:#f4f4f5;padding:32px 0;">
+<tr><td align="center">
+<table width="560" cellpadding="0" cellspacing="0" style="background:#ffffff;border-radius:12px;overflow:hidden;box-shadow:0 2px 8px rgba(0,0,0,0.08);">
+  ${_emailHeader('Suas fotos chegaram!')}
+  <tr><td style="padding:28px 40px;">
+    <p style="color:#374151;font-size:15px;margin:0 0 12px;">Olá, <strong>${primeiro}</strong>!</p>
+    <p style="color:#6b7280;font-size:14px;margin:0 0 14px;line-height:1.6;">Durante as duas semanas do Festival a sala Esmeralda do Hotel Le Village foi meu estúdio. Foi um prazer te receber.</p>
+    <p style="color:#6b7280;font-size:14px;margin:0 0 14px;line-height:1.6;">Quero agradecer pela confiança no meu trabalho e pela entrega e disposição durante a sessão.</p>
+    <p style="color:#6b7280;font-size:14px;margin:0 0 20px;line-height:1.6;">Editei tudo com muito cuidado. Espero que você goste tanto das imagens quanto eu gostei de produzi-las.</p>
+    <div style="text-align:center;margin-bottom:20px;">
+      <a href="${link}" style="display:inline-block;background:linear-gradient(135deg,#7a3f8f,#e87060);color:#ffffff;font-weight:700;font-size:14px;text-decoration:none;padding:13px 32px;border-radius:50px;">
+        Ver minhas ${numFotos} fotos
+      </a>
+    </div>
+    <p style="color:#9ca3af;font-size:12px;margin:0;text-align:center;">O link fica disponível até junho de 2027. Qualquer dúvida, me chama no WhatsApp.</p>
+  </td></tr>
+  ${_emailFooter()}
+</table>
+</td></tr>
+</table>
+</body></html>`;
+}
+
+// Lock em volta de ler+gravar 'Galeria Email Enviado': sem isso, duas chamadas concorrentes
+// (duplo clique, retry de rede) leem a célula vazia ao mesmo tempo e mandam 2 e-mails pro
+// mesmo cliente antes que qualquer uma grave o timestamp.
+function sendGaleriaEntregaEmail(id, testTo) {
+  const lock = LockService.getScriptLock();
+  if (!lock.tryLock(20000)) return { id: id, ok: false, motivo: 'ocupado por outro envio, tente de novo' };
+  try {
+    const sa = getSheet('Agendamentos');
+    if (!sa || sa.getLastRow() < 2) throw new Error('Planilha vazia');
+    _galeriaCols(sa);
+    const cm   = _colMap(sa);
+    const rows = sa.getRange(2, 1, sa.getLastRow() - 1, sa.getLastColumn()).getValues();
+    const iId  = cm['ID'];
+    if (iId === undefined) throw new Error('Coluna ID não encontrada em Agendamentos');
+    const idx  = rows.findIndex(function (r) { return String(r[iId] || '').trim() === id; });
+    if (idx < 0) return { id: id, ok: false, motivo: 'não encontrada' };
+
+    const row   = rows[idx];
+    const nome  = _val(row, cm, 'Nome') || '';
+    const email = String(_val(row, cm, 'E-mail') || '').trim();
+    const fotos = String(_val(row, cm, 'Galeria Fotos') || '').split('|').filter(function (f) { return f.trim(); });
+    if (!fotos.length) return { id: id, ok: false, motivo: 'sem fotos ainda' };
+
+    const jaEnviado = String(_val(row, cm, 'Galeria Email Enviado') || '').trim();
+    if (jaEnviado && !testTo) return { id: id, ok: false, motivo: 'já enviado em ' + jaEnviado };
+
+    const destino = testTo || email;
+    if (!destino) return { id: id, ok: false, motivo: 'sem e-mail cadastrado' };
+
+    const link = _galeriaLinkPublico(id);
+    const html = _galeriaEntregaEmailHtml(nome, link, fotos.length);
+    const enviou = sendEmailViaResend(destino, '📸 Suas fotos do Festival chegaram!', html);
+    if (!enviou) return { id: id, ok: false, motivo: 'falha no envio (ver Galeria Log)' };
+
+    if (!testTo) {
+      sa.getRange(idx + 2, cm['Galeria Email Enviado'] + 1).setValue(nowIso());
+      addLog('GALERIA_EMAIL', id, 'Enviado para ' + email, 'sendGaleriaEntregaEmail');
+    }
+    return { id: id, ok: true, teste: !!testTo, destino: destino };
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+// Payload: { action:'sendGaleriaEmails', secret, ids:[...], testTo?:'seu@email' }
+// SEM modo "enviar todo mundo" de propósito — cada lote é uma lista explícita de IDs, pra nunca
+// disparar em massa sem querer. testTo desvia o lote inteiro pra um único endereço de teste —
+// e é exatamente por isso que 'secret' é obrigatório aqui: sem ele, quem descobrisse a URL do
+// Web App conseguiria mandar o link (com token) da galeria de QUALQUER cliente pro próprio
+// e-mail, só sabendo o ID da reserva. 'secret' é o mesmo ADMIN_SECRET usado em _galeriaLinkPublico.
+function sendGaleriaEmails(data) {
+  const esperado = String(PropertiesService.getScriptProperties().getProperty('ADMIN_SECRET') || '');
+  if (!esperado || String(data.secret || '') !== esperado) throw new Error('não autorizado');
+
+  const ids = data.ids;
+  if (!Array.isArray(ids) || !ids.length) throw new Error('ids é obrigatório (lista explícita — sem modo "enviar todos")');
+  const testTo = data.testTo ? String(data.testTo).trim() : '';
+
+  const cotaInicial = MailApp.getRemainingDailyQuota();
+  const resultados = [];
+  for (let i = 0; i < ids.length; i++) {
+    const idAtual = String(ids[i]).trim();
+    const enviadosAteAgora = resultados.filter(function (r) { return r.ok && !r.teste; }).length;
+    if (!testTo && enviadosAteAgora >= cotaInicial) {
+      resultados.push({ id: idAtual, ok: false, motivo: 'cota diária do Gmail esgotada (' + cotaInicial + ')' });
+      continue;
+    }
+    // Um erro num ID não pode derrubar o lote inteiro — senão o relatório de quem já foi
+    // enviado com sucesso se perde, e reprocessar o lote reenvia todo mundo que já recebeu.
+    try {
+      resultados.push(sendGaleriaEntregaEmail(idAtual, testTo));
+    } catch (err) {
+      resultados.push({ id: idAtual, ok: false, motivo: 'erro: ' + err.message });
+    }
+  }
+  const enviados = resultados.filter(function (r) { return r.ok; }).length;
+  return { ok: true, enviados: enviados, total: ids.length, cotaRestanteAntes: cotaInicial, resultados: resultados };
+}
+
 /* ───────── Galeria de entrega (página pública /galeria/:id) ─────────
  * Dois portões, ambos idempotentes e com estado no servidor (não em cookie):
  *   1) aceite dos termos + autorização de imagem  → libera a galeria
@@ -608,6 +723,7 @@ function _galeriaCols(sa) {
   _ensureColumn(sa, 'Galeria Link');       // OVERRIDE do download; vazio = <base>/<pasta>/fotos.zip
   _ensureColumn(sa, 'Galeria Hero');       // foto da abertura (ex.: 015.jpg); vazio = a primeira
   _ensureColumn(sa, 'Galeria Hero Foco');  // "X,Y" em % (posição do rosto) — vazio = center
+  _ensureColumn(sa, 'Galeria Email Enviado'); // timestamp do envio de entrega — idempotente
   _ensureColumn(sa, 'Galeria Aceite');     // timestamp | versão do termo
   _ensureColumn(sa, 'Galeria CPF');
   _ensureColumn(sa, 'Galeria IP');
@@ -2762,6 +2878,7 @@ function doPost(e) {
     else if (action === 'setGaleriaFotos') result = setGaleriaFotos(body);
     else if (action === 'listGalerias')    result = listGalerias();
     else if (action === 'setGaleriaHero')  result = setGaleriaHero(body);
+    else if (action === 'sendGaleriaEmails') result = sendGaleriaEmails(body);
     else if (action === 'addLog') {
       // Accept both formats:
       //   {logAction, bookingId, detail, origin}  — legacy / internal
