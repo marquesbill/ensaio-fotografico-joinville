@@ -36,6 +36,7 @@ const DEMO = {
   accepted: false, surveyed: false,
   photos: DEMO_PHOTOS,
   downloadUrl: 'https://adobe.ly/exemplo-galeria',
+  heroUrl: '/carrossel/germana_0107-Enhanced-NR.jpg',
 };
 
 /** POST no Apps Script; devolve JSON ou lança erro legível (nunca .json() cru — pode vir HTML). */

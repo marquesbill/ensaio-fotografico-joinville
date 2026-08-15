@@ -15,3 +15,4 @@ teaser40s.mov
 
 # Galerias preparadas localmente (imagens + zips) — nunca vão para o repositório
 staging/
+__pycache__/

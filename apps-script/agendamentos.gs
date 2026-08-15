@@ -480,6 +480,7 @@ function _galeriaCols(sa) {
   _ensureColumn(sa, 'Galeria Pasta');      // prefixo no R2 (default: o próprio ID)
   _ensureColumn(sa, 'Galeria Fotos');      // arquivos separados por | (gerado no upload)
   _ensureColumn(sa, 'Galeria Link');       // OVERRIDE do download; vazio = <base>/<pasta>/fotos.zip
+  _ensureColumn(sa, 'Galeria Hero');       // foto da abertura (ex.: 015.jpg); vazio = a primeira
   _ensureColumn(sa, 'Galeria Aceite');     // timestamp | versão do termo
   _ensureColumn(sa, 'Galeria CPF');
   _ensureColumn(sa, 'Galeria IP');
@@ -556,6 +557,12 @@ function getGaleriaById(id) {
     const fotos   = String(_val(row, cm, 'Galeria Fotos') || '')
       .split('|').map(function(f) { return f.trim(); }).filter(function(f) { return !!f; });
 
+    // Abertura da galeria: uma foto do PRÓPRIO ensaio, em vez da imagem fixa do site.
+    // 'Galeria Hero' guarda o arquivo já renumerado (ex.: 015.jpg); vazia, vale a
+    // primeira foto — assim toda galeria nasce com abertura própria sem trabalho.
+    // Usa a versão de tela (2048 px), não a miniatura: é uma faixa de largura inteira.
+    const heroArq = String(_val(row, cm, 'Galeria Hero') || '').trim() || (fotos[0] || '');
+
     return {
       clientName:    _val(row, cm, 'Nome') || '',
       date:          dateStr,
@@ -565,6 +572,7 @@ function getGaleriaById(id) {
       accepted:      !!String(_val(row, cm, 'Galeria Aceite')   || '').trim(),
       surveyed:      !!String(_val(row, cm, 'Galeria Pesquisa') || '').trim(),
       downloadUrl:   _galeriaDownloadUrl(row, cm, id),
+      heroUrl:       (base && heroArq) ? (base + '/' + pasta + '/' + heroArq) : '',
       photos:        fotos.map(function(f, i) {
         return {
           id:    String(i),

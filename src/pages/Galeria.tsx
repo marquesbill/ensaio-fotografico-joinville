@@ -6,7 +6,7 @@ import { track, initSessionContext, trackScrollDepth, trackTimeOnPage } from '..
 type Foto = { id: string; url: string; thumb?: string };
 type Dados = {
   clientName: string; date: string; start: string; packageName: string; numBailarinas: number;
-  accepted: boolean; surveyed: boolean; photos: Foto[]; downloadUrl?: string;
+  accepted: boolean; surveyed: boolean; photos: Foto[]; downloadUrl?: string; heroUrl?: string;
   termoVersion: string;
 };
 
@@ -98,6 +98,7 @@ export default function Galeria() {
           'germana_0164-Enhanced-NR.jpg','join25_12.jpg','join25_15.jpg','join25_18.jpg','join25_2208.jpg',
           'join25_2215.jpg','jon25_3088.jpg','jon25_3092.jpg','jon25_4812.jpg']
           .map((f, i) => ({ id: `demo-${i}`, url: `/carrossel/${f}` })),
+        heroUrl: '/carrossel/germana_0107-Enhanced-NR.jpg',   // hero vindo do próprio ensaio
         termoVersion: '2026-07-17',
       });
       setLoading(false); return;
@@ -212,8 +213,14 @@ export default function Galeria() {
   if (!dados.accepted) {
     return (
       <div className="min-h-screen bg-surface">
-        <div className="relative h-[46vh] min-h-[280px] overflow-hidden bg-[#161c29]">
-          <img src="/galeria-hero.jpg" alt="" className="absolute inset-0 w-full h-full object-cover opacity-80" />
+        {/* data-clarity-mask: a abertura agora é uma foto da própria bailarina,
+            então entra na mesma regra das outras — fora da gravação de sessão. */}
+        <div data-clarity-mask="true" className="relative h-[46vh] min-h-[280px] overflow-hidden bg-[#161c29]">
+          {/* object-center: o assunto fica no meio do quadro; num hero largo o corte
+              tira das bordas e preserva o centro. A imagem fixa do site é só o
+              último recurso, para uma galeria que ainda não tem fotos na planilha. */}
+          <img src={dados.heroUrl || '/galeria-hero.jpg'} alt="" fetchPriority="high"
+            className="absolute inset-0 w-full h-full object-cover object-center opacity-80" />
           <div className="absolute inset-0" style={{ background: 'linear-gradient(180deg,rgba(17,20,30,.35) 0%,rgba(17,20,30,.85) 100%)' }} />
           <div className="absolute inset-0 flex flex-col items-center justify-end text-center px-6 pb-8">
             <p className="text-[11px] font-bold uppercase tracking-[0.3em] text-white/70">Ensaio Fotográfico · Joinville 2026</p>

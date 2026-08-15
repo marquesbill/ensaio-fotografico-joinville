@@ -12,7 +12,7 @@ Uso:
 Não toca nos originais: lê os JPGs finais e escreve cópias redimensionadas em ./staging.
 O upload para o R2 é um passo separado (scripts/subir-r2.sh), feito depois do pareamento conferido.
 """
-import json, os, re, subprocess, sys, unicodedata, urllib.request, zipfile
+import difflib, json, os, re, subprocess, sys, unicodedata, urllib.request, zipfile
 from pathlib import Path
 
 RAIZ    = Path('/Volumes/1TBssd/edição join26')
@@ -45,12 +45,39 @@ def carregar_reservas():
             and b.get('status') in ('Confirmado', 'Pago Parcial')]
 
 
+# Pastas que o casamento por palavra não resolve — nome da pasta → ID da reserva.
+# Deliberadamente MANUAL: correspondência aproximada (difflib e afins) casaria
+# "53.Nicole" com "Nicolle Lourenço" sozinha, mas também casaria nomes parecidos
+# de clientes diferentes. Num sistema que entrega fotos, um palpite errado manda
+# as imagens de uma pessoa para outra — o preço de errar não paga a conveniência.
+# O relatório SEM PAR sugere o candidato; quem confirma é você, aqui.
+PARES_MANUAIS = {
+    '53.Nicole': 'AG-MSFYY8ET',      # pasta "Nicole", reserva "Nicolle Lourenço" (um L a menos)
+}
+
+
 def parear(pastas, reservas):
-    """Casa pasta → reserva pelo maior número de tokens em comum no nome."""
+    """Casa pasta → reserva: primeiro PARES_MANUAIS, depois tokens em comum no nome."""
     pares, sem_par = [], []
     usadas = set()
+    por_id = {b['id']: b for b in reservas}
+
     for pasta in pastas:
-        tp = tokens(pasta.parent.name)
+        nome_pasta = pasta.parent.name
+
+        # 1) override explícito
+        alvo = PARES_MANUAIS.get(nome_pasta)
+        if alvo:
+            b = por_id.get(alvo)
+            if b and b['id'] not in usadas:
+                usadas.add(b['id'])
+                pares.append((pasta, b, 99))     # 99 = casado à mão
+                continue
+            print(f'  ⚠ PARES_MANUAIS aponta {nome_pasta} → {alvo}, '
+                  f'{"já usado" if b else "que não existe entre as reservas ativas"}')
+
+        # 2) tokens em comum
+        tp = tokens(nome_pasta)
         melhor, score = None, 0
         for b in reservas:
             if b['id'] in usadas:
@@ -63,6 +90,7 @@ def parear(pastas, reservas):
             pares.append((pasta, melhor, score))
         else:
             sem_par.append((pasta, melhor, score))
+
     faltando = [b for b in reservas if b['id'] not in usadas]
     return pares, sem_par, faltando
 
@@ -168,9 +196,21 @@ def main():
             print(f'      → {len(nomes)} de tela + {len(nomes)} miniaturas{extra} em staging/{b["id"]}/')
 
     if sem_par:
-        print('\nSEM PAR (conferir na mão)')
+        print('\nSEM PAR — confira e, se estiver certo, adicione em PARES_MANUAIS no topo do script')
+        # Semelhança serve só para SUGERIR aqui. O pareamento de verdade nunca sai
+        # daqui: quem decide é o PARES_MANUAIS, depois de você confirmar.
+        candidatos = [(' '.join(sorted(tokens(b['name']))), b['name'], b['id']) for b in faltando]
         for pasta, melhor, score in sem_par:
-            palpite = f'palpite: {melhor["name"]} ({score} tokens)' if melhor else 'nenhum palpite'
+            if melhor and score:
+                palpite = f'palpite: {melhor["name"]} ({score} palavra em comum)'
+            else:
+                alvo = ' '.join(sorted(tokens(pasta.parent.name)))
+                achou = max(candidatos,
+                            key=lambda c: difflib.SequenceMatcher(None, alvo, c[0]).ratio(),
+                            default=None)
+                r = difflib.SequenceMatcher(None, alvo, achou[0]).ratio() if achou else 0
+                palpite = (f"parecido {r:.0%}: {achou[1]}  →  '{pasta.parent.name}': '{achou[2]}',"
+                           if achou and r >= 0.5 else 'nenhum palpite')
             print(f'  {pasta.parent.name}  →  {palpite}')
 
     if faltando:
