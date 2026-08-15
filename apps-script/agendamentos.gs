@@ -462,6 +462,132 @@ function recordContractAcceptance(data) {
   return { ok: true, payUrl: payUrl, alreadyAccepted: !!prev };
 }
 
+/* ───────── Aba "Galerias": painel de acompanhamento da entrega ─────────
+ * Uma linha por reserva ativa, com o que você precisa para conduzir a entrega:
+ * contratante, bailarinas, estado dos dois portões e os dois links.
+ * Reconstrói do zero a cada execução (clearContents) — é um espelho, não uma
+ * base: editar aqui não volta para Agendamentos. Rode de novo depois de subir
+ * fotos ou quando quiser o estado mais recente. */
+
+/** Token da galeria, idêntico ao de api/galeria.ts:
+ *  HMAC-SHA256('galeria:' + id, ADMIN_SECRET) em hex, 24 primeiros caracteres.
+ *  O segredo vem da Script Property ADMIN_SECRET — OPCIONAL. Sem ela a coluna
+ *  do link avisa em vez de gerar URL que daria 403. Definindo, lembre que o
+ *  valor tem de ser o MESMO da Vercel: rotacionou lá, rotacione aqui. */
+function _galeriaLinkPublico(id) {
+  const seg = String(PropertiesService.getScriptProperties().getProperty('ADMIN_SECRET') || '');
+  if (!seg) return '(defina a Script Property ADMIN_SECRET)';
+  const bytes = Utilities.computeHmacSha256Signature('galeria:' + id, seg);
+  let hex = '';
+  for (let i = 0; i < bytes.length; i++) {
+    // byte no Apps Script é assinado (-128..127); & 0xFF traz para 0..255
+    const b = (bytes[i] & 0xFF).toString(16);
+    hex += (b.length === 1 ? '0' : '') + b;
+  }
+  return CFG.SITE_URL + '/galeria/' + id + '?t=' + hex.substring(0, 24);
+}
+
+function buildGaleriasSheet() {
+  const ss = SpreadsheetApp.openById(SHEET_ID);
+  let g = ss.getSheetByName('Galerias');
+  if (!g) { g = ss.insertSheet('Galerias'); g.setTabColor('#7a3f8f'); }
+  else     { g.clear(); }
+
+  const headers = [
+    'ID', 'Data', 'Pacote', 'Status',
+    'Contratante', 'E-mail', 'WhatsApp',
+    'Nº Bailarinas', 'Nome Bailarina',
+    'Fotos', 'Pasta no R2',
+    'Aceitou?', 'Aceite em', 'CPF do aceite', 'Autoriza imagem?', 'Menor?', 'Bailarina (aceite)', 'Nascimento',
+    'Respondeu pesquisa?', 'Como chegou', 'O que pesou',
+    'Link da galeria', 'Link da entrega (zip)',
+  ];
+  g.appendRow(headers);
+  g.getRange(1, 1, 1, headers.length)
+    .setFontWeight('bold').setBackground('#1a1a2e').setFontColor('#ffffff');
+  g.setFrozenRows(1);
+  g.setFrozenColumns(1);
+
+  const sa = getSheet('Agendamentos');
+  if (!sa || sa.getLastRow() < 2) return { ok: true, linhas: 0 };
+  _galeriaCols(sa);
+
+  const cm   = _colMap(sa);
+  const rows = sa.getRange(2, 1, sa.getLastRow() - 1, sa.getLastColumn()).getValues();
+  const base = _r2Base();
+  const out  = [];
+
+  rows.forEach(function (row) {
+    const status = String(_val(row, cm, 'Status') || '').trim();
+    // Só quem tem entrega a fazer. Cancelado não recebe galeria.
+    if (status !== 'Confirmado' && status !== 'Pago Parcial') return;
+
+    const id = String(_val(row, cm, 'ID') || '').trim();
+    if (!id) return;
+
+    const dRaw    = _val(row, cm, 'Data');
+    const dataStr = dRaw ? (typeof dRaw === 'string'
+      ? dRaw : Utilities.formatDate(dRaw, 'America/Sao_Paulo', 'dd/MM/yyyy')) : '';
+
+    const fotos = String(_val(row, cm, 'Galeria Fotos') || '')
+      .split('|').map(function (f) { return f.trim(); }).filter(function (f) { return !!f; });
+
+    const aceite   = String(_val(row, cm, 'Galeria Aceite')   || '').trim();
+    const pesquisa = String(_val(row, cm, 'Galeria Pesquisa') || '').trim();
+    const pasta    = String(_val(row, cm, 'Galeria Pasta') || '').trim() || id;
+    const pkgKey   = String(_val(row, cm, 'Pacote') || '');
+
+    out.push([
+      id,
+      dataStr,
+      _PKG_LABEL[pkgKey] || pkgKey,
+      status,
+      _val(row, cm, 'Nome')     || '',
+      _val(row, cm, 'E-mail')   || '',
+      _val(row, cm, 'WhatsApp') || '',
+      Number(_val(row, cm, 'Nº Bailarinas') || 1),
+      _val(row, cm, 'Nome Bailarina') || '',
+      fotos.length,
+      fotos.length ? pasta : '(sem fotos ainda)',
+      aceite ? 'SIM' : 'não',
+      aceite,
+      _val(row, cm, 'Galeria CPF')        || '',
+      String(_val(row, cm, 'Galeria Autoriza') || ''),
+      String(_val(row, cm, 'Galeria Menor')    || ''),
+      _val(row, cm, 'Galeria Bailarina')   || '',
+      _val(row, cm, 'Galeria Nascimento')  || '',
+      pesquisa ? 'SIM' : 'não',
+      _val(row, cm, 'Pesquisa Origem')  || '',
+      _val(row, cm, 'Pesquisa Decisão') || '',
+      _galeriaLinkPublico(id),
+      // Mesma regra do endpoint: sem fotos não há zip para apontar.
+      (base && fotos.length) ? (base + '/' + pasta + '/fotos.zip') : '(sem fotos ainda)',
+    ]);
+  });
+
+  if (out.length) {
+    g.getRange(2, 1, out.length, headers.length).setValues(out);
+    // Verde = pronta para enviar (tem fotos); âmbar = ainda sem fotos.
+    for (let i = 0; i < out.length; i++) {
+      if (!out[i][9]) g.getRange(i + 2, 1, 1, headers.length).setBackground('#fff8e1');
+    }
+  }
+  for (let c = 1; c <= headers.length; c++) g.autoResizeColumn(c);
+  return { ok: true, linhas: out.length };
+}
+
+// Leitura em lote da aba "Galerias" — id/contratante/link de quem já tem fotos.
+// Usado para abrir os links de entrega em lote (QA), sem expor o ADMIN_SECRET.
+function listGalerias() {
+  const g = SpreadsheetApp.openById(SHEET_ID).getSheetByName('Galerias');
+  if (!g || g.getLastRow() < 2) return { ok: true, rows: [] };
+  const vals = g.getRange(2, 1, g.getLastRow() - 1, g.getLastColumn()).getValues();
+  const rows = vals
+    .filter(function (r) { return Number(r[9]) > 0; })            // col 10 "Fotos"
+    .map(function (r) { return { id: r[0], contratante: r[4], fotos: r[9], link: r[21] }; }); // col 22 "Link da galeria"
+  return { ok: true, rows: rows };
+}
+
 /* ───────── Galeria de entrega (página pública /galeria/:id) ─────────
  * Dois portões, ambos idempotentes e com estado no servidor (não em cookie):
  *   1) aceite dos termos + autorização de imagem  → libera a galeria
@@ -481,6 +607,7 @@ function _galeriaCols(sa) {
   _ensureColumn(sa, 'Galeria Fotos');      // arquivos separados por | (gerado no upload)
   _ensureColumn(sa, 'Galeria Link');       // OVERRIDE do download; vazio = <base>/<pasta>/fotos.zip
   _ensureColumn(sa, 'Galeria Hero');       // foto da abertura (ex.: 015.jpg); vazio = a primeira
+  _ensureColumn(sa, 'Galeria Hero Foco');  // "X,Y" em % (posição do rosto) — vazio = center
   _ensureColumn(sa, 'Galeria Aceite');     // timestamp | versão do termo
   _ensureColumn(sa, 'Galeria CPF');
   _ensureColumn(sa, 'Galeria IP');
@@ -561,7 +688,12 @@ function getGaleriaById(id) {
     // 'Galeria Hero' guarda o arquivo já renumerado (ex.: 015.jpg); vazia, vale a
     // primeira foto — assim toda galeria nasce com abertura própria sem trabalho.
     // Usa a versão de tela (2048 px), não a miniatura: é uma faixa de largura inteira.
-    const heroArq = String(_val(row, cm, 'Galeria Hero') || '').trim() || (fotos[0] || '');
+    const heroArq  = String(_val(row, cm, 'Galeria Hero') || '').trim() || (fotos[0] || '');
+    // "62.5,27" → "62.5% 27%", pronto pro CSS object-position. Formato ruim = ignora (center).
+    const focoRaw  = String(_val(row, cm, 'Galeria Hero Foco') || '').trim();
+    const focoPart = focoRaw.split(',').map(function (n) { return Number(n.trim()); });
+    const heroFocus = (focoPart.length === 2 && focoPart.every(function (n) { return isFinite(n); }))
+      ? (focoPart[0] + '% ' + focoPart[1] + '%') : '';
 
     return {
       clientName:    _val(row, cm, 'Nome') || '',
@@ -573,6 +705,7 @@ function getGaleriaById(id) {
       surveyed:      !!String(_val(row, cm, 'Galeria Pesquisa') || '').trim(),
       downloadUrl:   _galeriaDownloadUrl(row, cm, id),
       heroUrl:       (base && heroArq) ? (base + '/' + pasta + '/' + heroArq) : '',
+      heroFocus:     heroFocus,
       photos:        fotos.map(function(f, i) {
         return {
           id:    String(i),
@@ -625,6 +758,78 @@ function recordGaleriaAceite(data) {
     addLog('GALERIA_ACEITE', id, 'Termos + imagem (' + (autoriza ? 'autorizou' : 'não autorizou') + ')', 'galeria');
   }
   return { ok: true, alreadyAccepted: !!prev };
+}
+
+// Preenche Galeria Pasta/Galeria Fotos em lote a partir do staging/planilha.csv.
+// Payload: { action:'setGaleriaFotos', rows:[{ id, pasta, fotos }] } — fotos já no formato "a.jpg|b.jpg".
+// Idempotente: sobrescrever com o mesmo valor é inócuo; IDs não encontrados voltam em `naoEncontrados`.
+function setGaleriaFotos(data) {
+  const items = data.rows;
+  if (!Array.isArray(items) || items.length === 0) throw new Error('rows é obrigatório');
+
+  const sa = getSheet('Agendamentos');
+  if (!sa || sa.getLastRow() < 2) throw new Error('Planilha vazia');
+  _galeriaCols(sa);
+
+  const cm   = _colMap(sa);
+  const rows = sa.getRange(2, 1, sa.getLastRow() - 1, sa.getLastColumn()).getValues();
+  const iId  = cm['ID'] !== undefined ? cm['ID'] : 0;
+  const byId = {};
+  rows.forEach(function (r, i) { byId[String(r[iId] || '').trim()] = i; });
+
+  const gravados = [], naoEncontrados = [];
+  items.forEach(function (it) {
+    const id    = String(it.id    || '').trim();
+    const pasta = String(it.pasta || '').trim();
+    const fotos = String(it.fotos || '').trim();
+    if (!id || !pasta || !fotos) { naoEncontrados.push(id || '(sem id)'); return; }
+    const idx = byId[id];
+    if (idx === undefined) { naoEncontrados.push(id); return; }
+    const shRow = idx + 2;
+    sa.getRange(shRow, cm['Galeria Pasta'] + 1).setValue(pasta);
+    sa.getRange(shRow, cm['Galeria Fotos'] + 1).setValue(fotos);
+    gravados.push(id);
+  });
+
+  addLog('GALERIA_FOTOS', '', gravados.length + ' gravados' +
+    (naoEncontrados.length ? ' · não encontrados: ' + naoEncontrados.join(', ') : ''), 'setGaleriaFotos');
+  return { ok: true, gravados: gravados.length, naoEncontrados: naoEncontrados };
+}
+
+// Preenche Galeria Hero/Galeria Hero Foco em lote.
+// Payload: { action:'setGaleriaHero', rows:[{ id, hero, focoX, focoY }] } — hero é o arquivo
+// renumerado (ex. "005.jpg"); focoX/focoY em % (posição do rosto), omitir = sem rosto detectado
+// (mantém a foto inteira centralizada, sem foco). Idempotente: sobrescrever é inócuo.
+function setGaleriaHero(data) {
+  const items = data.rows;
+  if (!Array.isArray(items) || items.length === 0) throw new Error('rows é obrigatório');
+
+  const sa = getSheet('Agendamentos');
+  if (!sa || sa.getLastRow() < 2) throw new Error('Planilha vazia');
+  _galeriaCols(sa);
+
+  const cm   = _colMap(sa);
+  const rows = sa.getRange(2, 1, sa.getLastRow() - 1, sa.getLastColumn()).getValues();
+  const iId  = cm['ID'] !== undefined ? cm['ID'] : 0;
+  const byId = {};
+  rows.forEach(function (r, i) { byId[String(r[iId] || '').trim()] = i; });
+
+  const gravados = [], naoEncontrados = [];
+  items.forEach(function (it) {
+    const id = String(it.id || '').trim();
+    if (!id || byId[id] === undefined) { naoEncontrados.push(id || '(sem id)'); return; }
+    const shRow = byId[id] + 2;
+    const hero  = String(it.hero || '').trim();
+    if (hero) sa.getRange(shRow, cm['Galeria Hero'] + 1).setValue(hero);
+    if (it.focoX !== undefined && it.focoY !== undefined) {
+      sa.getRange(shRow, cm['Galeria Hero Foco'] + 1).setValue(Number(it.focoX) + ',' + Number(it.focoY));
+    }
+    gravados.push(id);
+  });
+
+  addLog('GALERIA_HERO', '', gravados.length + ' gravados' +
+    (naoEncontrados.length ? ' · não encontrados: ' + naoEncontrados.join(', ') : ''), 'setGaleriaHero');
+  return { ok: true, gravados: gravados.length, naoEncontrados: naoEncontrados };
 }
 
 function recordGaleriaPesquisa(data) {
@@ -2553,6 +2758,10 @@ function doPost(e) {
     else if (action === 'releasePending')  result = releasePendingSlots();
     else if (action === 'initSheets')      { initSheets(); result = { ok: true }; }
     else if (action === 'buildClientes')   { buildClientesSheet(); result = { ok: true }; }
+    else if (action === 'buildGalerias')   result = buildGaleriasSheet();
+    else if (action === 'setGaleriaFotos') result = setGaleriaFotos(body);
+    else if (action === 'listGalerias')    result = listGalerias();
+    else if (action === 'setGaleriaHero')  result = setGaleriaHero(body);
     else if (action === 'addLog') {
       // Accept both formats:
       //   {logAction, bookingId, detail, origin}  — legacy / internal
@@ -2590,4 +2799,18 @@ function doPost(e) {
   }
   return ContentService.createTextOutput(JSON.stringify(result))
     .setMimeType(ContentService.MimeType.JSON);
+}
+
+/** Diagnóstico: prova que o HMAC do Apps Script bate com o de api/galeria.ts.
+ *  Byte no Apps Script é ASSINADO — sem o & 0xFF o hex sai errado e todo link
+ *  daria 403. Rode com um par conhecido depois de mexer em _galeriaLinkPublico. */
+function testeTokenGaleria(segredo, id, esperado) {
+  const bytes = Utilities.computeHmacSha256Signature('galeria:' + id, segredo);
+  let hex = '';
+  for (let i = 0; i < bytes.length; i++) {
+    const b = (bytes[i] & 0xFF).toString(16);
+    hex += (b.length === 1 ? '0' : '') + b;
+  }
+  const obtido = hex.substring(0, 24);
+  return { obtido: obtido, esperado: esperado, bate: obtido === esperado };
 }

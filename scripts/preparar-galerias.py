@@ -53,6 +53,7 @@ def carregar_reservas():
 # O relatório SEM PAR sugere o candidato; quem confirma é você, aqui.
 PARES_MANUAIS = {
     '53.Nicole': 'AG-MSFYY8ET',      # pasta "Nicole", reserva "Nicolle Lourenço" (um L a menos)
+    'fernanda':  'AG-MRSH2CZN',      # pasta fora da RAIZ ("dia-1 e dia0/fernanda"), link simbólico
 }
 
 

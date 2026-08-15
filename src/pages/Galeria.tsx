@@ -7,6 +7,8 @@ type Foto = { id: string; url: string; thumb?: string };
 type Dados = {
   clientName: string; date: string; start: string; packageName: string; numBailarinas: number;
   accepted: boolean; surveyed: boolean; photos: Foto[]; downloadUrl?: string; heroUrl?: string;
+  // "58% 27%" pronto pro CSS object-position (posição do rosto, via Vision no macOS); ausente = center.
+  heroFocus?: string;
   termoVersion: string;
 };
 
@@ -220,7 +222,8 @@ export default function Galeria() {
               tira das bordas e preserva o centro. A imagem fixa do site é só o
               último recurso, para uma galeria que ainda não tem fotos na planilha. */}
           <img src={dados.heroUrl || '/galeria-hero.jpg'} alt="" fetchPriority="high"
-            className="absolute inset-0 w-full h-full object-cover object-center opacity-80" />
+            style={{ objectPosition: dados.heroFocus || 'center' }}
+            className="absolute inset-0 w-full h-full object-cover opacity-80" />
           <div className="absolute inset-0" style={{ background: 'linear-gradient(180deg,rgba(17,20,30,.35) 0%,rgba(17,20,30,.85) 100%)' }} />
           <div className="absolute inset-0 flex flex-col items-center justify-end text-center px-6 pb-8">
             <p className="text-[11px] font-bold uppercase tracking-[0.3em] text-white/70">Ensaio Fotográfico · Joinville 2026</p>
