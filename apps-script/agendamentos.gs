@@ -137,7 +137,10 @@ function initSheets() {
     'Nome','E-mail','WhatsApp','Instagram Cliente','Instagram Bailarina','Nome Bailarina','Nº Bailarinas',
     'Stripe Session','Stripe Payment','Status','Criado em','Atualizado em',
     'Rem1Sent','Rem2Sent','Rem3Sent','AndreNotified','ExpiryWarnSent','Source','Sessões Pagas','Nomes Pagadores','Valores Pagadores','Links Pagadores','Emails Pagadores',
-    'Aceite Contrato','Aceite CPF','Aceite IP'
+    'Aceite Contrato','Aceite CPF','Aceite IP',
+    'Galeria Pasta','Galeria Fotos','Galeria Link','Galeria Aceite','Galeria CPF','Galeria IP',
+    'Galeria Autoriza','Galeria Menor','Galeria Bailarina','Galeria Nascimento',
+    'Galeria Pesquisa','Pesquisa Origem','Pesquisa Decisão'
   ];
   ensureSheet('Agendamentos', agHeaders, '#4CAF50');
   ensureSheet('Bloqueios',    ['Data','Início','Fim','Motivo'],                '#FF9800');
@@ -457,6 +460,193 @@ function recordContractAcceptance(data) {
     addLog('CONTRATO_ACEITO', id, 'CPF ' + cpf + ' · ' + ipUa, 'aceite');
   }
   return { ok: true, payUrl: payUrl, alreadyAccepted: !!prev };
+}
+
+/* ───────── Galeria de entrega (página pública /galeria/:id) ─────────
+ * Dois portões, ambos idempotentes e com estado no servidor (não em cookie):
+ *   1) aceite dos termos + autorização de imagem  → libera a galeria
+ *   2) pesquisa de 2 perguntas                    → libera o download em alta
+ * As fotos vêm do R2: <R2_PUBLIC_URL>/<Galeria Pasta>/<arquivo>.
+ * A miniatura da grade fica em .../<Galeria Pasta>/t/<arquivo> (gerada por
+ * scripts/preparar-galerias.py). Mesmo nome de arquivo, subpasta t/. */
+
+// Base pública das imagens (Script Property R2_PUBLIC_URL, sem barra no fim).
+function _r2Base() {
+  return String(PropertiesService.getScriptProperties().getProperty('R2_PUBLIC_URL') || '').replace(/\/+$/, '');
+}
+
+// Self-healing das colunas da galeria (não exige initSheets).
+function _galeriaCols(sa) {
+  _ensureColumn(sa, 'Galeria Pasta');      // prefixo no R2 (default: o próprio ID)
+  _ensureColumn(sa, 'Galeria Fotos');      // arquivos separados por | (gerado no upload)
+  _ensureColumn(sa, 'Galeria Link');       // OVERRIDE do download; vazio = <base>/<pasta>/fotos.zip
+  _ensureColumn(sa, 'Galeria Aceite');     // timestamp | versão do termo
+  _ensureColumn(sa, 'Galeria CPF');
+  _ensureColumn(sa, 'Galeria IP');
+  _ensureColumn(sa, 'Galeria Autoriza');   // SIM / NÃO
+  _ensureColumn(sa, 'Galeria Menor');      // SIM / NÃO
+  _ensureColumn(sa, 'Galeria Bailarina');
+  _ensureColumn(sa, 'Galeria Nascimento');
+  _ensureColumn(sa, 'Galeria Pesquisa');   // timestamp da resposta
+  _ensureColumn(sa, 'Pesquisa Origem');    // Q1 — como chegou
+  _ensureColumn(sa, 'Pesquisa Decisão');   // Q2 — o que pesou
+}
+
+// Aba própria de eventos da galeria (acesso, aceite, pesquisa, pedido).
+// Fica separada do Log para não afogar o log operacional com acessos repetidos.
+function _galeriaLogSheet() {
+  const ss = SpreadsheetApp.openById(SHEET_ID);
+  let sh = ss.getSheetByName('Galeria Log');
+  if (!sh) {
+    sh = ss.insertSheet('Galeria Log');
+    sh.setTabColor('#7a3f8f');
+    sh.appendRow(['Timestamp', 'Evento', 'ID', 'Detalhe', 'IP', 'Dispositivo']);
+    sh.getRange(1, 1, 1, 6).setFontWeight('bold').setBackground('#1a1a2e').setFontColor('#ffffff');
+    sh.setFrozenRows(1);
+  }
+  return sh;
+}
+
+function logGaleria(evento, id, detalhe, ip, ua) {
+  try {
+    _galeriaLogSheet().appendRow([nowIso(), evento, id || '', detalhe || '', ip || '', String(ua || '').slice(0, 200)]);
+  } catch (e) {
+    addLog('GALERIA_LOG_ERRO', id, String(e), 'galeria');
+  }
+}
+
+function logGaleriaAcesso(data) {
+  logGaleria('ACESSO', data.id, '', data.ip, data.userAgent);
+  return { ok: true };
+}
+
+
+
+/** URL do download em alta de uma linha da galeria.
+ *  Padrão: fotos.zip da própria pasta no R2 (originais em resolução cheia).
+ *  A coluna 'Galeria Link' é OVERRIDE — só preencher para uma galeria que precise
+ *  de destino diferente; sem o padrão seriam 50 URLs digitadas à mão.
+ *  Um lugar só: getGaleriaById e recordGaleriaPesquisa liam a coluna separadamente,
+ *  e a pesquisa devolvia vazio (409 na página) enquanto o GET já resolvia. */
+function _galeriaDownloadUrl(row, cm, id) {
+  const manual = String(_val(row, cm, 'Galeria Link') || '').trim();
+  if (manual) return manual;
+  const pasta = String(_val(row, cm, 'Galeria Pasta') || '').trim() || id;
+  const temFotos = !!String(_val(row, cm, 'Galeria Fotos') || '').trim();
+  const base = _r2Base();
+  return (base && temFotos) ? base + '/' + pasta + '/fotos.zip' : '';
+}
+
+function getGaleriaById(id) {
+  const sa = getSheet('Agendamentos');
+  if (!sa || sa.getLastRow() < 2) return null;
+  _galeriaCols(sa);
+  const cm   = _colMap(sa);
+  const data = sa.getRange(2, 1, sa.getLastRow() - 1, sa.getLastColumn()).getValues();
+  for (let r = 0; r < data.length; r++) {
+    const row = data[r];
+    if (String(_val(row, cm, 'ID') || '') !== id) continue;
+
+    const dRaw    = _val(row, cm, 'Data');
+    const dateStr = dRaw ? (typeof dRaw === 'string'
+      ? dRaw : Utilities.formatDate(dRaw, 'America/Sao_Paulo', 'yyyy-MM-dd')) : '';
+    const pkgKey  = String(_val(row, cm, 'Pacote') || '');
+    const pasta   = String(_val(row, cm, 'Galeria Pasta') || '').trim() || id;
+    const base    = _r2Base();
+    const fotos   = String(_val(row, cm, 'Galeria Fotos') || '')
+      .split('|').map(function(f) { return f.trim(); }).filter(function(f) { return !!f; });
+
+    return {
+      clientName:    _val(row, cm, 'Nome') || '',
+      date:          dateStr,
+      start:         _toHHMM(_val(row, cm, 'Início')),
+      packageName:   _PKG_LABEL[pkgKey] || pkgKey,
+      numBailarinas: Number(_val(row, cm, 'Nº Bailarinas') || 1),
+      accepted:      !!String(_val(row, cm, 'Galeria Aceite')   || '').trim(),
+      surveyed:      !!String(_val(row, cm, 'Galeria Pesquisa') || '').trim(),
+      downloadUrl:   _galeriaDownloadUrl(row, cm, id),
+      photos:        fotos.map(function(f, i) {
+        return {
+          id:    String(i),
+          url:   base ? (base + '/' + pasta + '/' + f) : f,
+          thumb: base ? (base + '/' + pasta + '/t/' + f) : f,
+        };
+      }),
+    };
+  }
+  return null;
+}
+
+function recordGaleriaAceite(data) {
+  const id  = String(data.id  || '').trim();
+  const cpf = String(data.cpf || '').replace(/\D/g, '');
+  if (!id) throw new Error('id é obrigatório');
+  if (cpf.length !== 11) throw new Error('CPF inválido');
+
+  const menor = data.menor === true || String(data.menor) === 'true';
+  const bNome = String(data.bailarinaNome || '').trim();
+  const bNasc = String(data.bailarinaNascimento || '').trim();
+  if (menor && (!bNome || !bNasc)) throw new Error('Nome e data de nascimento da bailarina são obrigatórios');
+
+  const sa = getSheet('Agendamentos');
+  if (!sa || sa.getLastRow() < 2) throw new Error('Planilha vazia');
+  _galeriaCols(sa);
+
+  const cm   = _colMap(sa);
+  const rows = sa.getRange(2, 1, sa.getLastRow() - 1, sa.getLastColumn()).getValues();
+  const iId  = cm['ID'] !== undefined ? cm['ID'] : 0;
+  const idx  = rows.findIndex(function(r) { return String(r[iId] || '') === id; });
+  if (idx < 0) throw new Error('Booking não encontrado: ' + id);
+
+  const shRow = idx + 2;
+  // Idempotente: o primeiro aceite é o que vale — reabrir o link não sobrescreve o registro.
+  const prev = String(_val(rows[idx], cm, 'Galeria Aceite') || '').trim();
+  if (!prev) {
+    const autoriza = data.autoriza === true || String(data.autoriza) === 'true';
+    const ipUa = String(data.ip || 'desconhecido') + (data.userAgent ? ' · ' + data.userAgent : '');
+    sa.getRange(shRow, cm['Galeria Aceite']     + 1).setValue(nowIso() + ' | v' + String(data.termoVersion || ''));
+    sa.getRange(shRow, cm['Galeria CPF']        + 1).setValue("'" + cpf);   // aspas → texto, preserva zeros
+    sa.getRange(shRow, cm['Galeria IP']         + 1).setValue(ipUa);
+    sa.getRange(shRow, cm['Galeria Autoriza']   + 1).setValue(autoriza ? 'SIM' : 'NÃO');
+    sa.getRange(shRow, cm['Galeria Menor']      + 1).setValue(menor ? 'SIM' : 'NÃO');
+    sa.getRange(shRow, cm['Galeria Bailarina']  + 1).setValue(bNome);
+    sa.getRange(shRow, cm['Galeria Nascimento'] + 1).setValue(bNasc);
+    sa.getRange(shRow, _col1(cm, 'Atualizado em', 18)).setValue(nowIso());
+    logGaleria('ACEITE', id, 'CPF ' + cpf + ' · autoriza=' + (autoriza ? 'SIM' : 'NÃO') +
+      (menor ? (' · menor: ' + bNome + ' (' + bNasc + ')') : ' · maior de idade'), data.ip, data.userAgent);
+    addLog('GALERIA_ACEITE', id, 'Termos + imagem (' + (autoriza ? 'autorizou' : 'não autorizou') + ')', 'galeria');
+  }
+  return { ok: true, alreadyAccepted: !!prev };
+}
+
+function recordGaleriaPesquisa(data) {
+  const id = String(data.id || '').trim();
+  const q1 = String(data.q1 || '').trim();
+  const q2 = String(data.q2 || '').trim();
+  if (!id) throw new Error('id é obrigatório');
+  if (!q1 || !q2) throw new Error('Responda as duas perguntas');
+
+  const sa = getSheet('Agendamentos');
+  if (!sa || sa.getLastRow() < 2) throw new Error('Planilha vazia');
+  _galeriaCols(sa);
+
+  const cm   = _colMap(sa);
+  const rows = sa.getRange(2, 1, sa.getLastRow() - 1, sa.getLastColumn()).getValues();
+  const iId  = cm['ID'] !== undefined ? cm['ID'] : 0;
+  const idx  = rows.findIndex(function(r) { return String(r[iId] || '') === id; });
+  if (idx < 0) throw new Error('Booking não encontrado: ' + id);
+
+  const shRow  = idx + 2;
+  const payUrl = _galeriaDownloadUrl(rows[idx], cm, id);
+  const prev   = String(_val(rows[idx], cm, 'Galeria Pesquisa') || '').trim();
+  if (!prev) {
+    sa.getRange(shRow, cm['Galeria Pesquisa']  + 1).setValue(nowIso());
+    sa.getRange(shRow, cm['Pesquisa Origem']   + 1).setValue(q1);
+    sa.getRange(shRow, cm['Pesquisa Decisão']  + 1).setValue(q2);
+    sa.getRange(shRow, _col1(cm, 'Atualizado em', 18)).setValue(nowIso());
+    logGaleria('PESQUISA', id, q1 + ' || ' + q2, data.ip, data.userAgent);
+  }
+  return { ok: true, downloadUrl: payUrl, alreadyAnswered: !!prev };
 }
 
 function computeAvailableSlots(dateStr, pkgKey, durationOverride) {
@@ -2179,6 +2369,12 @@ function doGet(e) {
       if (!id) throw new Error('id é obrigatório');
       result = getContratoById(id);
       if (!result) throw new Error('Booking não encontrado');
+    } else if (action === 'galeriaById') {
+      // Dados da galeria de entrega (página pública com token).
+      const id = e.parameter.id;
+      if (!id) throw new Error('id é obrigatório');
+      result = getGaleriaById(id);
+      if (!result) throw new Error('Galeria não encontrada');
     } else if (action === 'bookings') {
       const sa = getSheet('Agendamentos');
       if (!sa || sa.getLastRow() < 2) { result = []; }
@@ -2342,6 +2538,9 @@ function doPost(e) {
     else if (action === 'editBooking')          result = editBooking(body);
     else if (action === 'regenerateSplitLink')  result = regenerateSplitLink(body);
     else if (action === 'recordContractAcceptance') result = recordContractAcceptance(body);
+    else if (action === 'recordGaleriaAceite')   result = recordGaleriaAceite(body);
+    else if (action === 'recordGaleriaPesquisa') result = recordGaleriaPesquisa(body);
+    else if (action === 'logGaleriaAcesso')      result = logGaleriaAcesso(body);
     else if (action === 'resendConfirmation') result = resendBookingConfirmationEmail(body.bookingId, body.extraCc);
     else if (action === 'releasePending')  result = releasePendingSlots();
     else if (action === 'initSheets')      { initSheets(); result = { ok: true }; }

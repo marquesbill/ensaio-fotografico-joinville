@@ -12,3 +12,6 @@ coverage/
 # vídeos grandes (não versionar)
 teaser40s.mov
 *.mov
+
+# Galerias preparadas localmente (imagens + zips) — nunca vão para o repositório
+staging/
