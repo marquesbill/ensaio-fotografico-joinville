@@ -81,6 +81,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       const txt = await r.text();
       let data: Record<string, unknown> | null = null;
       try { data = JSON.parse(txt); } catch { return res.status(502).json({ error: 'A planilha respondeu em formato inválido.' }); }
+      if (data && data.maintenance) return res.status(200).json({ maintenance: true });
       if (!data || data.error) return res.status(404).json({ error: 'Galeria não encontrada.' });
       // Log de acesso (analytics de servidor: hora, IP, dispositivo). Não derruba a página se falhar.
       gs('logGaleriaAcesso', { id, ip, userAgent: ua }).catch(() => {});

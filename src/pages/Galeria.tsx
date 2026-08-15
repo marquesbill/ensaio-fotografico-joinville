@@ -10,6 +10,8 @@ type Dados = {
   // "58% 27%" pronto pro CSS object-position (posição do rosto, via Vision no macOS); ausente = center.
   heroFocus?: string;
   termoVersion: string;
+  // Galeria temporariamente fora do ar (Script Property GALERIA_MANUTENCAO no .gs).
+  maintenance?: boolean;
 };
 
 function fmtDate(d: string) {
@@ -152,7 +154,7 @@ export default function Galeria() {
 
   const jaMarcou = useRef(false);
   useEffect(() => {
-    if (!dados || jaMarcou.current) return;   // `dados` muda de novo no aceite; isto roda uma vez
+    if (!dados || dados.maintenance || jaMarcou.current) return;   // `dados` muda de novo no aceite; isto roda uma vez
     jaMarcou.current = true;
     track.tag('pagina', 'galeria');
     track.tag('galeria_id', id || '');
@@ -198,6 +200,19 @@ export default function Galeria() {
   if (loading) {
     return <div className="min-h-screen bg-surface grid place-items-center">
       <div className="w-10 h-10 rounded-full border-[3px] border-primary-container border-t-primary animate-spin" />
+    </div>;
+  }
+  if (dados?.maintenance) {
+    return <div className="min-h-screen bg-surface grid place-items-center px-6 text-center">
+      <div className="max-w-md">
+        <p className="text-[11px] font-bold uppercase tracking-[0.3em] text-primary mb-4">Ensaio Fotográfico · Joinville 2026</p>
+        <p className="font-headline text-3xl italic text-on-surface mb-3">Um instante…</p>
+        <p className="text-on-surface-variant text-sm leading-relaxed">
+          Estou fazendo os últimos ajustes nas suas fotos. Volte a abrir este mesmo link
+          em breve — aviso pelo WhatsApp assim que estiver tudo pronto.
+        </p>
+        <p className="font-headline text-lg italic text-on-surface mt-6">André Ferreira</p>
+      </div>
     </div>;
   }
   if (erro || !dados) {

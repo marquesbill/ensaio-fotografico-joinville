@@ -610,11 +610,20 @@ function _galeriaEntregaEmailHtml(nome, link, numFotos) {
     <p style="color:#6b7280;font-size:14px;margin:0 0 14px;line-height:1.6;">Durante as duas semanas do Festival a sala Esmeralda do Hotel Le Village foi meu estúdio. Foi um prazer te receber.</p>
     <p style="color:#6b7280;font-size:14px;margin:0 0 14px;line-height:1.6;">Quero agradecer pela confiança no meu trabalho e pela entrega e disposição durante a sessão.</p>
     <p style="color:#6b7280;font-size:14px;margin:0 0 20px;line-height:1.6;">Editei tudo com muito cuidado. Espero que você goste tanto das imagens quanto eu gostei de produzi-las.</p>
-    <div style="text-align:center;margin-bottom:20px;">
-      <a href="${link}" style="display:inline-block;background:linear-gradient(135deg,#7a3f8f,#e87060);color:#ffffff;font-weight:700;font-size:14px;text-decoration:none;padding:13px 32px;border-radius:50px;">
-        Ver minhas ${numFotos} fotos
-      </a>
-    </div>
+    <!-- Botão em <table bgcolor>: Outlook/Hotmail descartam background:linear-gradient
+         (o texto branco ficava invisível — aconteceu com cliente real em 15/08).
+         bgcolor sólido + underline garantem que o link aparece em qualquer cliente. -->
+    <table cellpadding="0" cellspacing="0" border="0" align="center" style="margin:0 auto 16px;">
+      <tr><td bgcolor="#7a3f8f" style="background-color:#7a3f8f;border-radius:50px;">
+        <a href="${link}" style="display:inline-block;color:#ffffff;font-weight:700;font-size:14px;text-decoration:underline;padding:13px 32px;">
+          Ver minhas ${numFotos} fotos
+        </a>
+      </td></tr>
+    </table>
+    <p style="color:#374151;font-size:13px;margin:0 0 16px;text-align:center;">
+      Se o botão não aparecer, use este endereço:<br>
+      <a href="${link}" style="color:#7a3f8f;font-size:12px;word-break:break-all;">${link}</a>
+    </p>
     <p style="color:#9ca3af;font-size:12px;margin:0;text-align:center;">O link fica disponível até junho de 2027. Qualquer dúvida, me chama no WhatsApp.</p>
   </td></tr>
   ${_emailFooter()}
@@ -782,6 +791,12 @@ function _galeriaDownloadUrl(row, cm, id) {
 }
 
 function getGaleriaById(id) {
+  // Script Property GALERIA_MANUTENCAO = IDs separados por vírgula (ex.: "AG-MQ4241PC")
+  // derruba SÓ essas galerias para a página "estamos trabalhando", sem deploy.
+  // Limpar a property (ou tirar o ID da lista) religa na hora.
+  const emManutencao = String(PropertiesService.getScriptProperties().getProperty('GALERIA_MANUTENCAO') || '')
+    .split(',').map(function (s) { return s.trim(); }).filter(function (s) { return !!s; });
+  if (emManutencao.indexOf(id) !== -1) return { maintenance: true };
   const sa = getSheet('Agendamentos');
   if (!sa || sa.getLastRow() < 2) return null;
   _galeriaCols(sa);
@@ -1032,8 +1047,10 @@ function _emailFooter() {
 }
 
 function _emailHeader(title) {
+  // bgcolor sólido além do gradiente: Outlook/Hotmail descartam linear-gradient e o
+  // título branco sumia num fundo branco (visto em cliente real, 15/08).
   return `
-    <tr><td style="background:linear-gradient(135deg,#7a3f8f,#e87060);padding:28px 40px;text-align:center;">
+    <tr><td bgcolor="#7a3f8f" style="background-color:#7a3f8f;background:linear-gradient(135deg,#7a3f8f,#e87060);padding:28px 40px;text-align:center;">
       <h1 style="color:#ffffff;margin:0;font-size:20px;font-weight:800;">Ensaio Fotográfico em Joinville</h1>
       <p style="color:rgba(255,255,255,0.85);margin:6px 0 0;font-size:13px;">Hotel Le Village · 20 Jul – 02 Ago 2026</p>
       <p style="color:#ffe082;margin:8px 0 0;font-size:15px;font-weight:700;">${title}</p>
