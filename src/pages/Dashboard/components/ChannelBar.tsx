@@ -10,8 +10,10 @@
 interface Row {
   label: string;
   value: number;
-  /** Categoria pra colorir (paid_social, organic_social, direct, referral, organic_search, other) */
-  category?: 'paid_social' | 'organic_social' | 'direct' | 'referral' | 'organic_search' | 'email' | 'paid_search' | 'other';
+  /** Categoria pra colorir. `string` porque o GA4 devolve rótulo livre — a união
+   *  fechada mentia sobre o que chega em runtime. Categoria fora da tabela cai
+   *  no cinza de `other` (ver CATEGORY_COLORS abaixo). */
+  category?: string;
 }
 
 interface Props {
@@ -58,7 +60,9 @@ export function ChannelBar({ title, data, unit = '', source, loading }: Props) {
         ) : sorted.map((row) => {
           const pct = total > 0 ? (row.value / total) * 100 : 0;
           const barWidth = (row.value / max) * 100;
-          const color = CATEGORY_COLORS[row.category || 'other'];
+          // Duplo fallback: categoria ausente OU desconhecida vira cinza. Só o
+          // `|| 'other'` deixava a barra sem cor quando o GA4 mandava rótulo novo.
+          const color = CATEGORY_COLORS[row.category ?? ''] ?? CATEGORY_COLORS.other;
           return (
             <div key={row.label} className="group">
               <div className="flex items-baseline justify-between text-xs mb-1">

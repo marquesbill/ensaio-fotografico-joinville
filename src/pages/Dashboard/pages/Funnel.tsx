@@ -14,7 +14,7 @@
  */
 
 import { useEffect, useState } from 'react';
-import { Users, FileText, ShoppingCart, CheckCircle2 } from 'lucide-react';
+import { Users, FileText, ShoppingCart, CheckCircle2, Eye } from 'lucide-react';
 
 import { KpiCard } from '../components/KpiCard';
 import { DataSourceBadge } from '../components/DataSourceBadge';
