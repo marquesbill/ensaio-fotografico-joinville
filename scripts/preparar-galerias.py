@@ -107,8 +107,13 @@ def _fotos(pasta: Path) -> list:
 
 
 def _sips(origem: Path, saida: Path, lado: int, qualidade: int):
-    """Redimensiona com o sips do próprio macOS. Pula o que já existe (permite retomar)."""
-    if saida.exists():
+    """Redimensiona com o sips do próprio macOS.
+
+    Pula o que já está atualizado (permite interromper e retomar), mas REFAZ se o
+    original foi reeditado depois da saída. Só checar existência era pior que um
+    erro: a galeria continuava servindo a versão antiga, sem sintoma nenhum.
+    """
+    if saida.exists() and saida.stat().st_mtime >= origem.stat().st_mtime:
         return
     subprocess.run(
         ['sips', '-Z', str(lado), '-s', 'format', 'jpeg',
@@ -126,12 +131,14 @@ def _zip(pasta: Path, destino: Path, fotos: list):
     achar no zip a mesma foto que viu na tela.
     """
     saida = destino / 'fotos.zip'
-    # Refaz se a contagem divergir: zip velho de uma edição anterior entregaria
-    # um conjunto diferente do que a galeria mostra, e em silêncio.
+    # Refaz se a contagem divergir OU se alguma foto foi reeditada depois do zip.
+    # Contagem sozinha não bastava: trocar uma foto mantendo o total deixava o zip
+    # velho passando por bom, e a cliente baixava o conjunto antigo.
     if saida.exists():
         try:
             with zipfile.ZipFile(saida) as z:
-                if len(z.namelist()) == len(fotos):
+                mais_recente = max((f.stat().st_mtime for f in fotos), default=0)
+                if len(z.namelist()) == len(fotos) and saida.stat().st_mtime >= mais_recente:
                     return
         except zipfile.BadZipFile:
             pass                      # zip truncado de uma execução interrompida
