@@ -655,7 +655,7 @@ function sendGaleriaEntregaEmail(id, testTo) {
 
     const link = _galeriaLinkPublico(id);
     const html = _galeriaEntregaEmailHtml(nome, link, fotos.length);
-    const enviou = sendEmailViaResend(destino, '📸 Suas fotos do Festival chegaram!', html);
+    const enviou = sendEmailViaResend(destino, 'Fotos Prontas! Ensaio Fotográfico em Joinville 2026', html);
     if (!enviou) return { id: id, ok: false, motivo: 'falha no envio (ver Galeria Log)' };
 
     if (!testTo) {
