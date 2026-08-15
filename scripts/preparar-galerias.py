@@ -54,6 +54,9 @@ def carregar_reservas():
 PARES_MANUAIS = {
     '53.Nicole': 'AG-MSFYY8ET',      # pasta "Nicole", reserva "Nicolle Lourenço" (um L a menos)
     'fernanda':  'AG-MRSH2CZN',      # pasta fora da RAIZ ("dia-1 e dia0/fernanda"), link simbólico
+    # Pasta de duas reservas (Daniela 17h + Lorena 17h30): decisão do André em 15/08 — a galeria
+    # inteira vai para a Daniela, que se encarrega de repassar as fotos para a Lorena.
+    '39.Daniela Alvim e Lorena Ramos 3b': 'AG-MS0NU6I7',
 }
 
 
