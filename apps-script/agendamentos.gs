@@ -659,7 +659,9 @@ function sendGaleriaEntregaEmail(id, testTo) {
     const jaEnviado = String(_val(row, cm, 'Galeria Email Enviado') || '').trim();
     if (jaEnviado && !testTo) return { id: id, ok: false, motivo: 'já enviado em ' + jaEnviado };
 
-    const destino = testTo || email;
+    // Reservas com 2 responsáveis trazem os e-mails separados por ';' (ex.: Priscila/Liliane),
+    // mas MailApp só entende vírgula — sem normalizar, o envio falha para a linha inteira.
+    const destino = (testTo || email).replace(/;/g, ',').replace(/,\s*/g, ',').replace(/^,|,$/g, '');
     if (!destino) return { id: id, ok: false, motivo: 'sem e-mail cadastrado' };
 
     const link = _galeriaLinkPublico(id);
