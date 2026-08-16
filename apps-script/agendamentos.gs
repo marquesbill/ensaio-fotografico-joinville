@@ -679,6 +679,76 @@ function sendGaleriaEntregaEmail(id, testTo) {
   }
 }
 
+// Cria linhas de ENTREGA para galerias que não vieram de uma reserva própria — o caso é uma
+// reserva de várias bailarinas cujas fotos foram divididas por família depois (ex.: a de
+// Viviane AG-MQ4241PC, 4 bailarinas, virou 4 galerias). Sem uma linha em Agendamentos a
+// galeria não existe para getGaleriaById.
+// Valor 0 e Source 'split:<id de origem>' de propósito: não são vendas novas, e o rastro
+// diz de onde vieram. Idempotente: ID que já existe é atualizado, nunca duplicado.
+// Payload: { action:'criarGaleriasAvulsas', secret, origem, rows:[{ id, nome, email, data,
+//            pacote, nomeBailarina, fotos, hero, focoX, focoY }] }
+function criarGaleriasAvulsas(data) {
+  const esperado = String(PropertiesService.getScriptProperties().getProperty('ADMIN_SECRET') || '');
+  if (!esperado || String(data.secret || '') !== esperado) throw new Error('não autorizado');
+  const items = data.rows;
+  if (!Array.isArray(items) || !items.length) throw new Error('rows é obrigatório');
+  const origem = String(data.origem || '').trim();
+
+  const sa = getSheet('Agendamentos');
+  if (!sa) throw new Error('Aba Agendamentos não encontrada');
+  _galeriaCols(sa);
+  const cm      = _colMap(sa);
+  const numCols = sa.getLastColumn();
+  const iId     = cm['ID'];
+  if (iId === undefined) throw new Error('Coluna ID não encontrada');
+
+  const existentes = sa.getRange(2, 1, sa.getLastRow() - 1, numCols).getValues();
+  const criados = [], atualizados = [];
+
+  items.forEach(function (it) {
+    const id = String(it.id || '').trim();
+    if (!id) return;
+    let linha = existentes.findIndex(function (r) { return String(r[iId] || '').trim() === id; });
+
+    if (linha < 0) {
+      const nova = new Array(numCols).fill('');
+      function set(col, val) { if (cm[col] !== undefined) nova[cm[col]] = val; }
+      set('ID', id);
+      set('Data', String(it.data || ''));
+      set('Pacote', String(it.pacote || ''));
+      set('Nome', String(it.nome || ''));
+      set('E-mail', String(it.email || ''));
+      set('Nome Bailarina', String(it.nomeBailarina || it.nome || ''));
+      set('Nº Bailarinas', 1);
+      set('Valor (R$)', 0);          // entrega derivada, não é venda nova
+      set('Status', 'Confirmado');
+      set('Criado em', nowIso());
+      set('Atualizado em', nowIso());
+      set('Source', origem ? ('split:' + origem) : 'split');
+      sa.appendRow(nova);
+      linha = sa.getLastRow() - 2;   // índice relativo a `existentes` (linha real = linha + 2)
+      existentes.push(nova);
+      criados.push(id);
+    } else {
+      atualizados.push(id);
+    }
+
+    const shRow = linha + 2;
+    if (it.fotos) {
+      sa.getRange(shRow, cm['Galeria Pasta'] + 1).setValue(id);
+      sa.getRange(shRow, cm['Galeria Fotos'] + 1).setValue(String(it.fotos));
+    }
+    if (it.hero) sa.getRange(shRow, cm['Galeria Hero'] + 1).setValue(String(it.hero));
+    if (it.focoX !== undefined && it.focoY !== undefined) {
+      sa.getRange(shRow, cm['Galeria Hero Foco'] + 1).setValue(Number(it.focoX) + ',' + Number(it.focoY));
+    }
+  });
+
+  addLog('GALERIA_AVULSA', origem, criados.length + ' criadas, ' + atualizados.length + ' atualizadas',
+    'criarGaleriasAvulsas');
+  return { ok: true, criados: criados, atualizados: atualizados };
+}
+
 // Payload: { action:'sendGaleriaEmails', secret, ids:[...], testTo?:'seu@email' }
 // SEM modo "enviar todo mundo" de propósito — cada lote é uma lista explícita de IDs, pra nunca
 // disparar em massa sem querer. testTo desvia o lote inteiro pra um único endereço de teste —
@@ -2898,6 +2968,7 @@ function doPost(e) {
     else if (action === 'listGalerias')    result = listGalerias();
     else if (action === 'setGaleriaHero')  result = setGaleriaHero(body);
     else if (action === 'sendGaleriaEmails') result = sendGaleriaEmails(body);
+    else if (action === 'criarGaleriasAvulsas') result = criarGaleriasAvulsas(body);
     else if (action === 'addLog') {
       // Accept both formats:
       //   {logAction, bookingId, detail, origin}  — legacy / internal

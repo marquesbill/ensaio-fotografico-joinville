@@ -1,0 +1,53 @@
+{
+ "origem": "AG-MQ4241PC",
+ "rows": [
+  {
+   "id": "AG-YZ3NVN7K",
+   "nome": "Anna Lia Queiroz",
+   "email": "hosanaqueirozpedagoga@gmail.com",
+   "nomeBailarina": "Anna Lia Queiroz",
+   "data": "2026-07-31",
+   "pacote": "completo",
+   "fotos": "001.jpg|002.jpg|003.jpg|004.jpg|005.jpg|006.jpg|007.jpg|008.jpg|009.jpg|010.jpg|011.jpg|012.jpg|013.jpg|014.jpg|015.jpg|016.jpg|017.jpg|018.jpg|019.jpg|020.jpg|021.jpg|022.jpg|023.jpg|024.jpg|025.jpg|026.jpg|027.jpg|028.jpg|029.jpg",
+   "hero": "002.jpg",
+   "focoX": 45.6,
+   "focoY": 36.2
+  },
+  {
+   "id": "AG-SVPQJ9OB",
+   "nome": "Yasmin Soares",
+   "email": "bia.n.personalizados@gmail.com",
+   "nomeBailarina": "Yasmin Soares",
+   "data": "2026-07-31",
+   "pacote": "completo",
+   "fotos": "001.jpg|002.jpg|003.jpg|004.jpg|005.jpg|006.jpg|007.jpg|008.jpg|009.jpg|010.jpg|011.jpg|012.jpg|013.jpg|014.jpg|015.jpg|016.jpg|017.jpg|018.jpg|019.jpg|020.jpg|021.jpg|022.jpg|023.jpg|024.jpg|025.jpg|026.jpg|027.jpg|028.jpg|029.jpg|030.jpg|031.jpg|032.jpg|033.jpg|034.jpg",
+   "hero": "018.jpg",
+   "focoX": 51.4,
+   "focoY": 40.2
+  },
+  {
+   "id": "AG-PHX86DSG",
+   "nome": "Claudia Fernandes",
+   "email": "hellenmgraf@gmail.com",
+   "nomeBailarina": "Claudia Fernandes",
+   "data": "2026-07-31",
+   "pacote": "completo",
+   "fotos": "001.jpg|002.jpg|003.jpg|004.jpg|005.jpg|006.jpg|007.jpg|008.jpg|009.jpg|010.jpg|011.jpg|012.jpg|013.jpg|014.jpg|015.jpg|016.jpg|017.jpg|018.jpg|019.jpg|020.jpg|021.jpg|022.jpg|023.jpg|024.jpg|025.jpg|026.jpg|027.jpg|028.jpg|029.jpg|030.jpg|031.jpg|032.jpg",
+   "hero": "002.jpg",
+   "focoX": 47.4,
+   "focoY": 35.6
+  },
+  {
+   "id": "AG-DPI9KI5V",
+   "nome": "Maria Clara Niehues",
+   "email": "Elis.almeida.ja@gmail.com",
+   "nomeBailarina": "Maria Clara Niehues",
+   "data": "2026-07-31",
+   "pacote": "completo",
+   "fotos": "001.jpg|002.jpg|003.jpg|004.jpg|005.jpg|006.jpg|007.jpg|008.jpg|009.jpg|010.jpg|011.jpg|012.jpg|013.jpg|014.jpg|015.jpg|016.jpg|017.jpg|018.jpg|019.jpg|020.jpg|021.jpg|022.jpg|023.jpg|024.jpg|025.jpg|026.jpg|027.jpg|028.jpg|029.jpg|030.jpg|031.jpg",
+   "hero": "014.jpg",
+   "focoX": 40.5,
+   "focoY": 43.6
+  }
+ ]
+}
