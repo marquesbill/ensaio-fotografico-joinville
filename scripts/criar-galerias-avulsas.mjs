@@ -1,12 +1,13 @@
 #!/usr/bin/env node
 /**
- * Cria (idempotente) as linhas de entrega de galerias derivadas de uma reserva dividida —
- * caso Viviane AG-MQ4241PC → 4 famílias. Lê o payload de scripts/viviane-split-payload.json.
+ * Cria (idempotente) as linhas de entrega de galerias derivadas de uma reserva dividida ou
+ * compartilhada — caso Viviane (fotos divididas por família) e caso Larissa (mesma pasta,
+ * 10 pagadoras com aceite individual).
  *
- *   ADMIN_SECRET='...' node scripts/criar-galerias-avulsas.mjs
+ *   ADMIN_SECRET='...' node scripts/criar-galerias-avulsas.mjs [payload.json]
  *
- * Depois de criar, rode o envio normal:
- *   ADMIN_SECRET='...' node scripts/enviar-galerias.mjs <os 4 IDs>
+ * Sem argumento, usa scripts/viviane-split-payload.json. Depois de criar, rode o envio:
+ *   ADMIN_SECRET='...' node scripts/enviar-galerias.mjs <IDs...>
  */
 import { readFileSync } from 'node:fs';
 
@@ -16,7 +17,8 @@ const GS = ('https://script.google.com/macros/s/AKfycby4RQxi6a4DTR1ml-LlJkK5D4GO
 const secret = process.env.ADMIN_SECRET;
 if (!secret) { console.error('ADMIN_SECRET não definido.'); process.exit(1); }
 
-const payload = JSON.parse(readFileSync(new URL('./viviane-split-payload.json', import.meta.url), 'utf8'));
+const arquivo = process.argv[2] || new URL('./viviane-split-payload.json', import.meta.url);
+const payload = JSON.parse(readFileSync(arquivo, 'utf8'));
 
 const r = await fetch(GS, {
   method: 'POST', headers: { 'Content-Type': 'application/json' },

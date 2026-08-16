@@ -565,11 +565,19 @@ function buildGaleriasSheet() {
     ]);
   });
 
+  // 2ª reserva da Suzana (mesma cliente, mesma entrega da AG-MR97PYVG): nunca terá
+  // galeria própria — riscada em vez de âmbar para não parecer pendência (André, 15/08).
+  const RISCADAS = { 'AG-MRW3NE5J': true };
+
   if (out.length) {
     g.getRange(2, 1, out.length, headers.length).setValues(out);
     // Verde = pronta para enviar (tem fotos); âmbar = ainda sem fotos.
     for (let i = 0; i < out.length; i++) {
-      if (!out[i][9]) g.getRange(i + 2, 1, 1, headers.length).setBackground('#fff8e1');
+      if (RISCADAS[out[i][0]]) {
+        g.getRange(i + 2, 1, 1, headers.length).setFontLine('line-through').setFontColor('#9e9e9e');
+      } else if (!out[i][9]) {
+        g.getRange(i + 2, 1, 1, headers.length).setBackground('#fff8e1');
+      }
     }
   }
   for (let c = 1; c <= headers.length; c++) g.autoResizeColumn(c);
@@ -609,7 +617,8 @@ function _galeriaEntregaEmailHtml(nome, link, numFotos) {
     <p style="color:#374151;font-size:15px;margin:0 0 12px;">Olá, <strong>${primeiro}</strong>!</p>
     <p style="color:#6b7280;font-size:14px;margin:0 0 14px;line-height:1.6;">Durante as duas semanas do Festival a sala Esmeralda do Hotel Le Village foi meu estúdio. Foi um prazer te receber.</p>
     <p style="color:#6b7280;font-size:14px;margin:0 0 14px;line-height:1.6;">Quero agradecer pela confiança no meu trabalho e pela entrega e disposição durante a sessão.</p>
-    <p style="color:#6b7280;font-size:14px;margin:0 0 20px;line-height:1.6;">Editei tudo com muito cuidado. Espero que você goste tanto das imagens quanto eu gostei de produzi-las.</p>
+    <p style="color:#6b7280;font-size:14px;margin:0 0 14px;line-height:1.6;">Editei tudo com muito cuidado. Espero que você goste tanto das imagens quanto eu gostei de produzi-las.</p>
+    <p style="color:#6b7280;font-size:14px;margin:0 0 20px;line-height:1.6;">Se for postar, me marca que vou adorar! <a href="https://www.instagram.com/affotografia" style="color:#7a3f8f;font-weight:700;text-decoration:none;">@affotografia</a></p>
     <!-- Botão em <table bgcolor>: Outlook/Hotmail descartam background:linear-gradient
          (o texto branco ficava invisível — aconteceu com cliente real em 15/08).
          bgcolor sólido + underline garantem que o link aparece em qualquer cliente. -->
@@ -735,7 +744,10 @@ function criarGaleriasAvulsas(data) {
 
     const shRow = linha + 2;
     if (it.fotos) {
-      sa.getRange(shRow, cm['Galeria Pasta'] + 1).setValue(id);
+      // it.pasta: várias linhas podem compartilhar a MESMA pasta no R2 (caso Larissa:
+      // 10 pagadoras, 1 conjunto de fotos, 10 aceites individuais). Sem override, cada
+      // linha aponta para a própria pasta (caso Viviane: fotos divididas por família).
+      sa.getRange(shRow, cm['Galeria Pasta'] + 1).setValue(String(it.pasta || id));
       sa.getRange(shRow, cm['Galeria Fotos'] + 1).setValue(String(it.fotos));
     }
     if (it.hero) sa.getRange(shRow, cm['Galeria Hero'] + 1).setValue(String(it.hero));

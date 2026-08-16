@@ -30,6 +30,14 @@ const AGRADECIMENTO = [
   'Editei tudo com muito cuidado. Espero que você goste tanto das imagens quanto eu gostei de produzi-las.',
 ];
 
+const INSTAGRAM = (
+  <>
+    Se for postar, me marca que vou adorar!{' '}
+    <a href="https://www.instagram.com/affotografia" target="_blank" rel="noopener"
+      className="font-bold text-primary">@affotografia</a>
+  </>
+);
+
 /* ── Autorização de uso de imagem — adaptada do modelo em papel do André.
  * Identificação: responsável por nome (da planilha) + CPF; menor por nome + nascimento.
  * A revogabilidade (ex nunc) é o que sustenta a autorização gratuita de imagem de menor. */
@@ -254,6 +262,7 @@ export default function Galeria() {
           {AGRADECIMENTO.map((p, i) => (
             <p key={i} className="text-on-surface-variant leading-relaxed mb-4">{p}</p>
           ))}
+          <p className="text-on-surface-variant leading-relaxed mb-4">{INSTAGRAM}</p>
           <p className="font-headline text-xl italic text-on-surface mb-8">André Ferreira</p>
 
           <div className="bg-white rounded-2xl border border-black/5 shadow-sm p-5">
@@ -343,6 +352,7 @@ export default function Galeria() {
         <p className="text-on-surface-variant text-sm mt-1">
           {fmtDate(dados.date)} · {dados.packageName}
         </p>
+        <p className="text-on-surface-variant text-sm mt-2">{INSTAGRAM}</p>
       </header>
 
       {/* data-clarity-mask: as fotos são de bailarinas, boa parte menores de idade — elas
