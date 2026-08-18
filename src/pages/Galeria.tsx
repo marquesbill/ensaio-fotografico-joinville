@@ -1,6 +1,7 @@
 import { useEffect, useState, useCallback, useRef } from 'react';
 import { useParams } from 'react-router-dom';
 import { track, initSessionContext, trackScrollDepth, trackTimeOnPage } from '../lib/analytics';
+import GaleriaLightbox from '../components/GaleriaLightbox';
 
 // thumb: miniatura da grade (.../t/<arquivo> no R2). Ausente no demo local → cai em url.
 type Foto = { id: string; url: string; thumb?: string };
@@ -84,7 +85,6 @@ export default function Galeria() {
   const [aberta, setAberta]       = useState<number | null>(null);
   const [showPesquisa, setShowPesquisa] = useState(false);
   const [downloadUrl, setDownloadUrl]   = useState('');
-  const toqueX = useRef(0);              // x inicial do swipe no lightbox
 
   const isDemo = id === 'demo';   // demo local (vite dev não roda as funções): sem rede
 
@@ -125,28 +125,13 @@ export default function Galeria() {
 
   const abrirFoto = useCallback((i: number) => {
     setAberta(i);
-    track.event('galeria_foto_aberta', { foto: i + 1 });
   }, []);
 
-  // Navegação circular do lightbox, compartilhada por botões, teclado e swipe.
-  const nav = useCallback((passo: number) => {
-    setAberta(a => {
-      const n = dados?.photos.length ?? 0;
-      if (a === null || n === 0) return a;   // a pode ser 0: comparar com null, não truthiness
-      return (a + passo + n) % n;
-    });
-  }, [dados]);
-
-  useEffect(() => {
-    if (aberta === null) return;
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape')     setAberta(null);
-      if (e.key === 'ArrowRight') nav(1);
-      if (e.key === 'ArrowLeft')  nav(-1);
-    };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [aberta, nav]);
+  // Cada foto exibida no lightbox (abertura E navegação) conta no GA4/Clarity —
+  // antes só a abertura pela grade disparava; swipes ficavam invisíveis na métrica.
+  const fotoVista = useCallback((i: number) => {
+    track.event('galeria_foto_aberta', { foto: i + 1 });
+  }, []);
 
   /* ── Analytics — Clarity + GA4 pelo helper único de src/lib/analytics.ts ──────
    * Só o que agrega: id da reserva, contagens e respostas de múltipla escolha.
@@ -387,31 +372,15 @@ export default function Galeria() {
         </div>
       </div>
 
-      {/* Lightbox */}
+      {/* Lightbox — física iOS em src/components/GaleriaLightbox.tsx.
+          data-clarity-mask fica DENTRO do componente (raiz do overlay). */}
       {aberta !== null && (
-        <div data-clarity-mask="true"
-          className="fixed inset-0 z-50 bg-black/92 flex flex-col" onClick={() => setAberta(null)}>
-          <div className="flex-1 grid place-items-center p-4"
-            onClick={e => e.stopPropagation()}
-            onTouchStart={e => { toqueX.current = e.changedTouches[0].clientX; }}
-            onTouchEnd={e => {
-              const dx = e.changedTouches[0].clientX - toqueX.current;
-              if (Math.abs(dx) > 50) nav(dx < 0 ? 1 : -1);   // arrastou para a esquerda = próxima
-            }}>
-            <img src={dados.photos[aberta].url} alt="" className="max-h-[80vh] max-w-full object-contain" />
-          </div>
-          <div className="p-4 flex items-center justify-center gap-3" onClick={e => e.stopPropagation()}>
-            <button onClick={() => nav(-1)} aria-label="Foto anterior"
-              className="px-5 py-2.5 rounded-full bg-white/10 text-white text-sm">←</button>
-            <button onClick={() => nav(1)} aria-label="Próxima foto"
-              className="px-5 py-2.5 rounded-full bg-white/10 text-white text-sm">→</button>
-          </div>
-          <p className="absolute top-5 left-5 text-white/60 text-xs tabular-nums">
-            {aberta + 1} / {dados.photos.length}
-          </p>
-          <button onClick={() => setAberta(null)} aria-label="Fechar"
-            className="absolute top-4 right-4 text-white/70 text-2xl">×</button>
-        </div>
+        <GaleriaLightbox
+          fotos={dados.photos}
+          inicial={aberta}
+          onFechar={() => setAberta(null)}
+          onFoto={fotoVista}
+        />
       )}
 
       {showPesquisa && <ModalPesquisa post={post} onPronto={(url, q1, q2) => {
