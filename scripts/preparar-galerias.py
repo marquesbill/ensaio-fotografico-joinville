@@ -57,6 +57,9 @@ PARES_MANUAIS = {
     # Pasta de duas reservas (Daniela 17h + Lorena 17h30): decisão do André em 15/08 — a galeria
     # inteira vai para a Daniela, que se encarrega de repassar as fotos para a Lorena.
     '39.Daniela Alvim e Lorena Ramos 3b': 'AG-MS0NU6I7',
+    # Splits da Viviane (galerias avulsas, handoff 16/08): 1 token só não fecha o pareamento.
+    '55.Yasmin':  'AG-SVPQJ9OB',     # Yasmin Soares
+    '56.Cláudia': 'AG-PHX86DSG',     # Claudia Fernandes
 }
 
 
@@ -67,7 +70,9 @@ def parear(pastas, reservas):
     por_id = {b['id']: b for b in reservas}
 
     for pasta in pastas:
-        nome_pasta = pasta.parent.name
+        # NFC: o macOS devolve nomes de pasta decompostos (NFD) — "Cláudia" do disco
+        # não bate com "Cláudia" digitado aqui sem normalizar.
+        nome_pasta = unicodedata.normalize('NFC', pasta.parent.name)
 
         # 1) override explícito
         alvo = PARES_MANUAIS.get(nome_pasta)
