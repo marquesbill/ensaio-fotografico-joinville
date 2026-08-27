@@ -382,12 +382,17 @@ export default function GaleriaLightbox({ fotos, inicial, onFechar, onFoto, temV
           <button type="button" onClick={() => onVideo?.(indice)}
             className="px-6 py-3 rounded-full text-white text-sm font-bold shadow-lg"
             style={{ background: 'linear-gradient(135deg,#7a3f8f,#e87060)' }}>
-            ▶ Vídeo 5678 desta foto
+            ▶ Vídeo5678 desta foto
           </button>
           {carrinhoQtd > 0 && (
             <button type="button" onClick={() => onCarrinho?.()} aria-label={`Ver carrinho com ${carrinhoQtd} vídeos`}
-              className="px-4 py-3 rounded-full bg-white/15 text-white text-sm font-bold backdrop-blur-sm">
-              🛒 {carrinhoQtd}
+              className="flex items-center gap-1.5 px-4 py-3 rounded-full bg-black/60 border border-white/40 text-white text-sm font-bold backdrop-blur-sm">
+              {/* carrinho em SVG branco: o emoji sai cinza e some no fundo cinza */}
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                <circle cx="9" cy="20" r="1.6" /><circle cx="17" cy="20" r="1.6" />
+                <path d="M2 3h3l2.6 12.5a1.6 1.6 0 0 0 1.6 1.3h7.9a1.6 1.6 0 0 0 1.6-1.3L21 8H6" />
+              </svg>
+              {carrinhoQtd}
             </button>
           )}
         </div>

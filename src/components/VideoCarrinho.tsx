@@ -23,14 +23,17 @@ export function VideoSheet({ videoUrl, poster, numero, noCarrinho, qtd, onCarrin
   const videoRef = useRef<HTMLVideoElement>(null);
   useEffect(() => { videoRef.current?.play().catch(() => {}); }, [videoUrl]);
 
-  // preço contextual: o que ESTE vídeo custa se entrar agora no carrinho
+  // preço contextual: o que ESTE vídeo acrescenta ao pedido, com a conta visível
   const proxQtd  = noCarrinho ? qtd : qtd + 1;
   const custoEste = precoVideos(proxQtd) - precoVideos(proxQtd - 1);
+  const ordinal  = `${proxQtd}º vídeo`;
 
   return (
-    <div className="fixed inset-0 z-[60] flex flex-col bg-black/90" data-clarity-mask="true">
+    // tap/clique fora do vídeo volta para a foto; os filhos interativos dão stopPropagation
+    <div className="fixed inset-0 z-[60] flex flex-col bg-black/90" data-clarity-mask="true" onClick={onFechar}>
+      <style>{`.v5678::-webkit-media-controls-fullscreen-button{display:none}`}</style>
       <div className="flex items-center justify-between p-4 pt-[max(1rem,env(safe-area-inset-top))]">
-        <p className="text-white font-headline text-lg italic">Vídeo 5678 · foto {Number(numero)}</p>
+        <p className="text-white font-headline text-lg italic">Vídeo5678 · foto {Number(numero)}</p>
         <button type="button" onClick={onFechar} aria-label="Fechar"
           className="w-9 h-9 grid place-items-center rounded-full bg-white/15 text-white"><svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true"><path d="M2 2l10 10M12 2L2 12" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" /></svg></button>
       </div>
@@ -40,15 +43,18 @@ export function VideoSheet({ videoUrl, poster, numero, noCarrinho, qtd, onCarrin
         <video
           ref={videoRef} src={videoUrl} poster={poster}
           playsInline controls loop preload="metadata"
-          controlsList="nodownload noremoteplayback noplaybackrate"
+          controlsList="nodownload nofullscreen noremoteplayback noplaybackrate"
           disablePictureInPicture
+          onClick={e => e.stopPropagation()}
           onContextMenu={e => e.preventDefault()}
-          className="max-h-full max-w-full rounded-xl"
+          className="v5678 max-h-full max-w-full rounded-xl"
           style={{ aspectRatio: '9/16' }}
         />
       </div>
 
-      <div className="p-4 pb-[max(1rem,env(safe-area-inset-bottom))] space-y-2">
+      {/* ações contidas (max-w-sm): no desktop nada de botão de borda a borda */}
+      <div className="p-4 pb-[max(1rem,env(safe-area-inset-bottom))] space-y-2 w-full max-w-sm mx-auto"
+        onClick={e => e.stopPropagation()}>
         <p className="text-center text-white/70 text-[12px]">
           Prévia com marca d’água — o vídeo final é entregue em 4K, sem marca.
         </p>
@@ -67,8 +73,14 @@ export function VideoSheet({ videoUrl, poster, numero, noCarrinho, qtd, onCarrin
           <>
             <button type="button" onClick={onCarrinho}
               className="w-full py-3.5 rounded-full text-white font-bold" style={{ background: GRAD }}>
-              Colocar no carrinho — {fmt(custoEste)}
+              Colocar no carrinho
             </button>
+            {/* a conta por extenso: sem ela, "R$100" num botão parece contradizer a tabela */}
+            <p className="text-center text-white/80 text-[12px]">
+              {qtd === 0
+                ? `1º vídeo: ${fmt(120)}`
+                : `${ordinal}: +${fmt(custoEste)} · pedido vai a ${fmt(precoVideos(proxQtd))}`}
+            </p>
             {qtd > 0 && (
               <button type="button" onClick={onVerCarrinho}
                 className="w-full py-2.5 rounded-full text-white/90 text-sm font-semibold bg-white/15">
@@ -88,6 +100,7 @@ export function CarrinhoSheet({ numeros, thumbDe, onRemover, onAbrirVideo, onFec
   onRemover: (num: string) => void; onAbrirVideo: (num: string) => void;
   onFechar: () => void; onPagar: () => void; pagando: boolean; erro: string;
 }) {
+  const [mostraTabela, setMostraTabela] = useState(false);
   const [tabelona, setTabelona] = useState(false);
   const n = numeros.length;
   const total = precoVideos(n);
@@ -113,45 +126,68 @@ export function CarrinhoSheet({ numeros, thumbDe, onRemover, onAbrirVideo, onFec
         </div>
 
         <div className="px-5 overflow-y-auto flex-1 min-h-0">
+          {/* ── Seção 1: o que ELA escolheu ── */}
+          <p className="text-[11px] uppercase tracking-widest text-primary font-bold mb-2">
+            Seus vídeos escolhidos
+          </p>
           {n === 0 ? (
-            <p className="text-on-surface-variant text-sm py-6 text-center">
-              O carrinho está vazio. Abra uma foto e toque em <strong>Vídeo 5678</strong>.
+            <p className="text-on-surface-variant text-sm py-4 text-center">
+              O carrinho está vazio. Abra uma foto e toque em <strong>Vídeo5678</strong>.
             </p>
           ) : (
-            <div className="flex flex-wrap gap-2 mb-4">
-              {numeros.map(num => (
-                <div key={num} className="relative">
-                  <button type="button" onClick={() => onAbrirVideo(num)}
-                    className="block w-16 h-24 rounded-lg overflow-hidden bg-black/5">
-                    {thumbDe(num)
-                      ? <img src={thumbDe(num)} alt="" className="w-full h-full object-cover" />
-                      : <span className="grid place-items-center h-full text-xs">{Number(num)}</span>}
-                  </button>
-                  <button type="button" onClick={() => onRemover(num)} aria-label={`Remover vídeo ${Number(num)}`}
-                    className="absolute -top-1.5 -right-1.5 w-5 h-5 grid place-items-center rounded-full bg-black/70 text-white text-[11px] leading-none">×</button>
-                  <p className="text-center text-[10px] text-on-surface-variant mt-0.5">{Number(num)}</p>
-                </div>
-              ))}
-            </div>
+            <>
+              <div className="flex flex-wrap gap-2 mb-2">
+                {numeros.map(num => (
+                  <div key={num} className="relative">
+                    <button type="button" onClick={() => onAbrirVideo(num)}
+                      className="block w-16 h-24 rounded-lg overflow-hidden bg-black/5">
+                      {thumbDe(num)
+                        ? <img src={thumbDe(num)} alt="" className="w-full h-full object-cover" />
+                        : <span className="grid place-items-center h-full text-xs">{Number(num)}</span>}
+                    </button>
+                    <button type="button" onClick={() => onRemover(num)} aria-label={`Remover vídeo ${Number(num)}`}
+                      className="absolute -top-1.5 -right-1.5 w-5 h-5 grid place-items-center rounded-full bg-black/70 text-white text-[11px] leading-none">×</button>
+                    <p className="text-center text-[10px] text-on-surface-variant mt-0.5">{Number(num)}</p>
+                  </div>
+                ))}
+              </div>
+              <div className="flex items-baseline justify-between rounded-xl bg-surface-container-low px-4 py-3 mb-4">
+                <span className="text-sm font-bold text-on-surface">{n} {n === 1 ? 'vídeo' : 'vídeos'}</span>
+                <span className="text-right">
+                  <span className="text-lg font-bold text-on-surface tabular-nums">{fmt(total)}</span>
+                  {n > 1 && (
+                    <span className="block text-[11px] text-primary font-semibold">
+                      você economiza {fmt(cheio - total)}
+                    </span>
+                  )}
+                </span>
+              </div>
+            </>
           )}
 
-          <p className="text-[11px] uppercase tracking-widest text-primary font-bold mb-2">Desconto progressivo</p>
-          <div className="space-y-0.5 mb-2">
-            {Array.from({ length: 10 }, (_, i) => <Linha key={i + 1} q={i + 1} />)}
-            {tabelona && Array.from({ length: 40 }, (_, i) => <Linha key={i + 11} q={i + 11} />)}
-          </div>
-          <button type="button" onClick={() => setTabelona(v => !v)}
-            className="w-full py-2 mb-3 rounded-full border border-black/10 text-on-surface-variant text-[13px] font-semibold">
-            {tabelona ? 'Mostrar menos' : 'Mais de 10 vídeos'}
+          {/* ── Seção 2: tabela de referência, dobrada — não se mistura com o pedido ── */}
+          <button type="button" onClick={() => setMostraTabela(v => !v)}
+            className="w-full py-2.5 mb-2 rounded-full border border-black/10 text-on-surface-variant text-[13px] font-semibold">
+            {mostraTabela ? 'Esconder tabela de preços' : 'Ver tabela de preços por quantidade'}
           </button>
+          {mostraTabela && (
+            <>
+              <p className="text-[12px] text-on-surface-variant mb-2">
+                Quanto mais vídeos no mesmo pedido, menor o preço de cada um:
+              </p>
+              <div className="space-y-0.5 mb-2">
+                {Array.from({ length: 10 }, (_, i) => <Linha key={i + 1} q={i + 1} />)}
+                {tabelona && Array.from({ length: 40 }, (_, i) => <Linha key={i + 11} q={i + 11} />)}
+              </div>
+              <button type="button" onClick={() => setTabelona(v => !v)}
+                className="w-full py-2 mb-3 rounded-full border border-black/10 text-on-surface-variant text-[13px] font-semibold">
+                {tabelona ? 'Mostrar menos' : 'Mais de 10 vídeos'}
+              </button>
+            </>
+          )}
         </div>
 
         <div className="p-5 pt-3 border-t border-black/5 pb-[max(1.25rem,env(safe-area-inset-bottom))]">
-          {n > 1 && (
-            <p className="text-[12px] text-on-surface-variant mb-1">
-              {n} vídeos por {fmt(total)} — você economiza {fmt(cheio - total)}.
-            </p>
-          )}
           {erro && <p className="text-red-600 text-sm mb-2">{erro}</p>}
           <button type="button" onClick={onPagar} disabled={n === 0 || pagando}
             className="w-full py-3.5 rounded-full text-white font-bold disabled:opacity-40" style={{ background: GRAD }}>

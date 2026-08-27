@@ -395,6 +395,19 @@ export default function Galeria() {
   /* ─────────────── GALERIA ─────────────── */
   return (
     <div className="min-h-screen bg-surface pb-28">
+      {/* Carrinho de vídeos no topo — flutuante, só quando tem item */}
+      {carrinho.length > 0 && (
+        <button type="button" onClick={() => setCarrinhoAberto(true)}
+          aria-label={`Ver carrinho com ${carrinho.length} vídeos`}
+          className="fixed top-4 right-4 z-40 flex items-center gap-1.5 px-4 py-2.5 rounded-full text-white text-sm font-bold shadow-lg"
+          style={{ background: 'linear-gradient(135deg,#7a3f8f,#e87060)' }}>
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+            <circle cx="9" cy="20" r="1.6" /><circle cx="17" cy="20" r="1.6" />
+            <path d="M2 3h3l2.6 12.5a1.6 1.6 0 0 0 1.6 1.3h7.9a1.6 1.6 0 0 0 1.6-1.3L21 8H6" />
+          </svg>
+          {carrinho.length}
+        </button>
+      )}
       <header className="px-5 pt-8 pb-5 max-w-6xl mx-auto">
         <p className="text-[11px] font-bold uppercase tracking-[0.3em] text-primary">Ensaio Fotográfico · Joinville 2026</p>
         <h1 data-clarity-mask="true" className="font-headline text-3xl text-on-surface mt-1">{dados.clientName}</h1>
