@@ -2,6 +2,7 @@ import { useEffect, useState, useCallback, useRef } from 'react';
 import { useParams } from 'react-router-dom';
 import { track, initSessionContext, trackScrollDepth, trackTimeOnPage } from '../lib/analytics';
 import GaleriaLightbox from '../components/GaleriaLightbox';
+import { VideoSheet, CarrinhoSheet } from '../components/VideoCarrinho';
 
 // thumb: miniatura da grade (.../t/<arquivo> no R2). Ausente no demo local → cai em url.
 type Foto = { id: string; url: string; thumb?: string };
@@ -86,6 +87,17 @@ export default function Galeria() {
   const [showPesquisa, setShowPesquisa] = useState(false);
   const [downloadUrl, setDownloadUrl]   = useState('');
 
+  // Vídeos 5678 — quais números têm preview no R2 (v/index.json) + carrinho local.
+  const [videos, setVideos]             = useState<Set<string>>(new Set());
+  const [videoAberto, setVideoAberto]   = useState<string | null>(null);
+  const [carrinhoAberto, setCarrinhoAberto] = useState(false);
+  const [carrinho, setCarrinho] = useState<string[]>(() => {
+    try { return JSON.parse(localStorage.getItem(`videos5678:${id}`) || '[]'); } catch { return []; }
+  });
+  const [pagando, setPagando]   = useState(false);
+  const [erroPagto, setErroPagto] = useState('');
+  const pagoBanner = new URLSearchParams(window.location.search).get('videos') === 'pago';
+
   const isDemo = id === 'demo';   // demo local (vite dev não roda as funções): sem rede
 
   const post = useCallback(async (payload: Record<string, unknown>) => {
@@ -126,6 +138,55 @@ export default function Galeria() {
   const abrirFoto = useCallback((i: number) => {
     setAberta(i);
   }, []);
+
+  /* ── Vídeos 5678 ──
+   * O número da foto sai da própria URL (…/<pasta>/NNN.jpg) e o índice de vídeos
+   * mora ao lado das fotos no R2 (…/<pasta>/v/index.json) — nada na planilha. */
+  const numeroDa = useCallback((f: Foto) => (f.url.match(/(\d{3})\.jpg$/)?.[1] ?? ''), []);
+  const baseR2 = dados?.photos[0]?.url.replace(/\/[^/]+$/, '') ?? '';
+
+  useEffect(() => {
+    if (!baseR2 || isDemo) return;
+    fetch(`${baseR2}/v/index.json?t=${Date.now()}`, { cache: 'no-store' })
+      .then(r => (r.ok ? r.json() : null))
+      .then(j => { if (j?.videos) setVideos(new Set(j.videos as string[])); })
+      .catch(() => {});   // sem índice = galeria sem vídeos; a UI simplesmente não aparece
+  }, [baseR2, isDemo]);
+
+  useEffect(() => {
+    try { localStorage.setItem(`videos5678:${id}`, JSON.stringify(carrinho)); } catch { /* modo privado */ }
+  }, [carrinho, id]);
+
+  const alternaCarrinho = useCallback((num: string) => {
+    setCarrinho(c => {
+      const tem = c.includes(num);
+      track.event(tem ? 'video_carrinho_tira' : 'video_carrinho_poe', { foto: Number(num) });
+      return tem ? c.filter(v => v !== num) : [...c, num];
+    });
+  }, []);
+
+  const abrirVideo = useCallback((num: string) => {
+    track.event('video_aberto', { foto: Number(num) });
+    setVideoAberto(num);
+  }, []);
+
+  async function pagarVideos() {
+    if (pagando || carrinho.length === 0) return;
+    setPagando(true); setErroPagto('');
+    track.event('video_checkout', { qtd: carrinho.length });
+    try {
+      const r = await fetch('/api/videos-checkout', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id, t, numeros: carrinho }),
+      });
+      const j = await r.json();
+      if (!r.ok) throw new Error(j.error || 'Não foi possível abrir o pagamento.');
+      window.location.href = String(j.url);
+    } catch (e) {
+      setErroPagto(e instanceof Error ? e.message : 'Erro ao abrir o pagamento.');
+      setPagando(false);
+    }
+  }
 
   // Cada foto exibida no lightbox (abertura E navegação) conta no GA4/Clarity —
   // antes só a abertura pela grade disparava; swipes ficavam invisíveis na métrica.
@@ -338,6 +399,15 @@ export default function Galeria() {
           {fmtDate(dados.date)} · {dados.packageName}
         </p>
         <p className="text-on-surface-variant text-sm mt-2">{INSTAGRAM}</p>
+        {pagoBanner && (
+          <div className="mt-4 rounded-2xl bg-primary/10 border border-primary/20 px-4 py-3">
+            <p className="text-sm font-bold text-primary">Pedido de vídeos recebido! 🎬</p>
+            <p className="text-[13px] text-on-surface-variant mt-0.5">
+              Assim que o pagamento for confirmado, produzo seus vídeos em 4K e envio o link
+              por e-mail e WhatsApp.
+            </p>
+          </div>
+        )}
       </header>
 
       {/* data-clarity-mask: as fotos são de bailarinas, boa parte menores de idade — elas
@@ -380,6 +450,36 @@ export default function Galeria() {
           inicial={aberta}
           onFechar={() => setAberta(null)}
           onFoto={fotoVista}
+          temVideo={i => videos.has(numeroDa(dados.photos[i]))}
+          onVideo={i => abrirVideo(numeroDa(dados.photos[i]))}
+          carrinhoQtd={carrinho.length}
+          onCarrinho={() => setCarrinhoAberto(true)}
+        />
+      )}
+
+      {/* Vídeos 5678: player inline + carrinho (por cima do lightbox) */}
+      {videoAberto !== null && (
+        <VideoSheet
+          videoUrl={`${baseR2}/v/${videoAberto}.mp4`}
+          poster={dados.photos.find(f => numeroDa(f) === videoAberto)?.thumb}
+          numero={videoAberto}
+          noCarrinho={carrinho.includes(videoAberto)}
+          qtd={carrinho.length}
+          onCarrinho={() => alternaCarrinho(videoAberto)}
+          onVerCarrinho={() => { setCarrinhoAberto(true); }}
+          onFechar={() => setVideoAberto(null)}
+        />
+      )}
+      {carrinhoAberto && (
+        <CarrinhoSheet
+          numeros={carrinho}
+          thumbDe={num => dados.photos.find(f => numeroDa(f) === num)?.thumb}
+          onRemover={alternaCarrinho}
+          onAbrirVideo={num => { setCarrinhoAberto(false); abrirVideo(num); }}
+          onFechar={() => setCarrinhoAberto(false)}
+          onPagar={pagarVideos}
+          pagando={pagando}
+          erro={erroPagto}
         />
       )}
 

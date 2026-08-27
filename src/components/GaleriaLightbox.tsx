@@ -31,12 +31,17 @@ const reduzMotion = () =>
 
 const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v));
 
-export default function GaleriaLightbox({ fotos, inicial, onFechar, onFoto }: {
+export default function GaleriaLightbox({ fotos, inicial, onFechar, onFoto, temVideo, onVideo, carrinhoQtd = 0, onCarrinho }: {
   fotos: Foto[];
   inicial: number;
   onFechar: () => void;
   /** chamada a cada foto exibida (abertura e navegação) — alimenta o GA4/Clarity */
   onFoto: (indice: number) => void;
+  /** Vídeos 5678 (opcional): quando a foto atual tem vídeo, o chrome ganha o botão */
+  temVideo?: (indice: number) => boolean;
+  onVideo?: (indice: number) => void;
+  carrinhoQtd?: number;
+  onCarrinho?: () => void;
 }) {
   const [indice, setIndice] = useState(inicial);
   const [chrome, setChrome] = useState(true);      // contador/fechar somem no zoom
@@ -360,6 +365,30 @@ export default function GaleriaLightbox({ fotos, inicial, onFechar, onFoto }: {
           ×
         </button>
       </div>
+
+      {/* Vídeos 5678: barra inferior no chrome. stopPropagation nos touch events —
+          sem isso o tap no botão entra na máquina de gestos e alterna o chrome. */}
+      {temVideo?.(indice) && (
+        <div className="absolute inset-x-0 bottom-0 flex items-center justify-center gap-2 p-4 pb-[max(1rem,env(safe-area-inset-bottom))]"
+          onTouchStart={e => e.stopPropagation()} onTouchMove={e => e.stopPropagation()} onTouchEnd={e => e.stopPropagation()}
+          style={{
+            opacity: chrome ? 1 : 0, pointerEvents: chrome ? 'auto' : 'none',
+            transition: reduzMotion() ? 'none' : `opacity 200ms ${CURVA}`,
+            background: 'linear-gradient(0deg, rgba(0,0,0,.55), transparent)',
+          }}>
+          <button type="button" onClick={() => onVideo?.(indice)}
+            className="px-6 py-3 rounded-full text-white text-sm font-bold shadow-lg"
+            style={{ background: 'linear-gradient(135deg,#7a3f8f,#e87060)' }}>
+            ▶ Vídeo 5678 desta foto
+          </button>
+          {carrinhoQtd > 0 && (
+            <button type="button" onClick={() => onCarrinho?.()} aria-label={`Ver carrinho com ${carrinhoQtd} vídeos`}
+              className="px-4 py-3 rounded-full bg-white/15 text-white text-sm font-bold backdrop-blur-sm">
+              🛒 {carrinhoQtd}
+            </button>
+          )}
+        </div>
+      )}
 
       {/* setas: só desktop (hover real); no touch o gesto é o controle */}
       <div className="max-md:hidden" style={{ opacity: chrome ? 1 : 0, transition: `opacity 200ms ${CURVA}` }}>
