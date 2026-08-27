@@ -143,7 +143,10 @@ export default function Galeria() {
    * O número da foto sai da própria URL (…/<pasta>/NNN.jpg) e o índice de vídeos
    * mora ao lado das fotos no R2 (…/<pasta>/v/index.json) — nada na planilha. */
   const numeroDa = useCallback((f: Foto) => (f.url.match(/(\d{3})\.jpg$/)?.[1] ?? ''), []);
-  const baseR2 = dados?.photos[0]?.url.replace(/\/[^/]+$/, '') ?? '';
+  // /r2/* é a NOSSA origem (rewrite no vercel.json; proxy no vite dev) — o bucket
+  // não manda header CORS, então fetch() direto no r2.dev é bloqueado pelo browser.
+  const pastaR2 = dados?.photos[0]?.url.match(/\/(AG-[A-Z0-9]+)\//)?.[1] ?? '';
+  const baseR2 = pastaR2 ? `/r2/${pastaR2}` : '';
 
   useEffect(() => {
     if (!baseR2 || isDemo) return;

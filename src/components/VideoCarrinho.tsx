@@ -32,7 +32,7 @@ export function VideoSheet({ videoUrl, poster, numero, noCarrinho, qtd, onCarrin
       <div className="flex items-center justify-between p-4 pt-[max(1rem,env(safe-area-inset-top))]">
         <p className="text-white font-headline text-lg italic">Vídeo 5678 · foto {Number(numero)}</p>
         <button type="button" onClick={onFechar} aria-label="Fechar"
-          className="w-9 h-9 grid place-items-center rounded-full bg-white/15 text-white text-xl leading-none">×</button>
+          className="w-9 h-9 grid place-items-center rounded-full bg-white/15 text-white"><svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true"><path d="M2 2l10 10M12 2L2 12" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" /></svg></button>
       </div>
 
       {/* dentro da interface, nunca fullscreen; sem download nem PiP */}
@@ -109,7 +109,7 @@ export function CarrinhoSheet({ numeros, thumbDe, onRemover, onAbrirVideo, onFec
         <div className="p-5 pb-3 flex items-center justify-between">
           <p className="font-headline text-xl text-on-surface">Seu carrinho de vídeos</p>
           <button type="button" onClick={onFechar} aria-label="Fechar"
-            className="w-9 h-9 grid place-items-center rounded-full bg-black/5 text-on-surface text-xl leading-none">×</button>
+            className="w-9 h-9 grid place-items-center rounded-full bg-black/5 text-on-surface"><svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true"><path d="M2 2l10 10M12 2L2 12" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" /></svg></button>
         </div>
 
         <div className="px-5 overflow-y-auto flex-1 min-h-0">
