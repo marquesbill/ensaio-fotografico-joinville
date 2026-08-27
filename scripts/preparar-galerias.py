@@ -169,11 +169,34 @@ def gerar(pasta: Path, booking_id: str, com_zip: bool = False) -> list:
     destino = STAGING / booking_id
     (destino / 't').mkdir(parents=True, exist_ok=True)
     fotos, nomes = _fotos(pasta), []
+
+    # Manifesto número→arquivo de origem. O pulo por mtime do _sips não enxerga
+    # DESLOCAMENTO de numeração: entrou/saiu foto no meio, o 085.jpg antigo (de outra
+    # foto, mais novo que o original) ficava passando por bom — a galeria servia
+    # vizinhas duplicadas. Se o mapeamento do número mudou, a saída velha é apagada.
+    # Fica FORA da pasta da galeria para não vazar nomes de origem no bucket público.
+    mapa_arq = STAGING / f'{booking_id}.mapa.json'
+    try:
+        mapa_velho = json.loads(mapa_arq.read_text())
+    except (OSError, ValueError):
+        mapa_velho = {}   # sem manifesto = tudo suspeito: regenera a galeria inteira
+
     for i, foto in enumerate(fotos, 1):
         nome = f'{i:03d}.jpg'
+        if mapa_velho.get(nome) != foto.name:
+            (destino / nome).unlink(missing_ok=True)
+            (destino / 't' / nome).unlink(missing_ok=True)
         _sips(foto, destino / nome,       LARGURA,   QUALIDADE)
         _sips(foto, destino / 't' / nome, LARGURA_T, QUALIDADE_T)
         nomes.append(nome)
+
+    # sobras de quando a galeria era maior (numerados além da contagem atual)
+    atuais = set(nomes)
+    for velho in list(destino.glob('0*.jpg')) + list((destino / 't').glob('0*.jpg')):
+        if velho.name not in atuais:
+            velho.unlink()
+
+    mapa_arq.write_text(json.dumps({f'{i:03d}.jpg': f.name for i, f in enumerate(fotos, 1)}))
     if com_zip:
         _zip(pasta, destino, fotos)
     return nomes
