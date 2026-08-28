@@ -90,27 +90,64 @@ export function VideoSheet({ videoUrl, poster, numero, noCarrinho, qtd, onCarrin
 }
 
 /* ─────────────── Carrinho ─────────────── */
-export function CarrinhoSheet({ numeros, thumbDe, onRemover, onAbrirVideo, onFechar, onPagar, pagando, erro, tabelaInicial = false, email = '' }: {
-  numeros: string[]; thumbDe: (num: string) => string | undefined;
-  onRemover: (num: string) => void; onAbrirVideo: (num: string) => void;
-  onFechar: () => void; onPagar: () => void; pagando: boolean; erro: string;
-  tabelaInicial?: boolean; email?: string;
+/* ─────────────── Tabela de preços — card PRÓPRIO, só a tabela ─────────────── */
+export function TabelaSheet({ qtdAtual, voltarLabel, onVoltar, onFechar }: {
+  qtdAtual: number;
+  /** ex.: "Voltar para o carrinho" ou "Voltar para o vídeo" */
+  voltarLabel: string;
+  onVoltar: () => void; onFechar: () => void;
 }) {
-  const [mostraTabela, setMostraTabela] = useState(tabelaInicial);
   const [tabelona, setTabelona] = useState(false);
-  const n = numeros.length;
-  const total = precoVideos(n);
-  const cheio = n * 120;
-
   const Linha = ({ q }: { q: number }) => (
-    <div className={`flex items-baseline justify-between px-3 py-1.5 rounded-lg text-[13px] ${
-      q === n ? 'bg-primary/10 font-bold text-primary' : 'text-on-surface-variant'}`}>
+    <div className={`flex items-baseline justify-between px-3 py-2 rounded-lg text-[15px] ${
+      q === qtdAtual ? 'bg-primary/10 font-bold text-primary' : 'text-on-surface-variant'}`}>
       <span>{q} {q === 1 ? 'vídeo' : 'vídeos'}</span>
       <span className="tabular-nums">{fmt(precoVideos(q))}
-        <span className="text-[11px] opacity-70"> · {fmt(Math.floor(precoVideos(q) / q))}/vídeo</span>
+        <span className="text-[12px] opacity-70"> · {fmt(Math.floor(precoVideos(q) / q))} cada</span>
       </span>
     </div>
   );
+  return (
+    <div className="fixed inset-0 z-[80] bg-black/60 flex items-end md:items-center justify-center" data-clarity-mask="true">
+      <div className="bg-white w-full md:max-w-lg rounded-t-3xl md:rounded-3xl flex flex-col max-h-[92vh]">
+        <div className="p-5 pb-3 flex items-center justify-between">
+          <p className="font-headline text-xl text-on-surface">Tabela de preços</p>
+          <button type="button" onClick={onFechar} aria-label="Fechar"
+            className="w-9 h-9 grid place-items-center rounded-full bg-black/5 text-on-surface"><svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true"><path d="M2 2l10 10M12 2L2 12" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" /></svg></button>
+        </div>
+        <div className="px-5 overflow-y-auto flex-1 min-h-0">
+          <p className="text-[14px] text-on-surface-variant mb-3">
+            Quanto mais vídeos no mesmo pedido, menor o preço de cada um:
+          </p>
+          <div className="space-y-0.5 mb-2">
+            {Array.from({ length: 10 }, (_, i) => <Linha key={i + 1} q={i + 1} />)}
+            {tabelona && Array.from({ length: 40 }, (_, i) => <Linha key={i + 11} q={i + 11} />)}
+          </div>
+          <button type="button" onClick={() => setTabelona(v => !v)}
+            className="w-full py-2.5 mb-3 rounded-full border border-black/10 text-on-surface-variant text-[14px] font-semibold">
+            {tabelona ? 'Mostrar menos' : 'Mais de 10 vídeos'}
+          </button>
+        </div>
+        <div className="p-5 pt-3 border-t border-black/5 pb-[max(1.25rem,env(safe-area-inset-bottom))]">
+          <button type="button" onClick={onVoltar}
+            className="w-full py-3.5 rounded-full text-white text-base font-bold" style={{ background: GRAD }}>
+            ← {voltarLabel}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+export function CarrinhoSheet({ numeros, thumbDe, onRemover, onAbrirVideo, onFechar, onPagar, onVerTabela, pagando, erro, email = '' }: {
+  numeros: string[]; thumbDe: (num: string) => string | undefined;
+  onRemover: (num: string) => void; onAbrirVideo: (num: string) => void;
+  onFechar: () => void; onPagar: () => void; onVerTabela: () => void;
+  pagando: boolean; erro: string; email?: string;
+}) {
+  const n = numeros.length;
+  const total = precoVideos(n);
+  const cheio = n * 120;
 
   return (
     <div className="fixed inset-0 z-[70] bg-black/60 flex items-end md:items-center justify-center" data-clarity-mask="true">
@@ -161,26 +198,11 @@ export function CarrinhoSheet({ numeros, thumbDe, onRemover, onAbrirVideo, onFec
             </>
           )}
 
-          {/* ── Seção 2: tabela de referência, dobrada — não se mistura com o pedido ── */}
-          <button type="button" onClick={() => setMostraTabela(v => !v)}
-            className="w-full py-2.5 mb-2 rounded-full border border-black/10 text-on-surface-variant text-[13px] font-semibold">
-            {mostraTabela ? 'Esconder tabela de preços' : 'Ver tabela de preços por quantidade'}
+          {/* a tabela mora num card próprio (TabelaSheet) — aqui só a porta de entrada */}
+          <button type="button" onClick={onVerTabela}
+            className="w-full py-3 mb-3 rounded-full border border-black/10 text-on-surface-variant text-[14px] font-semibold">
+            Ver tabela de preços
           </button>
-          {mostraTabela && (
-            <>
-              <p className="text-[12px] text-on-surface-variant mb-2">
-                Quanto mais vídeos no mesmo pedido, menor o preço de cada um:
-              </p>
-              <div className="space-y-0.5 mb-2">
-                {Array.from({ length: 10 }, (_, i) => <Linha key={i + 1} q={i + 1} />)}
-                {tabelona && Array.from({ length: 40 }, (_, i) => <Linha key={i + 11} q={i + 11} />)}
-              </div>
-              <button type="button" onClick={() => setTabelona(v => !v)}
-                className="w-full py-2 mb-3 rounded-full border border-black/10 text-on-surface-variant text-[13px] font-semibold">
-                {tabelona ? 'Mostrar menos' : 'Mais de 10 vídeos'}
-              </button>
-            </>
-          )}
         </div>
 
         <div className="p-5 pt-3 border-t border-black/5 pb-[max(1.25rem,env(safe-area-inset-bottom))]">

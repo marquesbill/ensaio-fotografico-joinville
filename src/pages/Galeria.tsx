@@ -2,7 +2,7 @@ import { useEffect, useState, useCallback, useRef } from 'react';
 import { useParams } from 'react-router-dom';
 import { track, initSessionContext, trackScrollDepth, trackTimeOnPage } from '../lib/analytics';
 import GaleriaLightbox from '../components/GaleriaLightbox';
-import { VideoSheet, CarrinhoSheet } from '../components/VideoCarrinho';
+import { VideoSheet, CarrinhoSheet, TabelaSheet } from '../components/VideoCarrinho';
 
 // thumb: miniatura da grade (.../t/<arquivo> no R2). Ausente no demo local → cai em url.
 type Foto = { id: string; url: string; thumb?: string };
@@ -96,8 +96,12 @@ export default function Galeria() {
   });
   const [pagando, setPagando]   = useState(false);
   const [erroPagto, setErroPagto] = useState('');
-  const [tabelaInicial, setTabelaInicial] = useState(false);
+  // tabela de preços é um card próprio; guarda de onde veio p/ o "Voltar" certo
+  const [tabelaDe, setTabelaDe] = useState<'carrinho' | 'video' | null>(null);
   const [emailDona, setEmailDona] = useState('');
+  const [hintVisto, setHintVisto] = useState(() => {
+    try { return localStorage.getItem(`videos5678hint:${id}`) === '1'; } catch { return true; }
+  });
   const pagoBanner = new URLSearchParams(window.location.search).get('videos') === 'pago';
 
   const isDemo = id === 'demo';   // demo local (vite dev não roda as funções): sem rede
@@ -426,6 +430,25 @@ export default function Galeria() {
           {fmtDate(dados.date)} · {dados.packageName}
         </p>
         <p className="text-on-surface-variant text-sm mt-2">{INSTAGRAM}</p>
+        {/* Aviso de novidade — 1x por galeria, dispensável; público não-técnico
+            precisa saber que os vídeos EXISTEM antes de tropeçar neles */}
+        {videos.size > 0 && !hintVisto && !pagoBanner && (
+          <div className="mt-4 rounded-2xl px-4 py-3 flex items-start gap-3 text-white"
+            style={{ background: 'linear-gradient(135deg,#7a3f8f,#e87060)' }}>
+            <span className="text-xl leading-none mt-0.5">🎬</span>
+            <div className="flex-1">
+              <p className="text-sm font-bold">Novidade: suas fotos têm vídeos!</p>
+              <p className="text-[13px] text-white/85 mt-0.5">
+                Toque numa foto com o selo <strong>▶ vídeo</strong> e veja o momento do clique.
+              </p>
+            </div>
+            <button type="button" aria-label="Fechar aviso"
+              onClick={() => { setHintVisto(true); try { localStorage.setItem(`videos5678hint:${id}`, '1'); } catch { /* ok */ } }}
+              className="w-7 h-7 grid place-items-center rounded-full bg-white/20 shrink-0">
+              <svg width="12" height="12" viewBox="0 0 14 14" aria-hidden="true"><path d="M2 2l10 10M12 2L2 12" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" /></svg>
+            </button>
+          </div>
+        )}
         {pagoBanner && (
           <div className="mt-4 rounded-2xl bg-primary/10 border border-primary/20 px-4 py-3">
             <p className="text-sm font-bold text-primary">Pedido de vídeos recebido! 🎬</p>
@@ -449,6 +472,12 @@ export default function Galeria() {
             {/* A grade usa a miniatura (~70 KB); os 2048 px só abrem no lightbox. */}
             <img src={f.thumb || f.url} alt="" loading="lazy" decoding="async"
               className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-[1.03]" />
+            {/* selo de vídeo: descoberta sem depender de abrir a foto */}
+            {videos.has(numeroDa(f)) && (
+              <span className="absolute bottom-1.5 right-1.5 flex items-center gap-1 px-2 py-1 rounded-full bg-black/60 text-white text-[10px] font-bold backdrop-blur-sm">
+                ▶ vídeo
+              </span>
+            )}
           </button>
         ))}
       </div>
@@ -493,8 +522,8 @@ export default function Galeria() {
           noCarrinho={carrinho.includes(videoAberto)}
           qtd={carrinho.length}
           onCarrinho={() => alternaCarrinho(videoAberto)}
-          onVerCarrinho={() => { setTabelaInicial(false); setCarrinhoAberto(true); }}
-          onVerPrecos={() => { setTabelaInicial(true); setCarrinhoAberto(true); }}
+          onVerCarrinho={() => setCarrinhoAberto(true)}
+          onVerPrecos={() => setTabelaDe('video')}
           onFechar={() => setVideoAberto(null)}
         />
       )}
@@ -504,12 +533,20 @@ export default function Galeria() {
           thumbDe={num => dados.photos.find(f => numeroDa(f) === num)?.thumb}
           onRemover={alternaCarrinho}
           onAbrirVideo={num => { setCarrinhoAberto(false); abrirVideo(num); }}
-          onFechar={() => { setCarrinhoAberto(false); setTabelaInicial(false); }}
+          onFechar={() => setCarrinhoAberto(false)}
           onPagar={pagarVideos}
+          onVerTabela={() => { setCarrinhoAberto(false); setTabelaDe('carrinho'); }}
           pagando={pagando}
           erro={erroPagto}
-          tabelaInicial={tabelaInicial}
           email={emailDona}
+        />
+      )}
+      {tabelaDe !== null && (
+        <TabelaSheet
+          qtdAtual={carrinho.length}
+          voltarLabel={tabelaDe === 'carrinho' ? 'Voltar para o carrinho' : 'Voltar para o vídeo'}
+          onVoltar={() => { if (tabelaDe === 'carrinho') setCarrinhoAberto(true); setTabelaDe(null); }}
+          onFechar={() => setTabelaDe(null)}
         />
       )}
 
