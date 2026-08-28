@@ -143,9 +143,24 @@ galeria é rastreada** (se você e a Mari abrirem galerias para conferir, entram
 | `galeria_pesquisa_vista` | portão 2 apareceu | — |
 | `galeria_pesquisa_ok` | respondeu as 2 perguntas | `origem`, `decisao` |
 | `galeria_download` | abriu o link em alta | — |
+| `video_aberto` | abriu um Vídeo5678 (inclusive ao navegar entre vídeos) | `foto` |
+| `video_carrinho_poe` / `video_carrinho_tira` | mexeu no carrinho de vídeos | `foto` |
+| `video_checkout` | clicou em pagar | `qtd` |
+| `video_pago` | voltou do ASAAS com `?videos=pago` | — |
 
 **Tags de segmentação no Clarity:** `pagina=galeria`, `galeria_id`, `galeria_fotos`,
-`galeria_pacote`, `galeria_menor`, `galeria_autoriza`, `pesquisa_origem`, `pesquisa_decisao`.
+`galeria_pacote`, `galeria_menor`, `galeria_autoriza`, `pesquisa_origem`, `pesquisa_decisao`,
+`galeria_videos` (quantos vídeos a galeria tem) e `video_comprou`.
+
+⚠️ Dois cuidados que já custaram dado errado (27/08/2026):
+1. `galeria_abriu` só dispara depois que o índice de vídeos chega (`videosProntos`) —
+   antes disso `galeria_videos` saía 0 em galeria que TEM vídeo.
+2. **Nunca** chamar `track.*` dentro do updater de um `setState`: o React invoca a
+   função duas vezes (sempre, em StrictMode) e o evento vai duplicado para o GA4.
+   Dispare antes do `setState`.
+
+Os overlays novos (player, carrinho, tabela) nascem com `data-clarity-mask` na raiz —
+eles mostram fotos e miniaturas das bailarinas.
 
 ### Privacidade — leia antes de assistir gravação
 
