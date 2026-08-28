@@ -159,6 +159,16 @@ export default function GaleriaLightbox({ fotos, inicial, onFechar, onFoto, temV
     };
   }, [setTrack]);
 
+  /* `inicial` muda enquanto o lightbox está montado quando a pessoa navega pelos
+   * VÍDEOS (o player arrasta a foto de baixo junto). useState(inicial) só lê na
+   * montagem, então sem isto fechar o vídeo voltava para a foto antiga. */
+  useEffect(() => {
+    if (inicial === indiceRef.current) return;
+    indiceRef.current = inicial;
+    setIndice(inicial);
+    setTrack(-inicial * (medidas.current.w || window.innerWidth), false);
+  }, [inicial, setTrack]);
+
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') onFechar();

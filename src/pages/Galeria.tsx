@@ -89,6 +89,9 @@ export default function Galeria() {
 
   // Vídeos 5678 — quais números têm preview no R2 (v/index.json) + carrinho local.
   const [videos, setVideos]             = useState<Set<string>>(new Set());
+  // o índice de vídeos chega depois dos dados; galeria_abriu espera os dois,
+  // senão a tag galeria_videos sai 0 por corrida em galeria QUE TEM vídeo
+  const [videosProntos, setVideosProntos] = useState(false);
   const [videoAberto, setVideoAberto]   = useState<string | null>(null);
   const [carrinhoAberto, setCarrinhoAberto] = useState(false);
   const [carrinho, setCarrinho] = useState<string[]>(() => {
@@ -103,6 +106,16 @@ export default function Galeria() {
     try { return localStorage.getItem(`videos5678hint:${id}`) === '1'; } catch { return true; }
   });
   const pagoBanner = new URLSearchParams(window.location.search).get('videos') === 'pago';
+
+  // fecha o funil: sem isto a compra confirmada não aparecia em lugar nenhum
+  // no GA4/Clarity (só o clique em pagar, video_checkout).
+  const jaContouPago = useRef(false);
+  useEffect(() => {
+    if (!pagoBanner || jaContouPago.current) return;
+    jaContouPago.current = true;
+    track.tag('video_comprou', 'sim');
+    track.event('video_pago');
+  }, [pagoBanner]);
 
   const isDemo = id === 'demo';   // demo local (vite dev não roda as funções): sem rede
 
@@ -155,24 +168,26 @@ export default function Galeria() {
   const baseR2 = pastaR2 ? `/r2/${pastaR2}` : '';
 
   useEffect(() => {
-    if (!baseR2 || isDemo) return;
+    if (isDemo) { setVideosProntos(true); return; }
+    if (!baseR2) return;
     fetch(`${baseR2}/v/index.json?t=${Date.now()}`, { cache: 'no-store' })
       .then(r => (r.ok ? r.json() : null))
       .then(j => { if (j?.videos) setVideos(new Set(j.videos as string[])); })
-      .catch(() => {});   // sem índice = galeria sem vídeos; a UI simplesmente não aparece
+      .catch(() => {})    // sem índice = galeria sem vídeos; a UI simplesmente não aparece
+      .finally(() => setVideosProntos(true));
   }, [baseR2, isDemo]);
 
   useEffect(() => {
     try { localStorage.setItem(`videos5678:${id}`, JSON.stringify(carrinho)); } catch { /* modo privado */ }
   }, [carrinho, id]);
 
+  // NADA de track() dentro do updater de setState: o React pode invocá-lo duas
+  // vezes (StrictMode faz isso sempre) e o evento saía duplicado no GA4.
   const alternaCarrinho = useCallback((num: string) => {
-    setCarrinho(c => {
-      const tem = c.includes(num);
-      track.event(tem ? 'video_carrinho_tira' : 'video_carrinho_poe', { foto: Number(num) });
-      return tem ? c.filter(v => v !== num) : [...c, num];
-    });
-  }, []);
+    const tem = carrinho.includes(num);
+    track.event(tem ? 'video_carrinho_tira' : 'video_carrinho_poe', { foto: Number(num) });
+    setCarrinho(c => (c.includes(num) ? c.filter(v => v !== num) : [...c, num]));
+  }, [carrinho]);
 
   const abrirVideo = useCallback((num: string) => {
     track.event('video_aberto', { foto: Number(num) });
@@ -184,17 +199,14 @@ export default function Galeria() {
 
   /** troca de vídeo e leva o lightbox junto: fechar o player cai na foto certa */
   const navegarVideo = useCallback((passo: -1 | 1) => {
-    setVideoAberto(atual => {
-      if (atual === null) return atual;
-      const lista = dados?.photos.map(numeroDa).filter(n => videos.has(n)) ?? [];
-      const alvo = lista[lista.indexOf(atual) + passo];
-      if (!alvo) return atual;
-      const idx = dados?.photos.findIndex(f => numeroDa(f) === alvo) ?? -1;
-      if (idx >= 0) setAberta(idx);
-      track.event('video_aberto', { foto: Number(alvo) });
-      return alvo;
-    });
-  }, [dados, videos, numeroDa]);
+    if (videoAberto === null) return;
+    const alvo = numerosComVideo[numerosComVideo.indexOf(videoAberto) + passo];
+    if (!alvo) return;
+    const idx = dados?.photos.findIndex(f => numeroDa(f) === alvo) ?? -1;
+    if (idx >= 0) setAberta(idx);
+    track.event('video_aberto', { foto: Number(alvo) });
+    setVideoAberto(alvo);
+  }, [videoAberto, numerosComVideo, dados, numeroDa]);
 
   // e-mail da dona (1x, ao primeiro uso do carrinho) — personaliza a promessa de entrega
   useEffect(() => {
@@ -244,17 +256,21 @@ export default function Galeria() {
   const jaMarcou = useRef(false);
   useEffect(() => {
     if (!dados || dados.maintenance || jaMarcou.current) return;   // `dados` muda de novo no aceite; isto roda uma vez
+    if (!videosProntos) return;                                    // espera o índice de vídeos (ver setVideosProntos)
     jaMarcou.current = true;
     track.tag('pagina', 'galeria');
     track.tag('galeria_id', id || '');
     track.tag('galeria_fotos', dados.photos.length);
     track.tag('galeria_pacote', dados.packageName);
+    // segmentação nova: separa no Clarity/GA4 quem viu galeria COM vídeo de quem não viu
+    track.tag('galeria_videos', videos.size);
     track.event('galeria_abriu', {
       fotos:     dados.photos.length,
+      videos:    videos.size,
       aceitou:   dados.accepted ? 'sim' : 'nao',
       respondeu: dados.surveyed ? 'sim' : 'nao',
     });
-  }, [dados, id]);
+  }, [dados, id, videos, videosProntos]);
 
   async function enviarAceite() {
     if (enviando) return;

@@ -78,8 +78,11 @@ export function VideoSheet({ videoUrl, poster, numero, posicao, total, noCarrinh
           disablePictureInPicture
           onClick={e => e.stopPropagation()}
           onContextMenu={e => e.preventDefault()}
-          className="v5678 max-h-full max-w-full rounded-xl"
-          style={{ aspectRatio: '9/16' }}
+          className="v5678 rounded-xl"
+          /* altura manda (h-100% da moldura, que é flex-1 min-h-0): com max-h-full a
+             LARGURA mandava e num 9:16 a altura estourava a tela do celular,
+             empurrando os botões de compra para fora do viewport. */
+          style={{ height: '100%', width: 'auto', maxWidth: '100%', aspectRatio: '9/16' }}
         />
         {/* setas grandes e sempre visíveis: público não-técnico não descobre swipe sozinho */}
         {temAnt && (
