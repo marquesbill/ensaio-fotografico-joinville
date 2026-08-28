@@ -96,6 +96,8 @@ export default function Galeria() {
   });
   const [pagando, setPagando]   = useState(false);
   const [erroPagto, setErroPagto] = useState('');
+  const [tabelaInicial, setTabelaInicial] = useState(false);
+  const [emailDona, setEmailDona] = useState('');
   const pagoBanner = new URLSearchParams(window.location.search).get('videos') === 'pago';
 
   const isDemo = id === 'demo';   // demo local (vite dev não roda as funções): sem rede
@@ -172,6 +174,15 @@ export default function Galeria() {
     track.event('video_aberto', { foto: Number(num) });
     setVideoAberto(num);
   }, []);
+
+  // e-mail da dona (1x, ao primeiro uso do carrinho) — personaliza a promessa de entrega
+  useEffect(() => {
+    if (!carrinhoAberto || emailDona || isDemo) return;
+    fetch(`/api/videos-checkout?id=${encodeURIComponent(id!)}&t=${encodeURIComponent(t)}`)
+      .then(r => (r.ok ? r.json() : null))
+      .then(j => { if (j?.email) setEmailDona(String(j.email)); })
+      .catch(() => {});
+  }, [carrinhoAberto, emailDona, id, t, isDemo]);
 
   async function pagarVideos() {
     if (pagando || carrinho.length === 0) return;
@@ -482,7 +493,8 @@ export default function Galeria() {
           noCarrinho={carrinho.includes(videoAberto)}
           qtd={carrinho.length}
           onCarrinho={() => alternaCarrinho(videoAberto)}
-          onVerCarrinho={() => { setCarrinhoAberto(true); }}
+          onVerCarrinho={() => { setTabelaInicial(false); setCarrinhoAberto(true); }}
+          onVerPrecos={() => { setTabelaInicial(true); setCarrinhoAberto(true); }}
           onFechar={() => setVideoAberto(null)}
         />
       )}
@@ -492,10 +504,12 @@ export default function Galeria() {
           thumbDe={num => dados.photos.find(f => numeroDa(f) === num)?.thumb}
           onRemover={alternaCarrinho}
           onAbrirVideo={num => { setCarrinhoAberto(false); abrirVideo(num); }}
-          onFechar={() => setCarrinhoAberto(false)}
+          onFechar={() => { setCarrinhoAberto(false); setTabelaInicial(false); }}
           onPagar={pagarVideos}
           pagando={pagando}
           erro={erroPagto}
+          tabelaInicial={tabelaInicial}
+          email={emailDona}
         />
       )}
 

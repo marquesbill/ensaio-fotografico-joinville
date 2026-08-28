@@ -53,7 +53,23 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
   if (req.method === 'OPTIONS') return res.status(200).end();
-  if (req.method !== 'POST')    return res.status(405).json({ error: 'method not allowed' });
+
+  // GET ?id&t → { email } da dona da galeria (personaliza a promessa de entrega no carrinho).
+  if (req.method === 'GET') {
+    const id = String(req.query.id || '').trim();
+    const t  = String(req.query.t  || '').trim();
+    if (!id || t !== galeriaToken(id)) return res.status(403).json({ error: 'Link inválido.' });
+    try {
+      const r = await fetch(`${SCRIPT_URL}?action=bookings&t=${Date.now()}`, { cache: 'no-store' });
+      const all = await r.json() as Array<{ id: string; email?: string }>;
+      const email = String(all.find(b => b.id === id)?.email || '').trim();
+      return res.status(200).json({ email });
+    } catch {
+      return res.status(200).json({ email: '' });   // cosmético: sem e-mail, frase genérica
+    }
+  }
+
+  if (req.method !== 'POST') return res.status(405).json({ error: 'method not allowed' });
 
   const body = (req.body ?? {}) as { id?: unknown; t?: unknown; numeros?: unknown };
   const id = String(body.id || '').trim();

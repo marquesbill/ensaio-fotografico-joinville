@@ -397,6 +397,52 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       return res.status(200).json({ received: true, ignored: true, reason: 'no slot id' });
     }
 
+    // ── Vídeo5678: pedido de vídeos, não reserva. O externalReference v5678|…
+    // vive no CHECKOUT (o payment vem com null) — um GET /checkouts/{uuid}
+    // decide o desvio antes do fluxo de booking. Falhou o GET? Segue o fluxo
+    // normal: o pareamento por checkoutSession não vai achar booking e o
+    // alerta existente avisa o André — nada some em silêncio.
+    if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(String(slotId))) {
+      try {
+        const r = await fetch(`${ASAAS_BASE}/checkouts/${slotId}`, {
+          headers: { access_token: ASAAS_API_KEY, 'User-Agent': 'J26-EnsaioJoinville-Webhook/1.0' },
+        });
+        if (r.ok) {
+          const chk = await r.json() as { externalReference?: string };
+          const ref = String(chk.externalReference || '');
+          if (ref.startsWith('v5678|')) {
+            const [, galId, qtd, lista] = ref.split('|');
+            const valor = Number(pay.value) || 0;
+            // idempotência barata: LockService não existe aqui; o addLog duplicado
+            // é inofensivo e o e-mail duplicado (CONFIRMED + RECEIVED do cartão) é
+            // aceitável para o volume esperado — melhor 2 avisos que 0.
+            await fetch(SCRIPT_URL, {
+              method: 'POST', headers: { 'Content-Type': 'text/plain' },
+              body: JSON.stringify({ action: 'addLog',
+                message: `VIDEO_PAGO ${galId}: ${qtd} vídeo(s) R$${valor} — fotos ${lista} — payment ${paymentId} (${evt})`,
+                origin: 'videos5678' }),
+            }).catch(() => {});
+            try {
+              const { error } = await resend.emails.send({
+                from: FROM_EMAIL, to: MARIANE_EMAIL, cc: ANDRE_EMAIL,
+                subject: `🎬 Vídeo5678 PAGO: ${galId} — ${qtd} vídeo(s) · R$ ${valor.toLocaleString('pt-BR')}`,
+                html: `<div style="font-family:Arial,sans-serif;font-size:14px;line-height:1.6;color:#1a1a1a;">
+<h2 style="color:#7a3f8f;margin:0 0 12px;">Compra de vídeos confirmada</h2>
+<p><strong>Galeria:</strong> ${galId}<br>
+<strong>Vídeos:</strong> ${qtd} — fotos ${lista}<br>
+<strong>Valor:</strong> R$ ${valor.toLocaleString('pt-BR')} · ${pay.billingType || ''}<br>
+<strong>Payment:</strong> ${paymentId} (${evt})</p>
+<p style="font-size:12px;color:#6b7280;">A produção 4K é disparada na máquina do André (fila videos5678). Prazo prometido à cliente: 12h.</p>
+</div>`,
+              });
+              if (error) console.error('[webhook] Resend v5678 error', error);
+            } catch (e) { console.error('[webhook] Resend v5678 throw', e); }
+            return res.status(200).json({ received: true, video5678: true, galeria: galId });
+          }
+        }
+      } catch (e) { console.error('[webhook] v5678 checkout lookup falhou', e); }
+    }
+
     normalized = {
       gateway:        'asaas',
       externalSlotId: String(slotId),             // checkoutSession OU paymentLink

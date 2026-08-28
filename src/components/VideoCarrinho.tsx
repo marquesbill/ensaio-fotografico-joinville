@@ -15,18 +15,13 @@ export const precoVideos = (n: number) => (n <= 0 ? 0 : n <= 6 ? TABELA[n] : 520
 const fmt = (v: number) => `R$ ${v.toLocaleString('pt-BR')}`;
 
 /* ─────────────── Player ─────────────── */
-export function VideoSheet({ videoUrl, poster, numero, noCarrinho, qtd, onCarrinho, onVerCarrinho, onFechar }: {
+export function VideoSheet({ videoUrl, poster, numero, noCarrinho, qtd, onCarrinho, onVerCarrinho, onVerPrecos, onFechar }: {
   videoUrl: string; poster?: string; numero: string;
   noCarrinho: boolean; qtd: number;
-  onCarrinho: () => void; onVerCarrinho: () => void; onFechar: () => void;
+  onCarrinho: () => void; onVerCarrinho: () => void; onVerPrecos: () => void; onFechar: () => void;
 }) {
   const videoRef = useRef<HTMLVideoElement>(null);
   useEffect(() => { videoRef.current?.play().catch(() => {}); }, [videoUrl]);
-
-  // preço contextual: o que ESTE vídeo acrescenta ao pedido, com a conta visível
-  const proxQtd  = noCarrinho ? qtd : qtd + 1;
-  const custoEste = precoVideos(proxQtd) - precoVideos(proxQtd - 1);
-  const ordinal  = `${proxQtd}º vídeo`;
 
   return (
     // tap/clique fora do vídeo volta para a foto; os filhos interativos dão stopPropagation
@@ -75,18 +70,18 @@ export function VideoSheet({ videoUrl, poster, numero, noCarrinho, qtd, onCarrin
               className="w-full py-3.5 rounded-full text-white font-bold" style={{ background: GRAD }}>
               Colocar no carrinho
             </button>
-            {/* a conta por extenso: sem ela, "R$100" num botão parece contradizer a tabela */}
-            <p className="text-center text-white/80 text-[12px]">
-              {qtd === 0
-                ? `1º vídeo: ${fmt(120)}`
-                : `${ordinal}: +${fmt(custoEste)} · pedido vai a ${fmt(precoVideos(proxQtd))}`}
-            </p>
-            {qtd > 0 && (
-              <button type="button" onClick={onVerCarrinho}
-                className="w-full py-2.5 rounded-full text-white/90 text-sm font-semibold bg-white/15">
-                Ver carrinho ({qtd}) — total {fmt(precoVideos(qtd))}
+            <div className="flex gap-2">
+              {qtd > 0 && (
+                <button type="button" onClick={onVerCarrinho}
+                  className="flex-1 py-2.5 rounded-full text-white/90 text-sm font-semibold bg-white/15">
+                  Ver carrinho ({qtd})
+                </button>
+              )}
+              <button type="button" onClick={onVerPrecos}
+                className="flex-1 py-2.5 rounded-full text-white/90 text-sm font-semibold bg-white/15">
+                {qtd > 0 ? 'Tabela de preços' : 'Ver preços'}
               </button>
-            )}
+            </div>
           </>
         )}
       </div>
@@ -95,12 +90,13 @@ export function VideoSheet({ videoUrl, poster, numero, noCarrinho, qtd, onCarrin
 }
 
 /* ─────────────── Carrinho ─────────────── */
-export function CarrinhoSheet({ numeros, thumbDe, onRemover, onAbrirVideo, onFechar, onPagar, pagando, erro }: {
+export function CarrinhoSheet({ numeros, thumbDe, onRemover, onAbrirVideo, onFechar, onPagar, pagando, erro, tabelaInicial = false, email = '' }: {
   numeros: string[]; thumbDe: (num: string) => string | undefined;
   onRemover: (num: string) => void; onAbrirVideo: (num: string) => void;
   onFechar: () => void; onPagar: () => void; pagando: boolean; erro: string;
+  tabelaInicial?: boolean; email?: string;
 }) {
-  const [mostraTabela, setMostraTabela] = useState(false);
+  const [mostraTabela, setMostraTabela] = useState(tabelaInicial);
   const [tabelona, setTabelona] = useState(false);
   const n = numeros.length;
   const total = precoVideos(n);
@@ -194,8 +190,11 @@ export function CarrinhoSheet({ numeros, thumbDe, onRemover, onAbrirVideo, onFec
             {pagando ? 'Abrindo o pagamento…' : n === 0 ? 'Carrinho vazio'
               : `Pagar ${fmt(total)} — PIX ou cartão`}
           </button>
+          {/* o e-mail cadastrado personaliza a promessa — a pessoa se reconhece no fluxo */}
           <p className="text-center text-on-surface-variant text-[11px] mt-2">
-            Após a confirmação, produzo seus vídeos em 4K e envio o link por e-mail e WhatsApp.
+            Após a confirmação de pagamento, em até 12h seus vídeos em 4K chegarão por um link
+            no email{email ? ':' : ' cadastrado.'}
+            {email && <strong className="block text-on-surface">{email}</strong>}
           </p>
         </div>
       </div>
