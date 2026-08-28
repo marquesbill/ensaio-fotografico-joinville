@@ -439,7 +439,9 @@ export default function Galeria() {
             <div className="flex-1">
               <p className="text-sm font-bold">Novidade: suas fotos têm vídeos!</p>
               <p className="text-[13px] text-white/85 mt-0.5">
-                Toque numa foto com o selo <strong>▶ vídeo</strong> e veja o momento do clique.
+                Toque numa foto com o selo{' '}
+                <strong className="inline-block px-1.5 py-0.5 mx-0.5 rounded bg-white/20 whitespace-nowrap">▶ vídeo</strong>
+                {' '}e veja o momento do clique e o resultado final!
               </p>
             </div>
             <button type="button" aria-label="Fechar aviso"
