@@ -7,6 +7,8 @@ import { useEffect, useRef, useState } from 'react';
  * servidor (api/videos-checkout.ts recalcula pela quantidade). */
 
 const GRAD = 'linear-gradient(135deg,#7a3f8f,#e87060)';
+// alvo de toque de 44px (mínimo da Apple) — cabeçalho e setas do palco
+const ICO = 'w-11 h-11 shrink-0 grid place-items-center rounded-full bg-white/10 border border-white/20 text-white';
 
 // Curva fechada com o André (27/08/2026) — espelho de api/videos-checkout.ts.
 const TABELA = [0, 120, 220, 320, 400, 460, 520];
@@ -27,9 +29,16 @@ export function VideoSheet({ videoUrl, poster, numero, posicao, total, noCarrinh
   onVerFoto: () => void; onFechar: () => void;
 }) {
   const videoRef = useRef<HTMLVideoElement>(null);
+  const [tocando, setTocando] = useState(true);
   useEffect(() => { videoRef.current?.play().catch(() => {}); }, [videoUrl]);
 
   const temAnt = posicao > 1, temProx = posicao < total;
+
+  const alternaPlay = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    const v = videoRef.current; if (!v) return;
+    if (v.paused) v.play().catch(() => {}); else v.pause();
+  };
 
   // setas do teclado no desktop; no celular quem navega é o swipe (abaixo)
   useEffect(() => {
@@ -56,92 +65,97 @@ export function VideoSheet({ videoUrl, poster, numero, posicao, total, noCarrinh
   };
 
   return (
-    // tap/clique fora do vídeo volta para a foto; os filhos interativos dão stopPropagation
-    <div className="fixed inset-0 z-[60] flex flex-col bg-black/90" data-clarity-mask="true" onClick={onFechar}>
-      <style>{`.v5678::-webkit-media-controls-fullscreen-button{display:none}`}</style>
-      <div className="flex items-center justify-between p-4 pt-[max(1rem,env(safe-area-inset-top))]">
-        <div>
-          <p className="text-white font-headline text-lg italic">Vídeo5678 · foto {Number(numero)}</p>
-          {total > 1 && <p className="text-white/60 text-[12px] tabular-nums">vídeo {posicao} de {total}</p>}
-        </div>
-        <button type="button" onClick={onFechar} aria-label="Fechar"
-          className="w-9 h-9 grid place-items-center rounded-full bg-white/15 text-white"><svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true"><path d="M2 2l10 10M12 2L2 12" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" /></svg></button>
-      </div>
-
-      {/* dentro da interface, nunca fullscreen; sem download nem PiP */}
-      <div className="relative flex-1 min-h-0 grid place-items-center px-6"
-        onTouchStart={inicioToque} onTouchEnd={fimToque}>
-        <video
-          ref={videoRef} src={videoUrl} poster={poster}
-          playsInline controls loop preload="metadata"
-          controlsList="nodownload nofullscreen noremoteplayback noplaybackrate"
-          disablePictureInPicture
-          onClick={e => e.stopPropagation()}
-          onContextMenu={e => e.preventDefault()}
-          className="v5678 rounded-xl"
-          /* altura manda (h-100% da moldura, que é flex-1 min-h-0): com max-h-full a
-             LARGURA mandava e num 9:16 a altura estourava a tela do celular,
-             empurrando os botões de compra para fora do viewport. */
-          style={{ height: '100%', width: 'auto', maxWidth: '100%', aspectRatio: '9/16' }}
-        />
-        {/* setas grandes e sempre visíveis: público não-técnico não descobre swipe sozinho */}
-        {temAnt && (
-          <button type="button" aria-label="Vídeo anterior"
-            onClick={e => { e.stopPropagation(); onNavegar(-1); }}
-            className="absolute left-1 top-1/2 -translate-y-1/2 w-11 h-11 grid place-items-center rounded-full bg-black/60 border border-white/25 text-white text-xl backdrop-blur-sm">
-            ‹
-          </button>
-        )}
-        {temProx && (
-          <button type="button" aria-label="Próximo vídeo"
-            onClick={e => { e.stopPropagation(); onNavegar(1); }}
-            className="absolute right-1 top-1/2 -translate-y-1/2 w-11 h-11 grid place-items-center rounded-full bg-black/60 border border-white/25 text-white text-xl backdrop-blur-sm">
-            ›
-          </button>
-        )}
-      </div>
-
-      {/* ações contidas (max-w-sm): no desktop nada de botão de borda a borda */}
-      <div className="p-4 pb-[max(1rem,env(safe-area-inset-bottom))] space-y-2 w-full max-w-sm mx-auto"
+    /* Fundo OPACO: com bg-black/90 o lightbox aparecia por baixo e os botões de lá
+     * "vazavam" atrás destes. Três faixas fixas — cabeçalho, palco, ações —, nenhuma
+     * sobreposta. Tap fora do vídeo volta para a foto. */
+    <div className="fixed inset-0 z-[60] flex flex-col bg-[#0e0a16]" data-clarity-mask="true" onClick={onFechar}>
+      <div className="shrink-0 h-14 pt-[env(safe-area-inset-top)] box-content flex items-center gap-2.5 px-3"
         onClick={e => e.stopPropagation()}>
-        <button type="button" onClick={onVerFoto}
-          className="w-full py-2.5 rounded-full text-white/90 text-sm font-semibold bg-white/15">
-          🖼 Ver a foto deste vídeo
+        <button type="button" onClick={onFechar} aria-label="Fechar" className={ICO}>
+          <svg width="15" height="15" viewBox="0 0 14 14" aria-hidden="true"><path d="M2 2l10 10M12 2L2 12" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" /></svg>
         </button>
-        <p className="text-center text-white/70 text-[12px]">
-          Prévia com marca d’água — o vídeo final é entregue em 4K, sem marca.
-        </p>
+        <div className="flex-1 min-w-0">
+          <p className="text-white font-headline text-[17px] italic leading-tight truncate">Vídeo5678 · foto {Number(numero)}</p>
+          {total > 1 && <p className="text-white/55 text-[11px] tabular-nums mt-0.5">vídeo {posicao} de {total}</p>}
+        </div>
+        {/* ações secundárias vivem aqui: é o que devolve altura ao vídeo */}
+        <button type="button" onClick={onVerFoto} aria-label="Ver a foto deste vídeo" className={ICO}>
+          <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true">
+            <rect x="3" y="5" width="18" height="14" rx="2.5" /><circle cx="8.5" cy="10" r="1.6" /><path d="M21 16l-5-5-6.5 6.5" strokeLinecap="round" strokeLinejoin="round" />
+          </svg>
+        </button>
+        <button type="button" onClick={qtd > 0 ? onVerCarrinho : onVerPrecos}
+          aria-label={qtd > 0 ? `Ver carrinho com ${qtd} vídeos` : 'Ver preços'}
+          className={`${ICO} relative`}>
+          {qtd > 0 ? (
+            <>
+              <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                <circle cx="9" cy="20" r="1.6" /><circle cx="17" cy="20" r="1.6" />
+                <path d="M2 3h3l2.6 12.5a1.6 1.6 0 0 0 1.6 1.3h7.9a1.6 1.6 0 0 0 1.6-1.3L21 8H6" />
+              </svg>
+              <span className="absolute -top-0.5 -right-0.5 min-w-[19px] h-[19px] px-1 rounded-full text-[11px] font-extrabold grid place-items-center border-2 border-[#0e0a16] text-white"
+                style={{ background: GRAD }}>{qtd}</span>
+            </>
+          ) : <span className="text-[15px] font-bold">R$</span>}
+        </button>
+      </div>
+
+      {/* Palco: setas nas FAIXAS LATERAIS (nunca sobre o vídeo) e vídeo contido por
+          object-contain — com aspect-ratio no elemento ele estourava a moldura. */}
+      <div className="flex-1 min-h-0 grid items-center gap-1 px-1"
+        style={{ gridTemplateColumns: '52px minmax(0,1fr) 52px' }}
+        onTouchStart={inicioToque} onTouchEnd={fimToque}>
+        {temAnt ? (
+          <button type="button" aria-label="Vídeo anterior" onClick={e => { e.stopPropagation(); onNavegar(-1); }}
+            className={`${ICO} justify-self-center text-2xl`}>‹</button>
+        ) : <span />}
+
+        <div className="relative h-full w-full" onClick={alternaPlay}>
+          <video
+            ref={videoRef} src={videoUrl} poster={poster}
+            playsInline loop preload="metadata"
+            onPlay={() => setTocando(true)} onPause={() => setTocando(false)}
+            onContextMenu={e => e.preventDefault()}
+            className="absolute inset-0 h-full w-full object-contain"
+          />
+          {/* Controles PRÓPRIOS (sem `controls`): é a única forma de não ter tela cheia
+              nem PiP no iPhone — o Safari iOS ignora controlsList e disablePictureInPicture. */}
+          {!tocando && (
+            <span className="absolute inset-0 grid place-items-center pointer-events-none">
+              <span className="w-16 h-16 rounded-full bg-black/55 border border-white/30 grid place-items-center text-white text-2xl pl-1">▶</span>
+            </span>
+          )}
+        </div>
+
+        {temProx ? (
+          <button type="button" aria-label="Próximo vídeo" onClick={e => { e.stopPropagation(); onNavegar(1); }}
+            className={`${ICO} justify-self-center text-2xl`}>›</button>
+        ) : <span />}
+      </div>
+
+      {/* Ações: faixa própria, com respiro (20px de borda, 12px entre elementos) */}
+      <div className="shrink-0 px-5 pt-4 pb-[max(1.25rem,env(safe-area-inset-bottom))] flex flex-col gap-3 w-full max-w-sm mx-auto"
+        onClick={e => e.stopPropagation()}>
         {noCarrinho ? (
-          <div className="flex gap-2">
-            <button type="button" onClick={onCarrinho}
-              className="flex-1 py-3 rounded-full text-white/90 text-sm font-semibold bg-white/15">
-              ✓ No carrinho — remover
-            </button>
-            <button type="button" onClick={onVerCarrinho}
-              className="flex-1 py-3 rounded-full text-white text-sm font-bold" style={{ background: GRAD }}>
-              Ver carrinho ({qtd})
-            </button>
-          </div>
-        ) : (
           <>
             <button type="button" onClick={onCarrinho}
-              className="w-full py-3.5 rounded-full text-white font-bold" style={{ background: GRAD }}>
-              Colocar no carrinho
+              className="w-full h-[54px] rounded-full border-[1.5px] border-white/35 bg-white/10 text-white text-[16px] font-bold">
+              ✓ No carrinho — tocar para tirar
             </button>
-            <div className="flex gap-2">
-              {qtd > 0 && (
-                <button type="button" onClick={onVerCarrinho}
-                  className="flex-1 py-2.5 rounded-full text-white/90 text-sm font-semibold bg-white/15">
-                  Ver carrinho ({qtd})
-                </button>
-              )}
-              <button type="button" onClick={onVerPrecos}
-                className="flex-1 py-2.5 rounded-full text-white/90 text-sm font-semibold bg-white/15">
-                {qtd > 0 ? 'Tabela de preços' : 'Ver preços'}
-              </button>
-            </div>
+            <button type="button" onClick={onVerCarrinho}
+              className="w-full h-[46px] rounded-full text-white text-[15px] font-bold" style={{ background: GRAD }}>
+              Ver carrinho ({qtd})
+            </button>
           </>
+        ) : (
+          <button type="button" onClick={onCarrinho}
+            className="w-full h-[54px] rounded-full text-white text-[17px] font-extrabold" style={{ background: GRAD }}>
+            Colocar no carrinho
+          </button>
         )}
+        <p className="text-center text-white/55 text-[12px] leading-relaxed">
+          Prévia com marca d’água.<br />O vídeo final é entregue em 4K, sem marca.
+        </p>
       </div>
     </div>
   );
