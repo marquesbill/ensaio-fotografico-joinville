@@ -71,19 +71,14 @@ export function VideoSheet({ videoUrl, poster, numero, posicao, total, noCarrinh
     <div className="fixed inset-0 z-[60] flex flex-col bg-[#0e0a16]" data-clarity-mask="true" onClick={onFechar}>
       <div className="shrink-0 h-14 pt-[env(safe-area-inset-top)] box-content flex items-center gap-2.5 px-3"
         onClick={e => e.stopPropagation()}>
-        <button type="button" onClick={onFechar} aria-label="Fechar" className={ICO}>
+        {/* o X do player volta para a FOTO (o X da foto é que sai para a galeria) */}
+        <button type="button" onClick={onVerFoto} aria-label="Fechar o vídeo e ver a foto" className={ICO}>
           <svg width="15" height="15" viewBox="0 0 14 14" aria-hidden="true"><path d="M2 2l10 10M12 2L2 12" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" /></svg>
         </button>
         <div className="flex-1 min-w-0">
           <p className="text-white font-headline text-[17px] italic leading-tight truncate">Vídeo5678 · foto {Number(numero)}</p>
           {total > 1 && <p className="text-white/55 text-[11px] tabular-nums mt-0.5">vídeo {posicao} de {total}</p>}
         </div>
-        {/* ações secundárias vivem aqui: é o que devolve altura ao vídeo */}
-        <button type="button" onClick={onVerFoto} aria-label="Ver a foto deste vídeo" className={ICO}>
-          <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true">
-            <rect x="3" y="5" width="18" height="14" rx="2.5" /><circle cx="8.5" cy="10" r="1.6" /><path d="M21 16l-5-5-6.5 6.5" strokeLinecap="round" strokeLinejoin="round" />
-          </svg>
-        </button>
         <button type="button" onClick={qtd > 0 ? onVerCarrinho : onVerPrecos}
           aria-label={qtd > 0 ? `Ver carrinho com ${qtd} vídeos` : 'Ver preços'}
           className={`${ICO} relative`}>
@@ -122,7 +117,12 @@ export function VideoSheet({ videoUrl, poster, numero, posicao, total, noCarrinh
               nem PiP no iPhone — o Safari iOS ignora controlsList e disablePictureInPicture. */}
           {!tocando && (
             <span className="absolute inset-0 grid place-items-center pointer-events-none">
-              <span className="w-16 h-16 rounded-full bg-black/55 border border-white/30 grid place-items-center text-white text-2xl pl-1">▶</span>
+              <span className="w-16 h-16 rounded-full bg-black/55 border border-white/30 grid place-items-center">
+                {/* triângulo desenhado: o emoji ▶ varia por plataforma e sai torto */}
+                <svg width="26" height="26" viewBox="0 0 26 26" aria-hidden="true" className="ml-1">
+                  <path d="M6 3.5 L22 13 L6 22.5 Z" fill="#fff" />
+                </svg>
+              </span>
             </span>
           )}
         </div>
@@ -136,23 +136,30 @@ export function VideoSheet({ videoUrl, poster, numero, posicao, total, noCarrinh
       {/* Ações: faixa própria, com respiro (20px de borda, 12px entre elementos) */}
       <div className="shrink-0 px-5 pt-4 pb-[max(1.25rem,env(safe-area-inset-bottom))] flex flex-col gap-3 w-full max-w-sm mx-auto"
         onClick={e => e.stopPropagation()}>
+        {/* Já no carrinho vira ESTADO, não botão: tirar é só no carrinho (decisão do
+            André, 28/08) — evita a mãe tirar sem querer ao tocar duas vezes. */}
         {noCarrinho ? (
-          <>
-            <button type="button" onClick={onCarrinho}
-              className="w-full h-[54px] rounded-full border-[1.5px] border-white/35 bg-white/10 text-white text-[16px] font-bold">
-              ✓ No carrinho — tocar para tirar
-            </button>
-            <button type="button" onClick={onVerCarrinho}
-              className="w-full h-[46px] rounded-full text-white text-[15px] font-bold" style={{ background: GRAD }}>
-              Ver carrinho ({qtd})
-            </button>
-          </>
+          <div className="w-full h-[54px] rounded-full border-[1.5px] border-white/30 bg-white/[0.07] text-white/85 text-[16px] font-bold grid place-items-center">
+            ✓ Já está no carrinho
+          </div>
         ) : (
           <button type="button" onClick={onCarrinho}
             className="w-full h-[54px] rounded-full text-white text-[17px] font-extrabold" style={{ background: GRAD }}>
             Colocar no carrinho
           </button>
         )}
+        <div className="flex gap-3">
+          {qtd > 0 && (
+            <button type="button" onClick={onVerCarrinho}
+              className="flex-1 h-[46px] px-4 rounded-full text-white text-[15px] font-bold" style={{ background: GRAD }}>
+              Ver carrinho ({qtd})
+            </button>
+          )}
+          <button type="button" onClick={onVerPrecos}
+            className="flex-1 h-[46px] px-4 rounded-full bg-white/10 border border-white/20 text-white text-[15px] font-semibold">
+            Tabela de preços
+          </button>
+        </div>
         <p className="text-center text-white/55 text-[12px] leading-relaxed">
           Prévia com marca d’água.<br />O vídeo final é entregue em 4K, sem marca.
         </p>
@@ -241,21 +248,30 @@ export function CarrinhoSheet({ numeros, thumbDe, onRemover, onAbrirVideo, onFec
             </p>
           ) : (
             <>
-              <div className="flex flex-wrap gap-2 mb-2">
+              {/* Lista, não grade de miniaturas: o × de 20px no canto era pequeno demais
+                  para o público (mães). Cada linha tem "Remover" escrito, com 44px de alvo. */}
+              <ul className="mb-3 divide-y divide-black/5">
                 {numeros.map(num => (
-                  <div key={num} className="relative">
+                  <li key={num} className="flex items-center gap-3 py-2">
                     <button type="button" onClick={() => onAbrirVideo(num)}
-                      className="block w-16 h-24 rounded-lg overflow-hidden bg-black/5">
+                      className="w-14 h-20 shrink-0 rounded-lg overflow-hidden bg-black/5">
                       {thumbDe(num)
                         ? <img src={thumbDe(num)} alt="" className="w-full h-full object-cover" />
                         : <span className="grid place-items-center h-full text-xs">{Number(num)}</span>}
                     </button>
-                    <button type="button" onClick={() => onRemover(num)} aria-label={`Remover vídeo ${Number(num)}`}
-                      className="absolute -top-1.5 -right-1.5 w-5 h-5 grid place-items-center rounded-full bg-black/70 text-white text-[11px] leading-none">×</button>
-                    <p className="text-center text-[10px] text-on-surface-variant mt-0.5">{Number(num)}</p>
-                  </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-bold text-on-surface">Vídeo da foto {Number(num)}</p>
+                      <button type="button" onClick={() => onAbrirVideo(num)}
+                        className="text-[13px] text-primary font-semibold underline underline-offset-2">ver de novo</button>
+                    </div>
+                    <button type="button" onClick={() => onRemover(num)}
+                      aria-label={`Remover o vídeo da foto ${Number(num)} do carrinho`}
+                      className="h-11 px-4 shrink-0 rounded-full border border-black/15 text-on-surface-variant text-[14px] font-semibold">
+                      Remover
+                    </button>
+                  </li>
                 ))}
-              </div>
+              </ul>
               <div className="flex items-baseline justify-between rounded-xl bg-surface-container-low px-4 py-3 mb-4">
                 <span className="text-sm font-bold text-on-surface">{n} {n === 1 ? 'vídeo' : 'vídeos'}</span>
                 <span className="text-right">
