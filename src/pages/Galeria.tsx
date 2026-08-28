@@ -179,6 +179,23 @@ export default function Galeria() {
     setVideoAberto(num);
   }, []);
 
+  // números com vídeo, na ordem da galeria — a navegação do player anda por aqui
+  const numerosComVideo = dados?.photos.map(numeroDa).filter(n => videos.has(n)) ?? [];
+
+  /** troca de vídeo e leva o lightbox junto: fechar o player cai na foto certa */
+  const navegarVideo = useCallback((passo: -1 | 1) => {
+    setVideoAberto(atual => {
+      if (atual === null) return atual;
+      const lista = dados?.photos.map(numeroDa).filter(n => videos.has(n)) ?? [];
+      const alvo = lista[lista.indexOf(atual) + passo];
+      if (!alvo) return atual;
+      const idx = dados?.photos.findIndex(f => numeroDa(f) === alvo) ?? -1;
+      if (idx >= 0) setAberta(idx);
+      track.event('video_aberto', { foto: Number(alvo) });
+      return alvo;
+    });
+  }, [dados, videos, numeroDa]);
+
   // e-mail da dona (1x, ao primeiro uso do carrinho) — personaliza a promessa de entrega
   useEffect(() => {
     if (!carrinhoAberto || emailDona || isDemo) return;
@@ -521,6 +538,16 @@ export default function Galeria() {
           videoUrl={`${baseR2}/v/${videoAberto}.mp4`}
           poster={dados.photos.find(f => numeroDa(f) === videoAberto)?.thumb}
           numero={videoAberto}
+          posicao={numerosComVideo.indexOf(videoAberto) + 1}
+          total={numerosComVideo.length}
+          onNavegar={navegarVideo}
+          onVerFoto={() => {
+            // o lightbox já está na foto certa (navegarVideo sincroniza); se o
+            // vídeo veio do carrinho, o lightbox pode nem estar aberto — abre nela
+            const idx = dados.photos.findIndex(f => numeroDa(f) === videoAberto);
+            if (idx >= 0) setAberta(idx);
+            setVideoAberto(null);
+          }}
           noCarrinho={carrinho.includes(videoAberto)}
           qtd={carrinho.length}
           onCarrinho={() => alternaCarrinho(videoAberto)}
