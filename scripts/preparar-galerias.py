@@ -37,9 +37,18 @@ def tokens(s: str) -> set:
 
 
 def carregar_reservas():
-    url = f'{GS}?action=bookings&t=0'
-    with urllib.request.urlopen(url, timeout=120) as r:
-        todas = json.load(r)
+    # UA + 2 tentativas: o redirect do Apps Script devolve 404 esporádico (01/09/2026).
+    todas, erro = None, None
+    for i in (1, 2):
+        try:
+            req = urllib.request.Request(f'{GS}?action=bookings&t={i}', headers={'User-Agent': 'Mozilla/5.0 (preparar-galerias)'})
+            with urllib.request.urlopen(req, timeout=120) as r:
+                todas = json.load(r)
+            break
+        except Exception as e:
+            erro = e
+    if todas is None:
+        raise SystemExit(f'planilha (bookings) falhou 2x: {erro}')
     return [b for b in todas
             if '2026-07-19' <= b.get('date', '') <= '2026-08-02'
             and b.get('status') in ('Confirmado', 'Pago Parcial')]
