@@ -1659,9 +1659,31 @@ function confirmBooking(data) {
     // o webhook decide o e-mail. Append-only: sem LockService.
     const v = _videoPedido(stripeSession);
     if (v) {
-      if (!v.jaPago) addLog('VIDEO_PAGO', stripeSession,
-        v.galeria + '|' + v.fotos + '|' + v.valor + '|' + v.qtd + '|' + (v.teste ? 'TESTE' : '') + '|' + (stripePayment || ''),
-        logOrigin);
+      if (!v.jaPago) {
+        addLog('VIDEO_PAGO', stripeSession,
+          v.galeria + '|' + v.fotos + '|' + v.valor + '|' + v.qtd + '|' + (v.teste ? 'TESTE' : '') + '|' + (stripePayment || ''),
+          logOrigin);
+        // O aviso à Mari sai DAQUI, no mesmo ponto idempotente do VIDEO_PAGO —
+        // exatamente uma vez. Medido em 01/09/2026: este caminho leva 2,6–5,6 s
+        // e o webhook da Vercel às vezes desiste antes (o ASAAS limita a 10 s
+        // no total); na reentrega do ASAAS a resposta já é alreadyPaid, então
+        // um e-mail disparado pelo webhook se perdia justamente nos casos lentos.
+        try {
+          MailApp.sendEmail({
+            to: CFG.MARIANE_EMAIL, cc: CFG.ANDRE_EMAIL,
+            subject: '🎬 Vídeo5678 PAGO' + (v.teste ? ' [TESTE]' : '') + ': ' + v.galeria + ' — ' + v.qtd + ' vídeo(s) · R$ ' + v.valor,
+            htmlBody: '<div style="font-family:Arial,sans-serif;font-size:14px;line-height:1.6;color:#1a1a1a;">'
+              + '<h2 style="color:#7a3f8f;margin:0 0 12px;">Compra de vídeos confirmada' + (v.teste ? ' (TESTE)' : '') + '</h2>'
+              + '<p><strong>Galeria:</strong> ' + v.galeria + '<br>'
+              + '<strong>Vídeos:</strong> ' + v.qtd + ' — fotos ' + v.fotos + '<br>'
+              + '<strong>Valor:</strong> R$ ' + v.valor + '<br>'
+              + '<strong>Payment:</strong> ' + (stripePayment || '') + '</p>'
+              + '<p style="font-size:12px;color:#6b7280;">A produção 4K é disparada na máquina do André (fila videos5678). Prazo prometido à cliente: 12h.</p></div>',
+          });
+        } catch (err) {
+          addLog('EMAIL_ERRO', stripeSession, 'VIDEO_PAGO: ' + err.toString(), 'confirmBooking');
+        }
+      }
       return { ok: true, video5678: true, galeria: v.galeria, fotos: v.fotos, qtd: v.qtd,
                valorVideo: v.valor, teste: v.teste, alreadyPaid: v.jaPago };
     }

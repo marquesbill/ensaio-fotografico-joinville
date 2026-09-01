@@ -528,8 +528,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   // 408 que causa a reentrega. Uma tentativa curta cabe no orçamento; se o Apps
   // Script estiver lento, o alerta 🚨 abaixo avisa o André e a reentrega do
   // ASAAS tenta de novo com a função descansada.
+  // 7 s: o caminho de compra de vídeo no Apps Script (varre a aba Log e grava
+  // VIDEO_PAGO) mediu 2,6–5,6 s em 01/09/2026; com 4 s o webhook desistia em
+  // metade dos casos. Acima disso o próprio ASAAS reentrega e o .gs é
+  // idempotente — nada se perde, só o log fica mais feio.
   const CONFIRM_TENTATIVAS = 1;
-  const CONFIRM_TIMEOUT_MS = 4000;
+  const CONFIRM_TIMEOUT_MS = 7000;
   for (let attempt = 1; attempt <= CONFIRM_TENTATIVAS; attempt++) {
     try {
       const r = await fetch(SCRIPT_URL, {
@@ -567,30 +571,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       // o fluxo seguia como sucesso com meta vazia.
       if (json.error) throw new Error(String(json.error));
       if (json.video5678) {
+        // Compra de vídeo. O e-mail à Mari NÃO sai daqui: o .gs manda no mesmo
+        // ponto idempotente em que grava o VIDEO_PAGO (uma vez só, mesmo se este
+        // webhook estourar o timeout e o ASAAS reentregar — aí vem alreadyPaid).
         const galId = String(json.galeria || '');
-        const valor = Number(json.valorVideo) || Number(normalized.amount) || 0;
-        if (json.alreadyPaid) {
-          // Cartão manda CONFIRMED e depois RECEIVED; a ASAAS reentrega em retry.
-          // O .gs viu o VIDEO_PAGO anterior — um aviso só, não dois.
-          console.log(`[webhook][v5678] ${galId} já pago (${normalized.paymentId}) — sem e-mail`);
-          return res.status(200).json({ received: true, video5678: true, galeria: galId, alreadyPaid: true });
-        }
-        try {
-          const { error } = await resend.emails.send({
-            from: FROM_EMAIL, to: MARIANE_EMAIL, cc: ANDRE_EMAIL,
-            subject: `🎬 Vídeo5678 PAGO${json.teste ? ' [TESTE]' : ''}: ${galId} — ${json.qtd} vídeo(s) · R$ ${valor.toLocaleString('pt-BR')}`,
-            html: `<div style="font-family:Arial,sans-serif;font-size:14px;line-height:1.6;color:#1a1a1a;">
-<h2 style="color:#7a3f8f;margin:0 0 12px;">Compra de vídeos confirmada${json.teste ? ' (TESTE)' : ''}</h2>
-<p><strong>Galeria:</strong> ${galId}<br>
-<strong>Vídeos:</strong> ${json.qtd} — fotos ${json.fotos || ''}<br>
-<strong>Valor:</strong> R$ ${valor.toLocaleString('pt-BR')} · ${normalized.billingType || ''}<br>
-<strong>Payment:</strong> ${normalized.paymentId}</p>
-<p style="font-size:12px;color:#6b7280;">A produção 4K é disparada na máquina do André (fila videos5678). Prazo prometido à cliente: 12h.</p>
-</div>`,
-          });
-          if (error) console.error('[webhook] Resend v5678 error', error);
-        } catch (e) { console.error('[webhook] Resend v5678 throw', e); }
-        return res.status(200).json({ received: true, video5678: true, galeria: galId });
+        console.log(`[webhook][v5678] ${galId} ${json.qtd} vídeo(s) payment=${normalized.paymentId}${json.alreadyPaid ? ' (já pago)' : ''}`);
+        return res.status(200).json({ received: true, video5678: true, galeria: galId, alreadyPaid: !!json.alreadyPaid });
       }
       bookingId        = json.bookingId || '';
       alreadyConfirmed = json.alreadyConfirmed === true;
