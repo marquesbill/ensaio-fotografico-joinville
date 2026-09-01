@@ -207,7 +207,7 @@ function _videoEmailPago(g, v) {
 function _videoEmailEntregue(g, qtd, link) {
   return _videoEmailHtml(qtd === 1 ? 'Seu vídeo chegou!' : 'Seus vídeos chegaram!', g,
     _p((qtd === 1 ? 'Seu Vídeo5678 está pronto' : 'Seus ' + qtd + ' Vídeo5678 estão prontos') + ' — em 4K, sem marca d\'água.')
-    + _p('Obrigado por levar um pedacinho do Festival com você. Foi um prazer produzir isso.')
+    + _p('Foi um prazer produzir suas fotos lá em Joinville!')
     + _p('Se for postar, me marca que vou adorar! <a href="https://www.instagram.com/affotografia" style="color:#7a3f8f;font-weight:700;text-decoration:none;">@affotografia</a>')
     + _p('O link fica disponível até junho de 2027.'),
     { url: link, texto: qtd === 1 ? 'Ver e baixar meu vídeo' : 'Ver e baixar meus vídeos' });
