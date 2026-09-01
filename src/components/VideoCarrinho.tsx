@@ -302,7 +302,7 @@ export function CarrinhoSheet({ numeros, thumbDe, onRemover, onAbrirVideo, onFec
           </button>
           {/* o e-mail cadastrado personaliza a promessa — a pessoa se reconhece no fluxo */}
           <p className="text-center text-on-surface-variant text-[11px] mt-2">
-            Após a confirmação de pagamento, em até 12h seus vídeos em 4K chegarão por um link
+            Após a confirmação de pagamento, em até 24h seus vídeos em 4K chegarão por um link
             no email{email ? ':' : ' cadastrado.'}
             {email && <strong className="block text-on-surface">{email}</strong>}
           </p>

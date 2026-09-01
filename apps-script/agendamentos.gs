@@ -141,6 +141,161 @@ function _videoPagos() {
     });
 }
 
+// ── Vídeo5678: e-mails ────────────────────────────────────────
+// Todos os e-mails da venda de vídeo saem DAQUI (MailApp, a mesma conta dos
+// e-mails de galeria) — nunca da ponte do servidor Linux, que assina como o
+// bot. Quem compra é a dona da galeria: nome, e-mail e hero vêm da linha dela
+// em Agendamentos, igual ao e-mail de entrega das fotos.
+function _videoDadosGaleria(galeriaId, rows, cm) {
+  const id = String(galeriaId || '').trim();
+  if (!rows) {
+    const sa = getSheet('Agendamentos');
+    if (!sa || sa.getLastRow() < 2) return null;
+    _galeriaCols(sa);
+    cm   = _colMap(sa);
+    rows = sa.getRange(2, 1, sa.getLastRow() - 1, sa.getLastColumn()).getValues();
+  }
+  const iId = cm['ID'] !== undefined ? cm['ID'] : 0;
+  const row = rows.find(function (r) { return String(r[iId] || '').trim() === id; });
+  if (!row) return null;
+  const nome   = String(_val(row, cm, 'Nome') || '').trim();
+  const pasta  = String(_val(row, cm, 'Galeria Pasta') || '').trim() || id;
+  const fotos  = String(_val(row, cm, 'Galeria Fotos') || '').split('|').filter(function (f) { return f.trim(); });
+  const hero   = String(_val(row, cm, 'Galeria Hero') || '').trim() || (fotos[0] || '');
+  const base   = _r2Base();
+  return {
+    id: id, nome: nome, primeiro: nome.split(/\s+/)[0] || nome,
+    email: String(_val(row, cm, 'E-mail') || '').trim().replace(/;/g, ',').replace(/,\s*/g, ','),
+    heroUrl: (base && hero) ? (base + '/' + pasta + '/' + hero) : '',
+    link: _galeriaLinkPublico(id),
+  };
+}
+
+// Casca comum: cabeçalho do site + a hero da PRÓPRIA galeria (a mesma foto de
+// abertura da galeria dela) + corpo + botão opcional + rodapé.
+function _videoEmailHtml(titulo, g, corpo, botao) {
+  const heroRow = g.heroUrl
+    ? '<tr><td style="padding:0;line-height:0;"><img src="' + g.heroUrl + '" width="560" alt="" style="display:block;width:100%;max-width:560px;height:auto;"></td></tr>'
+    : '';
+  const botaoRow = botao
+    ? '<table cellpadding="0" cellspacing="0" border="0" align="center" style="margin:0 auto 16px;"><tr><td bgcolor="#7a3f8f" style="background-color:#7a3f8f;border-radius:50px;">'
+      + '<a href="' + botao.url + '" style="display:inline-block;color:#ffffff;font-weight:700;font-size:14px;text-decoration:underline;padding:13px 32px;">' + botao.texto + '</a></td></tr></table>'
+      + '<p style="color:#374151;font-size:13px;margin:0 0 16px;text-align:center;">Se o botão não aparecer, use este endereço:<br><a href="' + botao.url + '" style="color:#7a3f8f;font-size:12px;word-break:break-all;">' + botao.url + '</a></p>'
+    : '';
+  return '<!DOCTYPE html><html lang="pt-BR"><head><meta charset="UTF-8"></head>'
+    + '<body style="margin:0;padding:0;background:#f4f4f5;font-family:Arial,sans-serif;">'
+    + '<table width="100%" cellpadding="0" cellspacing="0" style="background:#f4f4f5;padding:32px 0;"><tr><td align="center">'
+    + '<table width="560" cellpadding="0" cellspacing="0" style="background:#ffffff;border-radius:12px;overflow:hidden;box-shadow:0 2px 8px rgba(0,0,0,0.08);">'
+    + _emailHeader(titulo) + heroRow
+    + '<tr><td style="padding:28px 40px;"><p style="color:#374151;font-size:15px;margin:0 0 12px;">Olá, <strong>' + _escapeHtml(g.primeiro) + '</strong>!</p>'
+    + corpo + botaoRow
+    + '<p style="color:#9ca3af;font-size:12px;margin:0;text-align:center;">Qualquer dúvida, me chama no WhatsApp.</p></td></tr>'
+    + _emailFooter() + '</table></td></tr></table></body></html>';
+}
+function _p(txt) { return '<p style="color:#6b7280;font-size:14px;margin:0 0 14px;line-height:1.6;">' + txt + '</p>'; }
+
+// (1) Cliente: pagamento confirmado — o vídeo chega em até 24h por link no e-mail.
+function _videoEmailPago(g, v) {
+  const n = v.qtd === 1 ? 'seu vídeo' : 'seus ' + v.qtd + ' vídeos';
+  return _videoEmailHtml('Pagamento confirmado!', g,
+    _p('Recebi o pagamento d' + (v.qtd === 1 ? 'o seu Vídeo5678' : 'os seus ' + v.qtd + ' Vídeo5678') + ' — muito obrigado!')
+    + _p('Agora eu produzo ' + n + ' em 4K, sem marca d\'água. <strong>Em até 24 horas</strong> você recebe, neste mesmo e-mail, um link para ver e baixar.')
+    + _p('Fotos escolhidas: <strong>' + _escapeHtml(v.fotos) + '</strong> · R$ ' + v.valor),
+    { url: g.link, texto: 'Ver minha galeria' });
+}
+// (4) Cliente: entrega — agradece e pede a marcação.
+function _videoEmailEntregue(g, qtd, link) {
+  return _videoEmailHtml(qtd === 1 ? 'Seu vídeo chegou!' : 'Seus vídeos chegaram!', g,
+    _p((qtd === 1 ? 'Seu Vídeo5678 está pronto' : 'Seus ' + qtd + ' Vídeo5678 estão prontos') + ' — em 4K, sem marca d\'água.')
+    + _p('Obrigado por levar um pedacinho do Festival com você. Foi um prazer produzir isso.')
+    + _p('Se for postar, me marca que vou adorar! <a href="https://www.instagram.com/affotografia" style="color:#7a3f8f;font-weight:700;text-decoration:none;">@affotografia</a>')
+    + _p('O link fica disponível até junho de 2027.'),
+    { url: link, texto: qtd === 1 ? 'Ver e baixar meu vídeo' : 'Ver e baixar meus vídeos' });
+}
+// Interno (2 e 3): resumo curto, sem enfeite.
+function _videoEmailInterno(titulo, linhas) {
+  return '<div style="font-family:Arial,sans-serif;font-size:14px;line-height:1.6;color:#1a1a1a;"><h2 style="color:#7a3f8f;margin:0 0 12px;">' + titulo + '</h2><p>'
+    + linhas.map(function (l) { return '<strong>' + l[0] + ':</strong> ' + l[1]; }).join('<br>') + '</p></div>';
+}
+function _videoMail(opts) {
+  try { MailApp.sendEmail(opts); return true; }
+  catch (err) { addLog('EMAIL_ERRO', opts.bookingId || '', (opts.subject || '') + ': ' + err.toString(), 'video5678'); return false; }
+}
+
+// (3) Carrinho abandonado: VIDEO_PEDIDO com mais de 24h sem VIDEO_PAGO — avisa
+// André+Mari uma vez (marca VIDEO_ABANDONADO). Quem chama é a fila do Mac, a
+// cada 5 min: sem trigger de tempo no Apps Script, o relógio já existe lá.
+// Só pedidos criados depois da feature: os dois checkouts de teste do André
+// (01/09, antes disto) não viram aviso falso.
+const VIDEO_ABANDONO_DESDE = new Date('2026-09-01T21:00:00Z').getTime();
+function _videoAbandonados() {
+  const linhas = _videoLogRows();
+  const pagos = {}, avisados = {};
+  linhas.forEach(function (r) {
+    const id = String(r[2]).trim();
+    if (r[1] === 'VIDEO_PAGO')       pagos[id] = true;
+    if (r[1] === 'VIDEO_ABANDONADO') avisados[id] = true;
+  });
+  const limite = Date.now() - 24 * 3600 * 1000;
+  const saida = [];
+  linhas.forEach(function (r) {
+    if (r[1] !== 'VIDEO_PEDIDO') return;
+    const id = String(r[2]).trim();
+    const ts = r[0] instanceof Date ? r[0].getTime() : Date.parse(String(r[0]));
+    if (!id || pagos[id] || avisados[id] || !isFinite(ts) || ts > limite || ts < VIDEO_ABANDONO_DESDE) return;
+    const v = _parseVideoDetalhe(r[3]);
+    if (v.teste) return;
+    const g = _videoDadosGaleria(v.galeria) || { nome: '?', email: '?', link: '' };
+    const ok = _videoMail({
+      to: CFG.ANDRE_EMAIL, cc: CFG.MARIANE_EMAIL, bookingId: id,
+      subject: '🛒 Vídeo5678 carrinho abandonado: ' + g.nome + ' — ' + v.qtd + ' vídeo(s) · R$ ' + v.valor,
+      htmlBody: _videoEmailInterno('Carrinho abandonado há mais de 24h', [
+        ['Cliente', _escapeHtml(g.nome) + ' (' + _escapeHtml(g.email) + ')'], ['Galeria', v.galeria],
+        ['Fotos', v.fotos], ['Valor', 'R$ ' + v.valor], ['Checkout', id],
+        ['Criado em', new Date(ts).toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' })],
+        ['Galeria dela', '<a href="' + g.link + '">' + g.link + '</a>'],
+      ]),
+    });
+    if (ok) addLog('VIDEO_ABANDONADO', id, v.galeria + '|' + v.fotos + '|' + v.valor + '|' + v.qtd, 'videoAbandonados');
+    saida.push({ checkout: id, galeria: v.galeria, fotos: v.fotos, valor: v.valor, avisado: ok });
+  });
+  return saida;
+}
+
+// (4) Entrega: a fila do Mac chama depois de subir o 4K. Idempotente por checkout.
+// Payload: { action:'videoEntregue', checkout, galeria, link, qtd, teste }
+function videoEntregue(data) {
+  const id = String(data.checkout || '').trim();
+  if (!id || !data.galeria || !data.link) throw new Error('checkout, galeria e link são obrigatórios');
+  const jaFoi = _videoLogRows().some(function (r) { return r[1] === 'VIDEO_ENTREGUE' && String(r[2]).trim() === id; });
+  if (jaFoi) return { ok: true, jaEntregue: true };
+  const g = _videoDadosGaleria(data.galeria);
+  if (!g) throw new Error('galeria ' + data.galeria + ' não encontrada em Agendamentos');
+  const teste = !!data.teste;
+  const destino = teste ? CFG.ANDRE_EMAIL : g.email;
+  if (!destino) throw new Error('galeria ' + data.galeria + ' sem e-mail cadastrado');
+  const qtd = Number(data.qtd) || 1;
+  const ok = _videoMail({ to: destino, bookingId: id,
+    subject: (qtd === 1 ? 'Seu Vídeo5678 em 4K está pronto!' : 'Seus ' + qtd + ' Vídeo5678 em 4K estão prontos!') + (teste ? ' [TESTE]' : ''),
+    htmlBody: _videoEmailEntregue(g, qtd, String(data.link)) });
+  if (!ok) throw new Error('e-mail de entrega falhou (ver aba Log, EMAIL_ERRO)');
+  addLog('VIDEO_ENTREGUE', id, data.galeria + '|' + qtd + '|' + data.link + '|' + destino + (teste ? '|TESTE' : ''), 'videoEntregue');
+  return { ok: true, destino: destino };
+}
+
+// Prévia dos e-mails de cliente e do aviso interno, todos para o André, sem
+// gravar nada. GET ?action=videoTestarEmails&galeria=AG-…
+function videoTestarEmails(galeriaId) {
+  const g = _videoDadosGaleria(galeriaId);
+  if (!g) throw new Error('galeria não encontrada');
+  const v = { qtd: 2, fotos: '004,017', valor: 220, teste: true };
+  const a = _videoMail({ to: CFG.ANDRE_EMAIL, subject: '[PRÉVIA 1/3] Pagamento confirmado', htmlBody: _videoEmailPago(g, v) });
+  const b = _videoMail({ to: CFG.ANDRE_EMAIL, subject: '[PRÉVIA 2/3] Aviso interno de compra',
+    htmlBody: _videoEmailInterno('Compra de vídeos confirmada', [['Cliente', _escapeHtml(g.nome)], ['Galeria', g.id], ['Vídeos', v.qtd + ' — fotos ' + v.fotos], ['Valor', 'R$ ' + v.valor]]) });
+  const c = _videoMail({ to: CFG.ANDRE_EMAIL, subject: '[PRÉVIA 3/3] Entrega', htmlBody: _videoEmailEntregue(g, v.qtd, g.link) });
+  return { ok: a && b && c, para: CFG.ANDRE_EMAIL, hero: g.heroUrl };
+}
+
 // ── Mapa header → índice (header-based column detection) ──────
 // Usado para escrever/ler em "Agendamentos" sem assumir posição fixa.
 function _colMap(sa) {
@@ -1663,26 +1818,25 @@ function confirmBooking(data) {
         addLog('VIDEO_PAGO', stripeSession,
           v.galeria + '|' + v.fotos + '|' + v.valor + '|' + v.qtd + '|' + (v.teste ? 'TESTE' : '') + '|' + (stripePayment || ''),
           logOrigin);
-        // O aviso à Mari sai DAQUI, no mesmo ponto idempotente do VIDEO_PAGO —
+        // Os e-mails saem DAQUI, no mesmo ponto idempotente do VIDEO_PAGO —
         // exatamente uma vez. Medido em 01/09/2026: este caminho leva 2,6–5,6 s
         // e o webhook da Vercel às vezes desiste antes (o ASAAS limita a 10 s
         // no total); na reentrega do ASAAS a resposta já é alreadyPaid, então
         // um e-mail disparado pelo webhook se perdia justamente nos casos lentos.
-        try {
-          MailApp.sendEmail({
-            to: CFG.MARIANE_EMAIL, cc: CFG.ANDRE_EMAIL,
-            subject: '🎬 Vídeo5678 PAGO' + (v.teste ? ' [TESTE]' : '') + ': ' + v.galeria + ' — ' + v.qtd + ' vídeo(s) · R$ ' + v.valor,
-            htmlBody: '<div style="font-family:Arial,sans-serif;font-size:14px;line-height:1.6;color:#1a1a1a;">'
-              + '<h2 style="color:#7a3f8f;margin:0 0 12px;">Compra de vídeos confirmada' + (v.teste ? ' (TESTE)' : '') + '</h2>'
-              + '<p><strong>Galeria:</strong> ' + v.galeria + '<br>'
-              + '<strong>Vídeos:</strong> ' + v.qtd + ' — fotos ' + v.fotos + '<br>'
-              + '<strong>Valor:</strong> R$ ' + v.valor + '<br>'
-              + '<strong>Payment:</strong> ' + (stripePayment || '') + '</p>'
-              + '<p style="font-size:12px;color:#6b7280;">A produção 4K é disparada na máquina do André (fila videos5678). Prazo prometido à cliente: 12h.</p></div>',
-          });
-        } catch (err) {
-          addLog('EMAIL_ERRO', stripeSession, 'VIDEO_PAGO: ' + err.toString(), 'confirmBooking');
-        }
+        // `rows`/`cm` já estão em memória: sem segunda leitura da planilha.
+        const g = _videoDadosGaleria(v.galeria, rows, cm);
+        // (2) aviso interno — só pro André (a Mari recebe o de carrinho abandonado)
+        _videoMail({ to: CFG.ANDRE_EMAIL, bookingId: stripeSession,
+          subject: '🎬 Vídeo5678 PAGO' + (v.teste ? ' [TESTE]' : '') + ': ' + (g ? g.nome : v.galeria) + ' — ' + v.qtd + ' vídeo(s) · R$ ' + v.valor,
+          htmlBody: _videoEmailInterno('Compra de vídeos confirmada' + (v.teste ? ' (TESTE)' : ''), [
+            ['Cliente', g ? _escapeHtml(g.nome) + ' (' + _escapeHtml(g.email) + ')' : '?'], ['Galeria', v.galeria],
+            ['Vídeos', v.qtd + ' — fotos ' + v.fotos], ['Valor', 'R$ ' + v.valor], ['Payment', stripePayment || ''],
+            ['Produção', 'a fila do Mac produz o 4K e entrega em até 24h'],
+          ]) });
+        // (1) cliente — pagamento confirmado, vídeo em até 24h. TESTE vai pro André.
+        if (g) _videoMail({ to: v.teste ? CFG.ANDRE_EMAIL : g.email, bookingId: stripeSession,
+          subject: 'Pagamento confirmado — ' + (v.qtd === 1 ? 'seu Vídeo5678 chega em até 24h' : 'seus ' + v.qtd + ' Vídeo5678 chegam em até 24h') + (v.teste ? ' [TESTE]' : ''),
+          htmlBody: _videoEmailPago(g, v) });
       }
       return { ok: true, video5678: true, galeria: v.galeria, fotos: v.fotos, qtd: v.qtd,
                valorVideo: v.valor, teste: v.teste, alreadyPaid: v.jaPago };
@@ -3031,6 +3185,10 @@ function doGet(e) {
       // galeria, números de foto, valor e id de pagamento (mesmo nível da ação
       // 'bookings', que expõe bem mais).
       result = _videoPagos();
+    } else if (action === 'videoAbandonados') {
+      result = _videoAbandonados();
+    } else if (action === 'videoTestarEmails') {
+      result = videoTestarEmails(String(e.parameter.galeria || ''));
     } else if (action === 'ping') {
       result = { ok: true, ts: new Date().toISOString() };
     } else {
@@ -3066,6 +3224,7 @@ function doPost(e) {
     else if (action === 'buildClientes')   { buildClientesSheet(); result = { ok: true }; }
     else if (action === 'buildGalerias')   result = buildGaleriasSheet();
     else if (action === 'setGaleriaFotos') result = setGaleriaFotos(body);
+    else if (action === 'videoEntregue')   result = videoEntregue(body);
     else if (action === 'listGalerias')    result = listGalerias();
     else if (action === 'setGaleriaHero')  result = setGaleriaHero(body);
     else if (action === 'sendGaleriaEmails') result = sendGaleriaEmails(body);
