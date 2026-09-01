@@ -256,7 +256,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const payloadPay = (body.payment || {}) as {
       id?: string; status?: string; paymentLink?: string; checkoutSession?: string;
       externalReference?: string; installmentCount?: number; billingType?: string;
-      value?: number; description?: string;
+      value?: number;
     };
 
     // Apenas eventos definitivos de confirmação avançam o fluxo:
@@ -293,10 +293,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       id?: string; status?: string; value?: number; billingType?: string;
       checkoutSession?: string | null; paymentLink?: string | null;
       externalReference?: string | null; installmentNumber?: number;
-      // description: usada só pelo diagnóstico do desvio v5678 — o Checkout grava
-      // a lista de fotos em items[].description e ainda não se sabe se o ASAAS a
-      // espelha aqui. O log responde no próximo pagamento.
-      description?: string | null;
     };
     // verified = objeto veio da API · not_found = 404 (forjado ou ASAAS_ENV errado)
     // unavailable = API fora do ar / sem API key (token decide o fallback abaixo)
@@ -401,66 +397,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       return res.status(200).json({ received: true, ignored: true, reason: 'no slot id' });
     }
 
-    // ── Vídeo5678: pedido de vídeos, não reserva.
-    // GET /v3/checkouts/{id} NÃO EXISTE na API do ASAAS. Medido em 01/09/2026,
-    // com a chave real e em produção: POST no mesmo path responde 401 (a rota
-    // existe), GET responde 404 com corpo VAZIO (a rota não existe) — e a doc
-    // declara só POST /checkouts e POST /checkouts/{id}/cancel. O desvio inteiro
-    // dependia dessa chamada, então nunca teve chance de disparar; de quebra,
-    // gastava um round trip do orçamento de 10 s que o ASAAS concede antes de
-    // devolver 408 (docs.asaas.com/docs/erro-read-timed-out).
-    // Segundo defeito, independente e igualmente fatal: a lista de fotos era
-    // lida de `chk.description` na RAIZ, mas o ASAAS só tem description em
-    // items[] — é onde videos-checkout.ts:124 grava. Mesmo com a rota certa a
-    // lista sairia vazia (é por isso que a "Descrição" aparece vazia no painel).
-    // Agora o desvio decide pelo que JÁ está em mãos, sem rede nenhuma. Se o
-    // ASAAS não propagar o ref do Checkout pro payment, o pagamento cai no fluxo
-    // de reserva, não acha booking e dispara o alerta 🚨 pro André — visível,
-    // nunca silencioso. A junção definitiva (checkout.id em coluna própria da
-    // planilha, casada dentro do confirmBooking) depende do que este log revelar.
-    if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(String(slotId))) {
-      try {
-        const ref   = String(pay.externalReference || '');
-        const desc  = String(pay.description || '');
-        console.log(`[webhook][v5678] payment=${paymentId} slot=${JSON.stringify(String(slotId))} `
-          + `ref=${JSON.stringify(ref)} casa=${ref.startsWith('v5678|')} `
-          + `desc=${JSON.stringify(desc.slice(0, 160))}`);
-        {   // ponytail: bloco vazio herdado do `if (r.ok)` que morreu com o GET.
-            // Mantido só para não reindentar 28 linhas de e-mail num hotfix —
-            // some junto com a reestruturação da junção definitiva.
-          if (ref.startsWith('v5678|')) {
-            const [, galId, qtd] = ref.split('|');
-            const lista = (desc.match(/fotos ([\d,]+)/) || [])[1] || '';
-            const valor = Number(pay.value) || 0;
-            // idempotência barata: LockService não existe aqui; o addLog duplicado
-            // é inofensivo e o e-mail duplicado (CONFIRMED + RECEIVED do cartão) é
-            // aceitável para o volume esperado — melhor 2 avisos que 0.
-            await fetch(SCRIPT_URL, {
-              method: 'POST', headers: { 'Content-Type': 'text/plain' },
-              body: JSON.stringify({ action: 'addLog',
-                message: `VIDEO_PAGO ${galId}: ${qtd} vídeo(s) R$${valor} — fotos ${lista} — payment ${paymentId} (${evt})`,
-                origin: 'videos5678' }),
-            }).catch(() => {});
-            try {
-              const { error } = await resend.emails.send({
-                from: FROM_EMAIL, to: MARIANE_EMAIL, cc: ANDRE_EMAIL,
-                subject: `🎬 Vídeo5678 PAGO: ${galId} — ${qtd} vídeo(s) · R$ ${valor.toLocaleString('pt-BR')}`,
-                html: `<div style="font-family:Arial,sans-serif;font-size:14px;line-height:1.6;color:#1a1a1a;">
-<h2 style="color:#7a3f8f;margin:0 0 12px;">Compra de vídeos confirmada</h2>
-<p><strong>Galeria:</strong> ${galId}<br>
-<strong>Vídeos:</strong> ${qtd} — fotos ${lista}<br>
-<strong>Valor:</strong> R$ ${valor.toLocaleString('pt-BR')} · ${pay.billingType || ''}<br>
-<strong>Payment:</strong> ${paymentId} (${evt})</p>
-<p style="font-size:12px;color:#6b7280;">A produção 4K é disparada na máquina do André (fila videos5678). Prazo prometido à cliente: 12h.</p>
-</div>`,
-              });
-              if (error) console.error('[webhook] Resend v5678 error', error);
-            } catch (e) { console.error('[webhook] Resend v5678 throw', e); }
-            return res.status(200).json({ received: true, video5678: true, galeria: galId });
-          }
-        }
-      } catch (e) { console.error('[webhook] desvio v5678 falhou', e); }
-    }
+    // ── Vídeo5678: pedido de vídeos, não reserva — decidido DENTRO do
+    // confirmBooking, mais abaixo. Não há como decidir aqui: o payment do
+    // ASAAS chega sem externalReference e sem description do checkout (medido
+    // em produção em 01/09/2026, ref="" desc="") e GET /v3/checkouts/{id} não
+    // existe. O que sobrevive é payment.checkoutSession == checkout.id, que o
+    // videos-checkout.ts grava na coluna "Booking ID" da aba Log; o Apps
+    // Script casa por ele quando não acha reserva e devolve video5678:true.
 
     normalized = {
       gateway:        'asaas',
@@ -613,11 +556,42 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         whatsapp?: string; package?: string; numBailarinas?: number; valor?: number;
         paidPayerEmail?: string; isEspecial?: boolean; duration?: number;
         payerNames?: string[]; payerEmails?: string[]; payerValues?: string[];
+        // Vídeo5678: o .gs não achou reserva mas achou VIDEO_PEDIDO com este
+        // checkout.id na aba Log — já gravou o VIDEO_PAGO (idempotente) e devolve
+        // o pedido. Não é reserva: nada abaixo deste ponto se aplica.
+        video5678?: boolean; galeria?: string; fotos?: string; qtd?: number;
+        valorVideo?: number; teste?: boolean; alreadyPaid?: boolean;
       };
       // Apps Script devolve erros como HTTP 200 + {error} (ContentService não
       // controla o status) — ex.: 'Session não encontrada'. Sem essa checagem,
       // o fluxo seguia como sucesso com meta vazia.
       if (json.error) throw new Error(String(json.error));
+      if (json.video5678) {
+        const galId = String(json.galeria || '');
+        const valor = Number(json.valorVideo) || Number(normalized.amount) || 0;
+        if (json.alreadyPaid) {
+          // Cartão manda CONFIRMED e depois RECEIVED; a ASAAS reentrega em retry.
+          // O .gs viu o VIDEO_PAGO anterior — um aviso só, não dois.
+          console.log(`[webhook][v5678] ${galId} já pago (${normalized.paymentId}) — sem e-mail`);
+          return res.status(200).json({ received: true, video5678: true, galeria: galId, alreadyPaid: true });
+        }
+        try {
+          const { error } = await resend.emails.send({
+            from: FROM_EMAIL, to: MARIANE_EMAIL, cc: ANDRE_EMAIL,
+            subject: `🎬 Vídeo5678 PAGO${json.teste ? ' [TESTE]' : ''}: ${galId} — ${json.qtd} vídeo(s) · R$ ${valor.toLocaleString('pt-BR')}`,
+            html: `<div style="font-family:Arial,sans-serif;font-size:14px;line-height:1.6;color:#1a1a1a;">
+<h2 style="color:#7a3f8f;margin:0 0 12px;">Compra de vídeos confirmada${json.teste ? ' (TESTE)' : ''}</h2>
+<p><strong>Galeria:</strong> ${galId}<br>
+<strong>Vídeos:</strong> ${json.qtd} — fotos ${json.fotos || ''}<br>
+<strong>Valor:</strong> R$ ${valor.toLocaleString('pt-BR')} · ${normalized.billingType || ''}<br>
+<strong>Payment:</strong> ${normalized.paymentId}</p>
+<p style="font-size:12px;color:#6b7280;">A produção 4K é disparada na máquina do André (fila videos5678). Prazo prometido à cliente: 12h.</p>
+</div>`,
+          });
+          if (error) console.error('[webhook] Resend v5678 error', error);
+        } catch (e) { console.error('[webhook] Resend v5678 throw', e); }
+        return res.status(200).json({ received: true, video5678: true, galeria: galId });
+      }
       bookingId        = json.bookingId || '';
       alreadyConfirmed = json.alreadyConfirmed === true;
       // fullyConfirmed undefined → assume true (compat com Apps Script antigo

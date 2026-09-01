@@ -128,13 +128,29 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       installment: { maxInstallmentCount: Math.min(Math.max(parseInt(process.env.ASAAS_MAX_INSTALLMENTS || '6', 10) || 6, 1), 12) },
     });
 
-    // Rastreio na planilha (mesmo padrão de create-checkout.ts) — best-effort.
-    await fetch(SCRIPT_URL, {
+    // REGISTRO DO PEDIDO — é a chave de junção do webhook, não rastreio.
+    // O ASAAS não devolve NADA do checkout junto com o pagamento (medido em
+    // produção, 01/09/2026: payment.externalReference e payment.description
+    // chegam vazios, e GET /v3/checkouts/{id} não existe). O que sobrevive é
+    // payment.checkoutSession == checkout.id — então o id vai para a coluna
+    // "Booking ID" da aba Log, no formato legado que o doPost já aceita, e o
+    // confirmBooking do Apps Script casa por ele (aba Log, Ação VIDEO_PEDIDO).
+    // detail = galeria|fotos|valor|qtd[|TESTE] — o .gs faz split('|').
+    // Falha ALTA de propósito: sem esta linha a venda fica órfã em silêncio;
+    // melhor a cliente ver "tente de novo" do que pagar num pedido que não
+    // existe em lugar nenhum. O checkout órfão no ASAAS expira sozinho em
+    // 1440 min (minutesToExpire acima).
+    const rl = await fetch(SCRIPT_URL, {
       method: 'POST', headers: { 'Content-Type': 'text/plain' },
-      body: JSON.stringify({ action: 'addLog',
-        message: `VIDEO_PEDIDO ${id}: ${n} vídeo(s) R$${valor}${teste ? ' [TESTE]' : ''} — fotos ${lista} — checkout ${checkout.id}`,
-        origin: 'videos5678' }),
-    }).catch(() => {});
+      signal: AbortSignal.timeout(8000),
+      body: JSON.stringify({ action: 'addLog', logAction: 'VIDEO_PEDIDO',
+        bookingId: checkout.id,
+        detail:    `${id}|${lista}|${valor}|${n}${teste ? '|TESTE' : ''}`,
+        origin:    'videos5678' }),
+    });
+    // Apps Script devolve erro como HTTP 200 + {error} — checar os dois.
+    const jl = await rl.json().catch(() => ({ error: 'resposta inválida' })) as { error?: string };
+    if (!rl.ok || jl.error) throw new Error(`registro do pedido falhou: ${jl.error || rl.status}`);
 
     return res.status(200).json({ url: checkout.link, valor });
   } catch (e) {

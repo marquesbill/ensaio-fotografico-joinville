@@ -94,6 +94,53 @@ function addLog(action, bookingId, detail, origin) {
   sh.appendRow([nowIso(), action, bookingId || '', detail || '', origin || '']);
 }
 
+// ── Vídeo5678: junção pedido↔pagamento pela aba Log ───────────
+// O ASAAS não devolve nada do checkout junto com o pagamento (externalReference
+// e description chegam vazios; GET /v3/checkouts/{id} não existe) — medido em
+// produção em 01/09/2026. O que sobrevive é payment.checkoutSession ==
+// checkout.id, que o videos-checkout.ts grava aqui na coluna "Booking ID" com
+// Ação VIDEO_PEDIDO e Detalhe "galeria|fotos|valor|qtd[|TESTE]". O VIDEO_PAGO
+// que o confirmBooking grava acrescenta "|payment" na 6ª posição.
+function _videoLogRows() {
+  const sh = getSheet('Log');
+  if (!sh || sh.getLastRow() < 2) return [];
+  const last = sh.getLastRow();
+  const ini  = Math.max(2, last - 3000);       // só o rabo: a aba cresce sem parar
+  return sh.getRange(ini, 1, last - ini + 1, 5).getValues();   // [ts, ação, bookingId, detalhe, origem]
+}
+function _parseVideoDetalhe(detalhe) {
+  const p = String(detalhe || '').split('|');
+  return { galeria: p[0] || '', fotos: p[1] || '', valor: Number(p[2]) || 0,
+           qtd: parseInt(p[3], 10) || 0, teste: p[4] === 'TESTE', payment: p[5] || '' };
+}
+// Pedido de vídeo com este checkout.id — ou null. Exige Ação == VIDEO_PEDIDO E
+// Booking ID == id: só o id abriria porta a colisão com outra ação.
+function _videoPedido(checkoutId) {
+  const id = String(checkoutId || '').trim();
+  if (!id) return null;
+  let pedido = null, pago = null;
+  _videoLogRows().forEach(function (r) {
+    if (String(r[2]).trim() !== id) return;
+    if (r[1] === 'VIDEO_PEDIDO') pedido = r;
+    if (r[1] === 'VIDEO_PAGO')   pago   = r;
+  });
+  if (!pedido) return null;
+  const d = _parseVideoDetalhe(pedido[3]);
+  d.checkout = id; d.jaPago = !!pago;
+  return d;
+}
+// Pedidos pagos, do mais antigo ao mais novo — a fila do Mac lê daqui.
+function _videoPagos() {
+  return _videoLogRows()
+    .filter(function (r) { return r[1] === 'VIDEO_PAGO'; })
+    .map(function (r) {
+      const d = _parseVideoDetalhe(r[3]);
+      d.checkout = String(r[2]).trim();
+      d.ts = r[0] instanceof Date ? r[0].toISOString() : String(r[0]);
+      return d;
+    });
+}
+
 // ── Mapa header → índice (header-based column detection) ──────
 // Usado para escrever/ler em "Agendamentos" sem assumir posição fixa.
 function _colMap(sa) {
@@ -1606,7 +1653,20 @@ function confirmBooking(data) {
   const idx = rows.findIndex(function(r) {
     return splitCsv(r[iSes]).indexOf(stripeSession) !== -1;
   });
-  if (idx < 0) throw new Error('Session não encontrada: ' + stripeSession);
+  if (idx < 0) {
+    // Vídeo5678: não é reserva — é pedido de vídeo com este checkout.id?
+    // (ver _videoPedido). Grava o VIDEO_PAGO uma vez só e devolve o pedido;
+    // o webhook decide o e-mail. Append-only: sem LockService.
+    const v = _videoPedido(stripeSession);
+    if (v) {
+      if (!v.jaPago) addLog('VIDEO_PAGO', stripeSession,
+        v.galeria + '|' + v.fotos + '|' + v.valor + '|' + v.qtd + '|' + (v.teste ? 'TESTE' : '') + '|' + (stripePayment || ''),
+        logOrigin);
+      return { ok: true, video5678: true, galeria: v.galeria, fotos: v.fotos, qtd: v.qtd,
+               valorVideo: v.valor, teste: v.teste, alreadyPaid: v.jaPago };
+    }
+    throw new Error('Session não encontrada: ' + stripeSession);
+  }
 
   const row     = rows[idx];
   const shRow   = idx + 2;
@@ -2942,6 +3002,13 @@ function doGet(e) {
 
         result = { site30min: site30min, admin48h: admin48h };
       }
+    } else if (action === 'videoPagos') {
+      // Fila de produção do Mac (videos5678/pedidos5678.py) lê daqui. A fonte é
+      // o VIDEO_PAGO que o confirmBooking gravou DEPOIS de o webhook verificar o
+      // pagamento na API do ASAAS — sem chave do ASAAS no laptop. Expõe só id de
+      // galeria, números de foto, valor e id de pagamento (mesmo nível da ação
+      // 'bookings', que expõe bem mais).
+      result = _videoPagos();
     } else if (action === 'ping') {
       result = { ok: true, ts: new Date().toISOString() };
     } else {
