@@ -402,16 +402,19 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     // decide o desvio antes do fluxo de booking. Falhou o GET? Segue o fluxo
     // normal: o pareamento por checkoutSession não vai achar booking e o
     // alerta existente avisa o André — nada some em silêncio.
+    // A lista de vídeos NÃO vem do ref (só id+qtd, ≤100 chars) — vem da
+    // description do checkout, que carrega a lista completa (480 chars).
     if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(String(slotId))) {
       try {
         const r = await fetch(`${ASAAS_BASE}/checkouts/${slotId}`, {
           headers: { access_token: ASAAS_API_KEY, 'User-Agent': 'J26-EnsaioJoinville-Webhook/1.0' },
         });
         if (r.ok) {
-          const chk = await r.json() as { externalReference?: string };
+          const chk = await r.json() as { externalReference?: string; description?: string };
           const ref = String(chk.externalReference || '');
           if (ref.startsWith('v5678|')) {
-            const [, galId, qtd, lista] = ref.split('|');
+            const [, galId, qtd] = ref.split('|');
+            const lista = (String(chk.description || '').match(/fotos ([\d,]+)/) || [])[1] || '';
             const valor = Number(pay.value) || 0;
             // idempotência barata: LockService não existe aqui; o addLog duplicado
             // é inofensivo e o e-mail duplicado (CONFIRMED + RECEIVED do cartão) é

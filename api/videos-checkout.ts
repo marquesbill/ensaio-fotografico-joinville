@@ -23,6 +23,15 @@ export function precoVideos(n: number): number {
   return n <= 6 ? TABELA[n] : 520 + 60 * (n - 6);
 }
 
+// GALERIA DE TESTE — R$5 fixo, qualquer quantidade (André, 31/08/2026).
+// Existe só para o André exercer o fluxo de pagamento ASAAS ponta a ponta com
+// dinheiro real sem gastar R$120. NAO e uma galeria de cliente.
+// REMOVER depois do teste: enquanto este ID existir, quem tiver o link dele
+// compra vídeo a R$5. O ID é de uma galeria criada só para isso — nenhuma
+// cliente o recebe.
+const GALERIA_TESTE = process.env.VIDEOS_GALERIA_TESTE || '';
+const PRECO_TESTE = 5;
+
 /* ── ASAAS (inline, mesmo padrão de admin-bookings.ts) ── */
 const ASAAS_API_KEY = process.env.ASAAS_API_KEY || '';
 const ASAAS_BASE = (process.env.ASAAS_ENV || 'production').toLowerCase() === 'sandbox'
@@ -94,14 +103,15 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
 
     const n     = numeros.length;
-    const valor = precoVideos(n);
+    const teste = !!GALERIA_TESTE && id === GALERIA_TESTE;
+    const valor = teste ? PRECO_TESTE : precoVideos(n);
     const lista = numeros.join(',');
     const galeriaUrl = `${SITE}/galeria/${id}?t=${t}`;
 
-    // externalReference ≤100 chars (regra ASAAS): id + quantidade sempre cabem;
-    // a lista completa fica no addLog e na description.
-    let ref = `v5678|${id}|${n}|${lista}`;
-    if (ref.length > 100) ref = `${`v5678|${id}|${n}|`}${lista.slice(0, 100 - `v5678|${id}|${n}|`.length - 1)}…`;
+    // externalReference ≤100 chars (regra ASAAS): a lista de vídeos NÃO vai
+    // aqui (>20 vídeos estourava o limite e truncava em silêncio) — só no
+    // addLog e na description (480 chars, sempre cabe até 50 vídeos).
+    const ref = `v5678|${id}|${n}`;
 
     const checkout = await asaasApi<{ id: string; link: string }>('/checkouts', {
       billingTypes:      ['CREDIT_CARD', 'PIX'],
@@ -122,7 +132,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     await fetch(SCRIPT_URL, {
       method: 'POST', headers: { 'Content-Type': 'text/plain' },
       body: JSON.stringify({ action: 'addLog',
-        message: `VIDEO_PEDIDO ${id}: ${n} vídeo(s) R$${valor} — fotos ${lista} — checkout ${checkout.id}`,
+        message: `VIDEO_PEDIDO ${id}: ${n} vídeo(s) R$${valor}${teste ? ' [TESTE]' : ''} — fotos ${lista} — checkout ${checkout.id}`,
         origin: 'videos5678' }),
     }).catch(() => {});
 
