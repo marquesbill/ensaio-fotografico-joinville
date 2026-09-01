@@ -256,7 +256,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const payloadPay = (body.payment || {}) as {
       id?: string; status?: string; paymentLink?: string; checkoutSession?: string;
       externalReference?: string; installmentCount?: number; billingType?: string;
-      value?: number;
+      value?: number; description?: string;
     };
 
     // Apenas eventos definitivos de confirmação avançam o fluxo:
@@ -293,6 +293,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       id?: string; status?: string; value?: number; billingType?: string;
       checkoutSession?: string | null; paymentLink?: string | null;
       externalReference?: string | null; installmentNumber?: number;
+      // description: usada só pelo diagnóstico do desvio v5678 — o Checkout grava
+      // a lista de fotos em items[].description e ainda não se sabe se o ASAAS a
+      // espelha aqui. O log responde no próximo pagamento.
+      description?: string | null;
     };
     // verified = objeto veio da API · not_found = 404 (forjado ou ASAAS_ENV errado)
     // unavailable = API fora do ar / sem API key (token decide o fallback abaixo)
@@ -397,34 +401,36 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       return res.status(200).json({ received: true, ignored: true, reason: 'no slot id' });
     }
 
-    // ── Vídeo5678: pedido de vídeos, não reserva. O externalReference v5678|…
-    // vive no CHECKOUT (o payment vem com null) — um GET /checkouts/{uuid}
-    // decide o desvio antes do fluxo de booking. Falhou o GET? Segue o fluxo
-    // normal: o pareamento por checkoutSession não vai achar booking e o
-    // alerta existente avisa o André — nada some em silêncio.
-    // A lista de vídeos NÃO vem do ref (só id+qtd, ≤100 chars) — vem da
-    // description do checkout, que carrega a lista completa (480 chars).
+    // ── Vídeo5678: pedido de vídeos, não reserva.
+    // GET /v3/checkouts/{id} NÃO EXISTE na API do ASAAS. Medido em 01/09/2026,
+    // com a chave real e em produção: POST no mesmo path responde 401 (a rota
+    // existe), GET responde 404 com corpo VAZIO (a rota não existe) — e a doc
+    // declara só POST /checkouts e POST /checkouts/{id}/cancel. O desvio inteiro
+    // dependia dessa chamada, então nunca teve chance de disparar; de quebra,
+    // gastava um round trip do orçamento de 10 s que o ASAAS concede antes de
+    // devolver 408 (docs.asaas.com/docs/erro-read-timed-out).
+    // Segundo defeito, independente e igualmente fatal: a lista de fotos era
+    // lida de `chk.description` na RAIZ, mas o ASAAS só tem description em
+    // items[] — é onde videos-checkout.ts:124 grava. Mesmo com a rota certa a
+    // lista sairia vazia (é por isso que a "Descrição" aparece vazia no painel).
+    // Agora o desvio decide pelo que JÁ está em mãos, sem rede nenhuma. Se o
+    // ASAAS não propagar o ref do Checkout pro payment, o pagamento cai no fluxo
+    // de reserva, não acha booking e dispara o alerta 🚨 pro André — visível,
+    // nunca silencioso. A junção definitiva (checkout.id em coluna própria da
+    // planilha, casada dentro do confirmBooking) depende do que este log revelar.
     if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(String(slotId))) {
       try {
-        const r = await fetch(`${ASAAS_BASE}/checkouts/${slotId}`, {
-          headers: { access_token: ASAAS_API_KEY, 'User-Agent': 'J26-EnsaioJoinville-Webhook/1.0' },
-        });
-        // DIAGNOSTICO (temporario): o desvio v5678 nao disparou no 1o pagamento
-        // real (01/09) e o log nao mostrava por que — sem ver a resposta do
-        // ASAAS nao da para saber se o GET falhou, se o externalReference vem
-        // com outro nome, ou se vem vazio. Loga forma, nunca conteudo sensivel.
-        const _txt = await r.clone().text().catch(() => '');
-        let _keys: string[] = [];
-        try { _keys = Object.keys(JSON.parse(_txt) as object); } catch { /* nao-JSON */ }
-        console.log(`[webhook][v5678] GET /checkouts ${r.status} keys=${_keys.join(',')} `
-          + `len=${_txt.length} amostra=${_txt.slice(0, 400)}`);
-        if (r.ok) {
-          const chk = await r.json() as { externalReference?: string; description?: string };
-          const ref = String(chk.externalReference || '');
-          console.log(`[webhook][v5678] ref=${JSON.stringify(ref)} casa=${ref.startsWith('v5678|')}`);
+        const ref   = String(pay.externalReference || '');
+        const desc  = String(pay.description || '');
+        console.log(`[webhook][v5678] payment=${paymentId} slot=${JSON.stringify(String(slotId))} `
+          + `ref=${JSON.stringify(ref)} casa=${ref.startsWith('v5678|')} `
+          + `desc=${JSON.stringify(desc.slice(0, 160))}`);
+        {   // ponytail: bloco vazio herdado do `if (r.ok)` que morreu com o GET.
+            // Mantido só para não reindentar 28 linhas de e-mail num hotfix —
+            // some junto com a reestruturação da junção definitiva.
           if (ref.startsWith('v5678|')) {
             const [, galId, qtd] = ref.split('|');
-            const lista = (String(chk.description || '').match(/fotos ([\d,]+)/) || [])[1] || '';
+            const lista = (desc.match(/fotos ([\d,]+)/) || [])[1] || '';
             const valor = Number(pay.value) || 0;
             // idempotência barata: LockService não existe aqui; o addLog duplicado
             // é inofensivo e o e-mail duplicado (CONFIRMED + RECEIVED do cartão) é
@@ -453,7 +459,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             return res.status(200).json({ received: true, video5678: true, galeria: galId });
           }
         }
-      } catch (e) { console.error('[webhook] v5678 checkout lookup falhou', e); }
+      } catch (e) { console.error('[webhook] desvio v5678 falhou', e); }
     }
 
     normalized = {
@@ -569,7 +575,19 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   let espPayerNames:  string[] = [];
   let espPayerEmails: string[] = [];
   let espPayerValues: string[] = [];
-  for (let attempt = 1; attempt <= 3; attempt++) {
+  // ORÇAMENTO DE TEMPO. O ASAAS espera 10 s pela resposta e depois devolve 408
+  // "Read timed out" (docs.asaas.com/docs/erro-read-timed-out); 15 falhas
+  // consecutivas pausam a fila de webhooks. Em 01/09/2026 uma execução real
+  // gastou 11,85 s — 8,0 s do timeout abaixo + 0,5 s de backoff + o resto — e
+  // levou 408 mesmo tendo respondido 200: a resposta chegou tarde demais.
+  // Três tentativas eram contraproducentes: o ASAAS JÁ reentrega o evento por
+  // conta própria, então o retry interno não ganha nada e produz exatamente o
+  // 408 que causa a reentrega. Uma tentativa curta cabe no orçamento; se o Apps
+  // Script estiver lento, o alerta 🚨 abaixo avisa o André e a reentrega do
+  // ASAAS tenta de novo com a função descansada.
+  const CONFIRM_TENTATIVAS = 1;
+  const CONFIRM_TIMEOUT_MS = 4000;
+  for (let attempt = 1; attempt <= CONFIRM_TENTATIVAS; attempt++) {
     try {
       const r = await fetch(SCRIPT_URL, {
         method: 'POST',
@@ -583,7 +601,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         }),
         // Apps Script lento não pode estourar o budget da função (não-200 pra
         // ASAAS conta pras 15 falhas que interrompem a fila).
-        signal: AbortSignal.timeout(8000),
+        signal: AbortSignal.timeout(CONFIRM_TIMEOUT_MS),
       });
       if (!r.ok) throw new Error(`HTTP ${r.status}`);
       const json = await r.json() as {
@@ -630,13 +648,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       break;
     } catch (e) {
       confirmFailed = e instanceof Error ? e.message : String(e);
-      console.error(`[webhook] confirmBooking attempt ${attempt}/3 failed:`, confirmFailed);
+      console.error(`[webhook] confirmBooking attempt ${attempt}/${CONFIRM_TENTATIVAS} failed:`, confirmFailed);
       // Erros determinísticos do Apps Script (a linha não existe — ex.: link
       // de split regenerado, pending apagado) não mudam com retry; insistir só
       // atrasa a resposta e, no replay pós-reativação da fila, multiplica
       // chamadas e alertas.
       if (/Session não encontrada|Planilha vazia/i.test(confirmFailed)) break;
-      if (attempt < 3) await new Promise(r => setTimeout(r, 500 * attempt));
+      if (attempt < CONFIRM_TENTATIVAS) await new Promise(r => setTimeout(r, 500 * attempt));
     }
   }
 
