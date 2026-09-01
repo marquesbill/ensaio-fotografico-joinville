@@ -409,9 +409,19 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         const r = await fetch(`${ASAAS_BASE}/checkouts/${slotId}`, {
           headers: { access_token: ASAAS_API_KEY, 'User-Agent': 'J26-EnsaioJoinville-Webhook/1.0' },
         });
+        // DIAGNOSTICO (temporario): o desvio v5678 nao disparou no 1o pagamento
+        // real (01/09) e o log nao mostrava por que — sem ver a resposta do
+        // ASAAS nao da para saber se o GET falhou, se o externalReference vem
+        // com outro nome, ou se vem vazio. Loga forma, nunca conteudo sensivel.
+        const _txt = await r.clone().text().catch(() => '');
+        let _keys: string[] = [];
+        try { _keys = Object.keys(JSON.parse(_txt) as object); } catch { /* nao-JSON */ }
+        console.log(`[webhook][v5678] GET /checkouts ${r.status} keys=${_keys.join(',')} `
+          + `len=${_txt.length} amostra=${_txt.slice(0, 400)}`);
         if (r.ok) {
           const chk = await r.json() as { externalReference?: string; description?: string };
           const ref = String(chk.externalReference || '');
+          console.log(`[webhook][v5678] ref=${JSON.stringify(ref)} casa=${ref.startsWith('v5678|')}`);
           if (ref.startsWith('v5678|')) {
             const [, galId, qtd] = ref.split('|');
             const lista = (String(chk.description || '').match(/fotos ([\d,]+)/) || [])[1] || '';
