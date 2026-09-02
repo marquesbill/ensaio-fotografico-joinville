@@ -285,6 +285,82 @@ function videoEntregue(data) {
 
 // Prévia dos e-mails de cliente e do aviso interno, todos para o André, sem
 // gravar nada. GET ?action=videoTestarEmails&galeria=AG-…
+// ── Vídeo5678: e-mail de campanha ─────────────────────────────
+// Peça de anúncio, não transacional: o GIF é um vídeo da PRÓPRIA galeria dela
+// (gerado no Mac e hospedado em <base>/promo/<id>.gif). Estrutura de e-mail —
+// tabela, estilo inline, fonte web-safe: Georgia no título (ecoa a serifada do
+// site) e Arial no corpo. Faixa preta atrás do vídeo pelo mesmo motivo do
+// lightbox da galeria: a imagem ocupa o palco.
+// A marca d'água aparece de propósito — é ela que sustenta o argumento do 4K limpo.
+function _videoPromoHtml(primeiro, nVideos, link, gifUrl) {
+  const ROXO = '#7a3f8f', CORAL = '#e87060', PRETO = '#14101c';
+  const plural = nVideos !== 1;
+  const p = function (txt, extra) {
+    return '<p style="color:#4b4553;font-size:15px;line-height:1.65;margin:0 0 ' + (extra || '14px') + ';">' + txt + '</p>';
+  };
+  return '<!DOCTYPE html><html lang="pt-BR"><head><meta charset="UTF-8">'
+    + '<meta name="viewport" content="width=device-width,initial-scale=1"></head>'
+    + '<body style="margin:0;padding:0;background:#f4f4f5;font-family:Arial,sans-serif;">'
+    // linha de prévia da caixa de entrada (invisível no corpo)
+    + '<div style="display:none;max-height:0;overflow:hidden;opacity:0;">Uma segunda câmera estava filmando enquanto eu fotografava — e '
+    + (plural ? 'os seus vídeos estão' : 'o seu vídeo está') + ' na sua galeria.</div>'
+    + '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background:#f4f4f5;padding:32px 0;">'
+    + '<tr><td align="center">'
+    + '<table role="presentation" width="560" cellpadding="0" cellspacing="0" border="0" style="width:560px;max-width:560px;background:#ffffff;border-radius:12px;overflow:hidden;box-shadow:0 2px 8px rgba(0,0,0,0.08);">'
+    + '<tr><td bgcolor="' + ROXO + '" style="background-color:' + ROXO + ';background:linear-gradient(135deg,' + ROXO + ',' + CORAL + ');padding:28px 40px;text-align:center;">'
+    +   '<h1 style="color:#ffffff;margin:0;font-size:20px;font-weight:800;font-family:Arial,sans-serif;">Ensaio Fotográfico em Joinville</h1>'
+    +   '<p style="color:rgba(255,255,255,0.85);margin:6px 0 0;font-size:13px;">Hotel Le Village · 20 Jul – 02 Ago 2026</p></td></tr>'
+    + '<tr><td bgcolor="' + PRETO + '" style="background-color:' + PRETO + ';padding:34px 20px 26px;text-align:center;">'
+    +   '<p style="margin:0 0 22px;color:#ffffff;font-family:Georgia,\'Times New Roman\',serif;font-size:30px;font-style:italic;line-height:1.15;letter-spacing:-0.01em;">5, 6, 7, 8&hellip;</p>'
+    +   '<img src="' + gifUrl + '" width="260" alt="Prévia de um vídeo de ' + _escapeHtml(primeiro) + ' — o momento antes da foto"'
+    +   ' style="display:block;margin:0 auto;width:260px;max-width:80%;height:auto;border:0;outline:none;text-decoration:none;">'
+    +   '<p style="margin:16px 0 0;color:#8b7fa0;font-size:12px;font-family:Arial,sans-serif;">um dos seus &middot; prévia, com marca d\'água</p></td></tr>'
+    + '<tr><td style="padding:30px 40px 2px;">'
+    +   '<p style="color:#1a1720;font-size:16px;margin:0 0 16px;">Olá, <strong>' + _escapeHtml(primeiro) + '</strong>!</p>'
+    +   p('Enquanto eu fotografava, uma segunda câmera estava filmando.')
+    +   p('Ela guardou a contagem antes do movimento, o clarão do flash e — no mesmo segundo — a foto que nasceu dali. É isso que você acabou de ver aí em cima.')
+    +   p('<strong style="color:#1a1720;">' + nVideos + ' das suas fotos têm vídeo.</strong> Cada um dura poucos segundos, é vertical e já sai pronto para o Instagram.')
+    +   p('O que está na galeria é uma prévia, com marca d\'água. O que você leva vem em <strong style="color:#1a1720;">4K, sem marca</strong>, e chega neste e-mail em até 24 horas depois da confirmação de pagamento.', '22px')
+    + '</td></tr>'
+    + '<tr><td style="padding:14px 40px 32px;text-align:center;">'
+    // bgcolor sólido (atributo, não CSS): Outlook/Hotmail descartam gradiente e o
+    // texto branco sumia — incidente real em 15/08/2026.
+    +   '<table role="presentation" cellpadding="0" cellspacing="0" border="0" align="center" style="margin:0 auto 14px;">'
+    +   '<tr><td bgcolor="' + ROXO + '" style="background-color:' + ROXO + ';border-radius:50px;">'
+    +   '<a href="' + link + '" style="display:inline-block;color:#ffffff;font-weight:700;font-size:15px;text-decoration:none;padding:14px 34px;font-family:Arial,sans-serif;">Ver ' + (plural ? 'meus vídeos' : 'meu vídeo') + '</a>'
+    +   '</td></tr></table>'
+    +   '<p style="color:#6b6577;font-size:12px;margin:0 0 4px;">Se o botão não abrir, use este endereço:</p>'
+    +   '<p style="margin:0 0 18px;"><a href="' + link + '" style="color:' + ROXO + ';font-size:12px;word-break:break-all;">' + link + '</a></p>'
+    +   '<p style="color:#4b4553;font-size:14px;margin:0;">Se for postar, me marca que vou adorar! '
+    +   '<a href="https://www.instagram.com/affotografia" style="color:' + ROXO + ';font-weight:700;text-decoration:none;">@affotografia</a></p></td></tr>'
+    + _emailFooter() + '</table></td></tr></table></body></html>';
+}
+
+// Monta a peça para uma galeria. `paraTeste` desvia o envio para o André e não
+// grava nada — dry-run de verdade, igual ao testTo do e-mail de entrega.
+// GET ?action=videoPromo&galeria=AG-…[&enviar=1]
+function videoPromo(galeriaId, nVideos, enviar) {
+  const g = _videoDadosGaleria(galeriaId);
+  if (!g) throw new Error('galeria ' + galeriaId + ' não encontrada');
+  const base = _r2Base();
+  if (!base) throw new Error('R2_PUBLIC_URL não configurada');
+  const n = Number(nVideos) || 0;
+  // A contagem e a existência do GIF vêm conferidas de quem chama (o Mac lê o
+  // v/index.json e o próprio arquivo no R2). Evita UrlFetchApp aqui — o script
+  // nunca precisou de rede, e pedir o escopo external_request obrigaria o André
+  // a reautorizar a implantação inteira só por causa de duas checagens.
+  if (n < 1) throw new Error('nVideos inválido (' + nVideos + ') — quem chama informa');
+  const gif = base + '/promo/' + galeriaId + '.gif';
+  const html = _videoPromoHtml(g.primeiro, n, g.link, gif);
+  const destino = enviar ? g.email : CFG.ANDRE_EMAIL;
+  if (!destino) throw new Error('galeria sem e-mail cadastrado');
+  const assunto = '5, 6, 7, 8 — tem vídeo nas suas fotos, ' + g.primeiro + (enviar ? '' : ' [TESTE]');
+  const ok = _videoMail({ to: destino, bookingId: galeriaId, subject: assunto, htmlBody: html });
+  if (!ok) throw new Error('envio falhou (ver aba Log, EMAIL_ERRO)');
+  if (enviar) addLog('VIDEO_PROMO', galeriaId, g.email + '|' + n, 'videoPromo');
+  return { ok: true, destino: destino, videos: n, gif: gif, teste: !enviar };
+}
+
 function videoTestarEmails(galeriaId) {
   const g = _videoDadosGaleria(galeriaId);
   if (!g) throw new Error('galeria não encontrada');
@@ -3187,6 +3263,9 @@ function doGet(e) {
       result = _videoPagos();
     } else if (action === 'videoAbandonados') {
       result = _videoAbandonados();
+    } else if (action === 'videoPromo') {
+      // enviar=1 manda para a CLIENTE; sem isso vai para o André (dry-run).
+      result = videoPromo(String(e.parameter.galeria || ''), e.parameter.n, String(e.parameter.enviar || '') === '1');
     } else if (action === 'videoTestarEmails') {
       result = videoTestarEmails(String(e.parameter.galeria || ''));
     } else if (action === 'ping') {
