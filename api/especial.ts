@@ -24,7 +24,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
   try {
     const r = await fetch(
-      `${SCRIPT_URL}?action=especialById&id=${encodeURIComponent(id)}&t=${Date.now()}`,
+      `${SCRIPT_URL}?secret=${encodeURIComponent(SECRET)}&action=especialById&id=${encodeURIComponent(id)}&t=${Date.now()}`,
       { cache: 'no-store' },
     );
     const data = await r.json() as { error?: string } | null;

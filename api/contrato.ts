@@ -54,7 +54,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     if (isDemo) return res.status(200).json({ ...DEMO, contractVersion: CONTRACT_VERSION });
     try {
       const r = await fetch(
-        `${SCRIPT_URL}?action=contratoById&id=${encodeURIComponent(id)}&t=${Date.now()}`,
+        `${SCRIPT_URL}?secret=${encodeURIComponent(SECRET)}&action=contratoById&id=${encodeURIComponent(id)}&t=${Date.now()}`,
         { cache: 'no-store' },
       );
       const txt = await r.text();
@@ -81,7 +81,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       const r = await fetch(`${SCRIPT_URL}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'recordContractAcceptance', id, cpf, ip, userAgent: ua, contractVersion: CONTRACT_VERSION }),
+        body: JSON.stringify({ secret: SECRET, action: 'recordContractAcceptance', id, cpf, ip, userAgent: ua, contractVersion: CONTRACT_VERSION }),
       });
       const txt = await r.text();
       let data: { error?: string; payUrl?: string } | null = null;

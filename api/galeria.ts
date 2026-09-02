@@ -44,7 +44,7 @@ async function gs(action: string, body: Record<string, unknown>) {
   const r = await fetch(SCRIPT_URL, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ action, ...body }),
+    body: JSON.stringify({ secret: SECRET, action, ...body }),
   });
   const txt = await r.text();
   try { return JSON.parse(txt) as Record<string, unknown>; }
@@ -75,7 +75,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     if (req.method === 'GET') {
       if (isDemo) return res.status(200).json({ ...DEMO, termoVersion: TERMO_VERSION });
       const r = await fetch(
-        `${SCRIPT_URL}?action=galeriaById&id=${encodeURIComponent(id)}&t=${Date.now()}`,
+        `${SCRIPT_URL}?secret=${encodeURIComponent(SECRET)}&action=galeriaById&id=${encodeURIComponent(id)}&t=${Date.now()}`,
         { cache: 'no-store' },
       );
       const txt = await r.text();

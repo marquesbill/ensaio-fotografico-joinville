@@ -540,6 +540,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         method: 'POST',
         headers: { 'Content-Type': 'text/plain' },
         body: JSON.stringify({
+          secret: ESP_SECRET,
           action:        'confirmBooking',
           stripeSession: normalized.externalSlotId,
           stripePayment: normalized.paymentId,

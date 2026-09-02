@@ -3003,7 +3003,7 @@ async function handleCancel(req: VercelRequest, res: VercelResponse, auth: { use
   try {
     await fetch(SCRIPT_URL, {
       method: 'POST', headers: { 'Content-Type': 'text/plain' },
-      body: JSON.stringify({ action: 'cancelBooking', bookingId, reason }),
+      body: JSON.stringify({ secret: SECRET, action: 'cancelBooking', bookingId, reason }),
     });
   } catch (e) {
     console.error('[admin-bookings/cancel] cancelBooking error', e);
@@ -3013,7 +3013,7 @@ async function handleCancel(req: VercelRequest, res: VercelResponse, auth: { use
   const logMsg = `${auth.user} cancelou ensaio de ${name} (${fmtDate(date)} ${time}) — motivo: ${reason}`;
   await fetch(SCRIPT_URL, {
     method: 'POST', headers: { 'Content-Type': 'text/plain' },
-    body: JSON.stringify({ action: 'addLog', message: logMsg, origin: 'painel' }),
+    body: JSON.stringify({ secret: SECRET, action: 'addLog', message: logMsg, origin: 'painel' }),
   }).catch(e => console.error('[admin-bookings/cancel] addLog error', e));
 
   const isEspecial = String(packageKey || '').toLowerCase() === 'especial'
@@ -3120,6 +3120,7 @@ async function handleConfirm(req: VercelRequest, res: VercelResponse, auth: { us
     const r = await fetch(SCRIPT_URL, {
       method: 'POST', headers: { 'Content-Type': 'text/plain' },
       body: JSON.stringify({
+        secret: SECRET,
         action:        'forceConfirmBooking',
         bookingId,
         stripePayment: `admin-manual-${Date.now()}`,
@@ -3148,7 +3149,7 @@ async function handleConfirm(req: VercelRequest, res: VercelResponse, auth: { us
   const logMsg = `${auth.user} confirmou manualmente o pagamento de ${finalName} — ${fmtDate(finalDate)} ${finalTime} (${pkg.name})`;
   await fetch(SCRIPT_URL, {
     method: 'POST', headers: { 'Content-Type': 'text/plain' },
-    body: JSON.stringify({ action: 'addLog', message: logMsg, origin: 'painel' }),
+    body: JSON.stringify({ secret: SECRET, action: 'addLog', message: logMsg, origin: 'painel' }),
   }).catch(() => {});
 
   // Se já estava confirmado, não reenvia e-mails (idempotente — evita spam
@@ -3234,6 +3235,7 @@ async function handleConfirmPart(req: VercelRequest, res: VercelResponse, auth: 
     const r = await fetch(SCRIPT_URL, {
       method: 'POST', headers: { 'Content-Type': 'text/plain' },
       body: JSON.stringify({
+        secret: SECRET,
         action:        'confirmBooking',
         stripeSession,
         stripePayment: `admin-manual-${Date.now()}`,
@@ -3271,7 +3273,7 @@ async function handleConfirmPart(req: VercelRequest, res: VercelResponse, auth: 
   const logMsg = `${auth.user} confirmou manualmente o pagador ${pName || stripeSession.slice(0, 8)} de ${finalName} (${paidCount}/${totalSessions})`;
   await fetch(SCRIPT_URL, {
     method: 'POST', headers: { 'Content-Type': 'text/plain' },
-    body: JSON.stringify({ action: 'addLog', message: logMsg, origin: 'painel' }),
+    body: JSON.stringify({ secret: SECRET, action: 'addLog', message: logMsg, origin: 'painel' }),
   }).catch(() => {});
 
   // Já estava paga essa parte (ou booking já confirmado) — nada de e-mail.
@@ -3448,7 +3450,7 @@ async function handleCreate(req: VercelRequest, res: VercelResponse, auth: { use
   // Pre-flight: confirma que o slot ainda está livre antes de qualquer escrita
   try {
     const durParam  = isEspecial ? `&duration=${duration}` : '';
-    const slotsRes  = await fetch(`${SCRIPT_URL}?action=slots&date=${encodeURIComponent(date)}&package=${encodeURIComponent(packageKey)}${durParam}&t=${Date.now()}`, { cache: 'no-store' });
+    const slotsRes  = await fetch(`${SCRIPT_URL}?secret=${encodeURIComponent(SECRET)}&action=slots&date=${encodeURIComponent(date)}&package=${encodeURIComponent(packageKey)}${durParam}&t=${Date.now()}`, { cache: 'no-store' });
     const slotsJson = await slotsRes.json() as { slots?: string[] };
     const livres    = Array.isArray(slotsJson.slots) ? slotsJson.slots : [];
     if (!livres.includes(time)) {
@@ -3577,6 +3579,7 @@ async function handleCreate(req: VercelRequest, res: VercelResponse, auth: { use
         const pendingRes = await fetch(SCRIPT_URL, {
           method: 'POST', headers: { 'Content-Type': 'text/plain' },
           body: JSON.stringify({
+            secret: SECRET,
             action: 'createPending',
             date, start: time, packageKey, name, email, whatsapp,
             instagram:          instagram || '',
@@ -3617,7 +3620,7 @@ async function handleCreate(req: VercelRequest, res: VercelResponse, auth: { use
       const logSplit = split > 1 ? ` (${split} pagadores: R$ ${linkValues.map(v => v.toFixed(2)).join(' + R$ ')})` : '';
       await fetch(SCRIPT_URL, {
         method: 'POST', headers: { 'Content-Type': 'text/plain' },
-        body: JSON.stringify({ action: 'addLog', message: `${logUser} criou agendamento pendente para ${name} (${date} ${time}) e gerou link de pgmto (${gw})${logSplit}`, origin: 'painel' }),
+        body: JSON.stringify({ secret: SECRET, action: 'addLog', message: `${logUser} criou agendamento pendente para ${name} (${date} ${time}) e gerou link de pgmto (${gw})${logSplit}`, origin: 'painel' }),
       }).catch(() => {});
 
       // Especial: e-mail de criação — cada pagador recebe link do grupo + SEU link
@@ -3706,6 +3709,7 @@ async function handleCreate(req: VercelRequest, res: VercelResponse, auth: { use
     await fetch(SCRIPT_URL, {
       method: 'POST', headers: { 'Content-Type': 'text/plain' },
       body: JSON.stringify({
+        secret: SECRET,
         action: 'createPending',
         date, start: time, packageKey, name, email, whatsapp,
         instagram:          instagram || '',
@@ -3721,6 +3725,7 @@ async function handleCreate(req: VercelRequest, res: VercelResponse, auth: { use
     const confRes  = await fetch(SCRIPT_URL, {
       method: 'POST', headers: { 'Content-Type': 'text/plain' },
       body: JSON.stringify({
+        secret: SECRET,
         action:        'confirmBooking',
         stripeSession: sessionId,
         stripePayment: `admin-direct-${Date.now()}`,
@@ -3732,7 +3737,7 @@ async function handleCreate(req: VercelRequest, res: VercelResponse, auth: { use
     const logMsg = `${logUser} criou e confirmou agendamento de ${name} — ${fmtDate(date)} ${time} (${pkg.name})`;
     await fetch(SCRIPT_URL, {
       method: 'POST', headers: { 'Content-Type': 'text/plain' },
-      body: JSON.stringify({ action: 'addLog', message: logMsg, origin: 'painel' }),
+      body: JSON.stringify({ secret: SECRET, action: 'addLog', message: logMsg, origin: 'painel' }),
     }).catch(() => {});
 
     if (email) {
@@ -3791,6 +3796,7 @@ async function handleEdit(req: VercelRequest, res: VercelResponse, auth: { user:
     const r = await fetch(SCRIPT_URL, {
       method: 'POST', headers: { 'Content-Type': 'text/plain' },
       body: JSON.stringify({
+        secret: SECRET,
         action:             'editBooking',
         bookingId,
         name,
@@ -3809,6 +3815,7 @@ async function handleEdit(req: VercelRequest, res: VercelResponse, auth: { user:
     await fetch(SCRIPT_URL, {
       method: 'POST', headers: { 'Content-Type': 'text/plain' },
       body: JSON.stringify({
+        secret: SECRET,
         action:  'addLog',
         message: `${auth.user} editou dados do agendamento ${bookingId} (${name})`,
         origin:  'painel',
@@ -3964,6 +3971,7 @@ async function handlePaymentLink(req: VercelRequest, res: VercelResponse, auth: 
     await fetch(SCRIPT_URL, {
       method: 'POST', headers: { 'Content-Type': 'text/plain' },
       body: JSON.stringify({
+        secret: SECRET,
         action: 'cancelBooking',
         bookingId,
         reason: 'Novo link de pagamento gerado pelo admin',
@@ -3976,6 +3984,7 @@ async function handlePaymentLink(req: VercelRequest, res: VercelResponse, auth: 
       const pendingRes = await fetch(SCRIPT_URL, {
         method: 'POST', headers: { 'Content-Type': 'text/plain' },
         body: JSON.stringify({
+          secret: SECRET,
           action: 'createPending',
           date, start: time, packageKey,
           name, email, whatsapp,
@@ -4013,6 +4022,7 @@ async function handlePaymentLink(req: VercelRequest, res: VercelResponse, auth: 
     await fetch(SCRIPT_URL, {
       method: 'POST', headers: { 'Content-Type': 'text/plain' },
       body: JSON.stringify({
+        secret: SECRET,
         action:  'addLog',
         message: `${auth.user} gerou novo link de pagamento (${gw}) para ${name} (${date} ${time})`,
         origin:  'painel',
@@ -4052,7 +4062,7 @@ async function handleReschedule(req: VercelRequest, res: VercelResponse, auth: {
   try {
     await fetch(SCRIPT_URL, {
       method: 'POST', headers: { 'Content-Type': 'text/plain' },
-      body: JSON.stringify({ action: 'cancelBooking', bookingId, reason: 'Remarcado pelo admin' }),
+      body: JSON.stringify({ secret: SECRET, action: 'cancelBooking', bookingId, reason: 'Remarcado pelo admin' }),
     });
   } catch (e) {
     console.error('[admin-bookings/reschedule] cancelBooking error', e);
@@ -4065,6 +4075,7 @@ async function handleReschedule(req: VercelRequest, res: VercelResponse, auth: {
     await fetch(SCRIPT_URL, {
       method: 'POST', headers: { 'Content-Type': 'text/plain' },
       body: JSON.stringify({
+        secret: SECRET,
         action: 'createPending',
         date: newDate, start: newTime, packageKey,
         name, email, whatsapp,
@@ -4078,6 +4089,7 @@ async function handleReschedule(req: VercelRequest, res: VercelResponse, auth: {
     const r = await fetch(SCRIPT_URL, {
       method: 'POST', headers: { 'Content-Type': 'text/plain' },
       body: JSON.stringify({
+        secret: SECRET,
         action:        'confirmBooking',
         stripeSession: sessionId,
         stripePayment: `admin-reschedule-${bookingId}`,
@@ -4094,7 +4106,7 @@ async function handleReschedule(req: VercelRequest, res: VercelResponse, auth: {
   const logMsg = `${auth.user} remarcou ensaio de ${name}: ${fmtDate(oldDate)} ${oldTime} → ${fmtDate(newDate)} ${newTime} (${pkg.name})`;
   await fetch(SCRIPT_URL, {
     method: 'POST', headers: { 'Content-Type': 'text/plain' },
-    body: JSON.stringify({ action: 'addLog', message: logMsg, origin: 'painel' }),
+    body: JSON.stringify({ secret: SECRET, action: 'addLog', message: logMsg, origin: 'painel' }),
   }).catch(e => console.error('[admin-bookings/reschedule] addLog error', e));
 
   // 4. Email
@@ -4256,6 +4268,7 @@ async function handleRegenerateSplitLink(req: VercelRequest, res: VercelResponse
       const updRes = await fetch(SCRIPT_URL, {
         method: 'POST', headers: { 'Content-Type': 'text/plain' },
         body: JSON.stringify({
+          secret: SECRET,
           action:           'regenerateSplitLink',
           bookingId,
           oldStripeSession,
@@ -4287,6 +4300,7 @@ async function handleRegenerateSplitLink(req: VercelRequest, res: VercelResponse
     await fetch(SCRIPT_URL, {
       method: 'POST', headers: { 'Content-Type': 'text/plain' },
       body: JSON.stringify({
+        secret: SECRET,
         action:  'addLog',
         message: `${auth.user} regerou link individual de ${name} (${bookingId}) — gateway ${gw}, R$ ${partValue.toFixed(2)}`,
         origin:  'painel',
@@ -4325,6 +4339,7 @@ async function handleResendConfirmation(req: VercelRequest, res: VercelResponse)
     method:  'POST',
     headers: { 'Content-Type': 'text/plain' },
     body: JSON.stringify({
+      secret: SECRET,
       action:    'resendConfirmation',
       bookingId: body.bookingId,
       extraCc:   body.extraCc || '',
@@ -4593,7 +4608,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
   // ── GET default: lista de bookings ──
   try {
-    const url  = `${SCRIPT_URL}?action=bookings&t=${Date.now()}`;
+    const url  = `${SCRIPT_URL}?secret=${encodeURIComponent(SECRET)}&action=bookings&t=${Date.now()}`;
     const r    = await fetch(url, { cache: 'no-store' });
     // Apps Script às vezes devolve HTML (página de erro/reautorização do Google) em
     // vez de JSON. Fazer r.json() direto estoura e repassava "Unexpected token '<',

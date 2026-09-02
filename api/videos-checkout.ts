@@ -74,7 +74,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const t  = String(req.query.t  || '').trim();
     if (!id || t !== galeriaToken(id)) return res.status(403).json({ error: 'Link inválido.' });
     try {
-      const r = await fetch(`${SCRIPT_URL}?action=bookings&t=${Date.now()}`, { cache: 'no-store' });
+      const r = await fetch(`${SCRIPT_URL}?secret=${encodeURIComponent(SECRET)}&action=bookings&t=${Date.now()}`, { cache: 'no-store' });
       const all = await r.json() as Array<{ id: string; email?: string }>;
       const email = String(all.find(b => b.id === id)?.email || '').trim();
       return res.status(200).json({ email });
@@ -182,7 +182,7 @@ async function registrarPedido(checkoutId: string, linha: string): Promise<void>
       const rl = await fetch(SCRIPT_URL, {
         method: 'POST', headers: { 'Content-Type': 'text/plain' },
         signal: AbortSignal.timeout(ms),
-        body: JSON.stringify({ action: 'addLog', logAction: 'VIDEO_PEDIDO',
+        body: JSON.stringify({ secret: SECRET, action: 'addLog', logAction: 'VIDEO_PEDIDO',
           bookingId: checkoutId, detail: linha, origin: 'videos5678' }),
       });
       // Apps Script devolve erro como HTTP 200 + {error} — checar os dois.

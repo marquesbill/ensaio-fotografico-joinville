@@ -30,6 +30,7 @@ type PkgKey = 'lembranca' | 'economico' | 'completo';
 
 const MP_TOKEN    = process.env.MERCADOPAGO_ACCESS_TOKEN!;
 const SCRIPT_URL  = process.env.SHEETS_SCRIPT_URL!;
+const SECRET = process.env.ADMIN_SECRET || 'dev-secret-change-me';
 const SITE_URL    = process.env.SITE_URL || 'https://www.ensaiofotograficoemjoinville.com';
 const resend      = new Resend(process.env.RESEND_API_KEY!);
 const ANDRE_EMAIL = 'andreffotografia@gmail.com';
@@ -176,6 +177,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         method: 'POST',
         headers: { 'Content-Type': 'text/plain' },
         body: JSON.stringify({
+          secret: SECRET,
           action:        'confirmBooking',
           stripeSession: preferenceId,
           stripePayment: String(payment.id),

@@ -35,6 +35,7 @@ function getPackages() {
 type PkgKey = 'lembranca' | 'economico' | 'completo';
 
 const SCRIPT_URL    = process.env.SHEETS_SCRIPT_URL!;
+const SECRET = process.env.ADMIN_SECRET || 'dev-secret-change-me';
 const ANDRE_EMAIL   = 'andreffotografia@gmail.com';
 const MARIANE_EMAIL = 'mariane.sslourenco@gmail.com';
 const FROM_EMAIL    = 'Ensaio Joinville <confirmacao@ensaiofotograficoemjoinville.com>';
@@ -77,7 +78,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     // Pre-flight: o slot ainda está livre? Evita a Mari receber pedido de
     // horário já tomado (o slot NÃO é reservado aqui — só na criação via admin).
     try {
-      const slotsRes  = await fetch(`${SCRIPT_URL}?action=slots&date=${encodeURIComponent(date)}&package=${encodeURIComponent(packageKey)}&t=${Date.now()}`, { cache: 'no-store' });
+      const slotsRes  = await fetch(`${SCRIPT_URL}?secret=${encodeURIComponent(SECRET)}&action=slots&date=${encodeURIComponent(date)}&package=${encodeURIComponent(packageKey)}&t=${Date.now()}`, { cache: 'no-store' });
       const slotsJson = await slotsRes.json() as { slots?: string[] };
       const livres    = Array.isArray(slotsJson.slots) ? slotsJson.slots : [];
       if (!livres.includes(time)) {
@@ -121,7 +122,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     // Log na planilha (rastreabilidade) — best-effort.
     await fetch(SCRIPT_URL, {
       method: 'POST', headers: { 'Content-Type': 'text/plain' },
-      body: JSON.stringify({ action: 'addLog', message: `SOLICITAÇÃO site: ${name} (${whatsapp}) — ${pkg.name} ${dateLabel} ${time} · ${nb} bailarina(s)`, origin: 'site' }),
+      body: JSON.stringify({ secret: SECRET, action: 'addLog', message: `SOLICITAÇÃO site: ${name} (${whatsapp}) — ${pkg.name} ${dateLabel} ${time} · ${nb} bailarina(s)`, origin: 'site' }),
     }).catch(() => {});
 
     return res.status(200).json({ ok: true });

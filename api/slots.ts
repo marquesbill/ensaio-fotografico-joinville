@@ -1,6 +1,7 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 
 const SCRIPT_URL = process.env.SHEETS_SCRIPT_URL!;
+const SECRET = process.env.ADMIN_SECRET || 'dev-secret-change-me';
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   res.setHeader('Access-Control-Allow-Origin', '*');
@@ -14,8 +15,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     // Com ?package= (ex: especial) → slots de UM pacote, com &duration= custom.
     // Sem package → allSlots (Record por pacote) — comportamento antigo da home/admin.
     const url = pkg
-      ? `${SCRIPT_URL}?action=slots&date=${encodeURIComponent(date)}&package=${encodeURIComponent(pkg)}${duration ? `&duration=${encodeURIComponent(duration)}` : ''}`
-      : `${SCRIPT_URL}?action=allSlots&date=${encodeURIComponent(date)}`;
+      ? `${SCRIPT_URL}?secret=${encodeURIComponent(SECRET)}&action=slots&date=${encodeURIComponent(date)}&package=${encodeURIComponent(pkg)}${duration ? `&duration=${encodeURIComponent(duration)}` : ''}`
+      : `${SCRIPT_URL}?secret=${encodeURIComponent(SECRET)}&action=allSlots&date=${encodeURIComponent(date)}`;
     const response = await fetch(url);
     const text = await response.text();
     const json = JSON.parse(text);

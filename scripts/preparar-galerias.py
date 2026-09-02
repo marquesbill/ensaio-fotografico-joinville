@@ -24,6 +24,19 @@ QUALIDADE_T = 70
 GS = ('https://script.google.com/macros/s/AKfycby4RQxi6a4DTR1ml-LlJkK5D4GOCPug5'
       'SIB-GmRrCa0uu2U3Dgtrj4vzgm_Owzz285eGQ/exec')
 
+# Segredo do Web App (o MESMO ADMIN_SECRET da Vercel / Script Property). Desde
+# 02/09/2026 o Apps Script exige em toda ação que não seja 'ping': a URL está num
+# repositório público e 'bookings' devolvia 179 clientes sem credencial nenhuma.
+# Env primeiro (convenção dos .mjs); senão ~/.j26_admin_secret (chmod 600).
+import os, sys, urllib.parse
+def _segredo():
+    s = os.environ.get('ADMIN_SECRET', '')
+    p = os.path.expanduser('~/.j26_admin_secret')
+    if not s and os.path.exists(p): s = open(p).read().strip()
+    if not s: print('AVISO: sem ADMIN_SECRET (env ou ~/.j26_admin_secret) — o Apps Script vai recusar', file=sys.stderr)
+    return s
+SECRET = _segredo()
+
 
 def normaliza(s: str) -> str:
     """Minúsculas, sem acento, sem pontuação — para casar nomes de pasta com nomes da planilha."""
@@ -41,7 +54,7 @@ def carregar_reservas():
     todas, erro = None, None
     for i in (1, 2):
         try:
-            req = urllib.request.Request(f'{GS}?action=bookings&t={i}', headers={'User-Agent': 'Mozilla/5.0 (preparar-galerias)'})
+            req = urllib.request.Request(f'{GS}?secret={urllib.parse.quote(SECRET)}&action=bookings&t={i}', headers={'User-Agent': 'Mozilla/5.0 (preparar-galerias)'})
             with urllib.request.urlopen(req, timeout=120) as r:
                 todas = json.load(r)
             break
