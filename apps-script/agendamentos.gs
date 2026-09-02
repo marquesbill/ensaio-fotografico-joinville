@@ -3143,11 +3143,26 @@ function onEditAgendamentos(e) {
 }
 
 // ── HTTP handlers ─────────────────────────────────────────────
+// PORTÃO. A URL deste Web App está num repositório PÚBLICO e, em 02/09/2026,
+// 'bookings' devolveu 179 clientes — nome, e-mail, WhatsApp e nome da bailarina —
+// sem credencial; confirmBooking aceitava POST de qualquer um. Toda ação exige o
+// ADMIN_SECRET (o mesmo que a Vercel e os scripts locais já mandam desde o commit
+// anterior), exceto 'ping'. Falha FECHADO: sem a Script Property, nega tudo.
+// GET recebe em ?secret=, POST em body.secret — o Apps Script não expõe headers.
+// === como nas outras três checagens do arquivo: a latência do Apps Script
+// (segundos, com jitter) afoga qualquer ataque de timing contra 40 caracteres.
+const ACOES_PUBLICAS = { ping: true };
+function _autorizado(secret) {
+  const esperado = String(PropertiesService.getScriptProperties().getProperty('ADMIN_SECRET') || '');
+  return !!esperado && String(secret || '') === esperado;
+}
+
 function doGet(e) {
   const action = (e.parameter && e.parameter.action) || '';
   let result;
 
   try {
+    if (!ACOES_PUBLICAS[action] && !_autorizado(e.parameter && e.parameter.secret)) throw new Error('não autorizado');
     if (action === 'init') {
       return initSheets();
     } else if (action === 'slots') {
@@ -3358,6 +3373,7 @@ function doPost(e) {
   try {
     body = JSON.parse(e.postData.contents);
     const action = body.action;
+    if (!ACOES_PUBLICAS[action] && !_autorizado(body.secret)) throw new Error('não autorizado');
 
     if      (action === 'createPending')        result = createPending(body);
     else if (action === 'confirmBooking')       result = confirmBooking(body);
