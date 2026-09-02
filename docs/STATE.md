@@ -2,7 +2,7 @@
 Disparar às 07:29 de 02/09/2026 o e-mail de promoção dos Vídeo5678 para as galerias que têm vídeo, e auditar cada etapa do que os destinatários vão receber e usar.
 
 ## Now
-Bloqueadores aplicados e verificados. Falta só o deploy do .gs (4 ajustes de e-mail), que exige OAuth do André.
+INCIDENTE: clientes recebem erro ao pagar. Medido que ~metade das chamadas de registro do pedido estoura o timeout de 8 s. Correção pronta e commitada, NÃO publicada (falta o André pedir o push).
 
 ## Next
 1. Tirar AG-MRKRQ2JJ de campanha/destinatarios.json (GIF de outra família + e-mail duplicado da Paula).
@@ -35,6 +35,7 @@ Bloqueadores aplicados e verificados. Falta só o deploy do .gs (4 ajustes de e-
 - lint/typecheck do app: npm run lint (tsc --noEmit); não há test runner
 
 ## Done
+- Latência real do POST addLog do Apps Script (baseline limpo, 02/09/2026 ~03:35) — RESULT: mediana 6,77 s, 3 de 6 acima dos 8 s do timeout do checkout, máx 69,72 s (essa falhou). O custo está em abrir a planilha, não no addLog (que é só getSheet + appendRow). Sob concorrência piora muito: com carga minha as esperas foram de 50-73 s.
 - Auditoria adversarial wf_914efab2-600 — RESULT: 8 agentes, 0 erros; 3 bloqueadores, 1 deles (VIDEOS_GALERIA_TESTE) refutado por mim: checkout devolve valor 120, não 5.
 - Verificação própria do GIF de cada uma das 56 — RESULT: 1 errada (AG-MRKRQ2JJ aponta _MG_9959_(2), que não está no manifesto dela).
 - Trava de horário provada — RESULT: rodar --enviar às 01:43 imprimiu "FORA DA JANELA" e não enviou nada.
@@ -56,4 +57,6 @@ Bloqueadores aplicados e verificados. Falta só o deploy do .gs (4 ajustes de e-
 - 7 galerias passam do teto de 50 vídeos do checkout (api/videos-checkout.ts): 85, 81, 68, 57, 54, 53, 52.
 
 ## Failed attempts
-- (nenhuma nesta etapa)
+- ATTEMPT 1 [L1]: medir a latência do addLog com 30 requisições em 6 threads -> 30/30 TimeoutError. Confundidor: o Apps Script serializa execuções (LockService + fila do Google), então minha própria carga criou a fila. Medição inválida.
+- ATTEMPT 2 [L1]: 12 compras simuladas com a lógica nova, sem descanso -> 7/12 falharam, esperas de 50-73 s. Ainda contaminado pela carga anterior.
+- ATTEMPT 3 [L2]: 60 s de descanso + 6 amostras espaçadas 30 s -> baseline limpo: mediana 6,77 s, 3/6 acima de 8 s, uma de 69,72 s que falhou. A latência é alta DE VERDADE, não era só minha carga.

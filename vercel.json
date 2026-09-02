@@ -2,6 +2,7 @@
   "functions": {
     "api/webhook.ts": { "maxDuration": 60 },
     "api/admin-bookings.ts": { "maxDuration": 30 },
+    "api/videos-checkout.ts": { "maxDuration": 60 },
     "api/send-guia.ts": { "maxDuration": 60 }
   },
   "rewrites": [

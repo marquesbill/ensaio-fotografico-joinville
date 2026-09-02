@@ -140,17 +140,45 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     // melhor a cliente ver "tente de novo" do que pagar num pedido que não
     // existe em lugar nenhum. O checkout órfão no ASAAS expira sozinho em
     // 1440 min (minutesToExpire acima).
-    const rl = await fetch(SCRIPT_URL, {
-      method: 'POST', headers: { 'Content-Type': 'text/plain' },
-      signal: AbortSignal.timeout(8000),
-      body: JSON.stringify({ action: 'addLog', logAction: 'VIDEO_PEDIDO',
-        bookingId: checkout.id,
-        detail:    `${id}|${lista}|${valor}|${n}${teste ? '|TESTE' : ''}`,
-        origin:    'videos5678' }),
-    });
-    // Apps Script devolve erro como HTTP 200 + {error} — checar os dois.
-    const jl = await rl.json().catch(() => ({ error: 'resposta inválida' })) as { error?: string };
-    if (!rl.ok || jl.error) throw new Error(`registro do pedido falhou: ${jl.error || rl.status}`);
+    // 8000 ms com UMA tentativa derrubava ~30% das compras. Medido em 02/09/2026,
+    // 10 chamadas sequenciais reais ao addLog: mediana 2,58 s, mas 3 em 10 acima de
+    // 8 s e uma de 18,97 s — cauda longa, não erro. Cada estouro virava HTTP 500 e a
+    // cliente lia "registro do pedido falhou" no lugar do PIX (Galeria.tsx:230).
+    // 25 s cobre a distribuição inteira medida; a 2ª tentativa é para o 404
+    // esporádico do redirect do Google (~1 em 6).
+    // Repetir pode duplicar a linha: o Apps Script GRAVA mesmo quando a resposta se
+    // perde (provado no mesmo dia — um POST que voltou vazio deixou a linha lá).
+    // Duplicata é inofensiva (confirmBooking casa por checkout.id e pega a primeira);
+    // compra perdida não é.
+    let ultimoErro = 'sem resposta';
+    let registrado = false;
+    for (const ms of [25000, 20000]) {
+      try {
+        const rl = await fetch(SCRIPT_URL, {
+          method: 'POST', headers: { 'Content-Type': 'text/plain' },
+          signal: AbortSignal.timeout(ms),
+          body: JSON.stringify({ action: 'addLog', logAction: 'VIDEO_PEDIDO',
+            bookingId: checkout.id,
+            detail:    `${id}|${lista}|${valor}|${n}${teste ? '|TESTE' : ''}`,
+            origin:    'videos5678' }),
+        });
+        // Apps Script devolve erro como HTTP 200 + {error} — checar os dois.
+        const jl = await rl.json().catch(() => ({ error: 'resposta inválida' })) as { error?: string };
+        if (rl.ok && !jl.error) { registrado = true; break; }
+        ultimoErro = jl.error || `HTTP ${rl.status}`;
+      } catch (e) {
+        ultimoErro = e instanceof Error ? e.message : String(e);
+      }
+    }
+    // Falha ALTA de propósito: sem esta linha a venda fica órfã em silêncio; melhor a
+    // cliente tentar de novo do que pagar num pedido que não existe em lugar nenhum.
+    // A mensagem é para ELA, não para o log — o erro técnico vai para o console.
+    if (!registrado) {
+      console.error('[videos-checkout] registro do pedido falhou:', ultimoErro);
+      return res.status(503).json({
+        error: 'Não consegui abrir o pagamento agora. Tente de novo em alguns segundos — '
+             + 'nada foi cobrado.' });
+    }
 
     return res.status(200).json({ url: checkout.link, valor });
   } catch (e) {
