@@ -167,6 +167,8 @@ function _videoDadosGaleria(galeriaId, rows, cm) {
     id: id, nome: nome, primeiro: nome.split(/\s+/)[0] || nome,
     email: String(_val(row, cm, 'E-mail') || '').trim().replace(/;/g, ',').replace(/,\s*/g, ','),
     heroUrl: (base && hero) ? (base + '/' + pasta + '/' + hero) : '',
+    // pasta e base saem daqui para montar as miniaturas (<base>/<pasta>/t/NNN.jpg)
+    pasta: pasta, base: base,
     link: _galeriaLinkPublico(id),
   };
 }
@@ -195,12 +197,34 @@ function _videoEmailHtml(titulo, g, corpo, botao) {
 function _p(txt) { return '<p style="color:#6b7280;font-size:14px;margin:0 0 14px;line-height:1.6;">' + txt + '</p>'; }
 
 // (1) Cliente: pagamento confirmado — o vídeo chega em até 24h por link no e-mail.
+// Miniaturas das fotos compradas. Reaproveita as que a galeria já serve
+// (<base>/<pasta>/t/NNN.jpg, 640 px) — nenhum asset novo. Mostra até 4 e conta
+// o resto: uma linha com 20 imagens quebraria o layout em qualquer cliente.
+function _videoMiniaturas(g, fotos) {
+  const nums = String(fotos || '').split(',').map(function (s) { return s.trim(); })
+                 .filter(function (s) { return /^\d{3}$/.test(s); });
+  if (!nums.length || !g.base) return '';
+  const mostra = nums.slice(0, 4), resto = nums.length - mostra.length;
+  const tds = mostra.map(function (n) {
+    return '<td style="padding:0 5px;" width="112" valign="top">'
+      + '<img src="' + g.base + '/' + g.pasta + '/t/' + n + '.jpg" width="112" alt="Foto ' + n + '"'
+      + ' style="display:block;width:112px;height:auto;border-radius:6px;border:0;outline:none;">'
+      + '<p style="margin:5px 0 0;color:#9ca3af;font-size:11px;text-align:center;font-family:Arial,sans-serif;">' + n + '</p></td>';
+  }).join('');
+  return '<table role="presentation" cellpadding="0" cellspacing="0" border="0" align="center" style="margin:2px auto 18px;">'
+    + '<tr>' + tds + '</tr></table>'
+    + (resto > 0 ? '<p style="color:#9ca3af;font-size:12px;text-align:center;margin:-10px 0 18px;">e mais ' + resto
+        + (resto === 1 ? ' vídeo' : ' vídeos') + ' · fotos ' + _escapeHtml(fotos) + '</p>' : '');
+}
+
 function _videoEmailPago(g, v) {
   const n = v.qtd === 1 ? 'seu vídeo' : 'seus ' + v.qtd + ' vídeos';
   return _videoEmailHtml('Pagamento confirmado!', g,
     _p('Recebi o pagamento d' + (v.qtd === 1 ? 'o seu Vídeo5678' : 'os seus ' + v.qtd + ' Vídeo5678') + ' — muito obrigado!')
+    + _p(v.qtd === 1 ? 'É o vídeo desta foto:' : 'São os vídeos destas fotos:', '10px')
+    + _videoMiniaturas(g, v.fotos)
     + _p('Agora eu produzo ' + n + ' em 4K, sem marca d\'água. <strong>Em até 24 horas</strong> você recebe, neste mesmo e-mail, um link para ver e baixar.')
-    + _p('Fotos escolhidas: <strong>' + _escapeHtml(v.fotos) + '</strong> · R$ ' + v.valor),
+    + _p('Valor pago: <strong>R$ ' + v.valor + '</strong>. Sua galeria continua no ar:'),
     { url: g.link, texto: 'Ver minha galeria' });
 }
 // (4) Cliente: entrega — agradece e pede a marcação.
@@ -339,7 +363,7 @@ function _videoPromoHtml(primeiro, nVideos, link, gifUrl) {
 // Monta a peça para uma galeria. `paraTeste` desvia o envio para o André e não
 // grava nada — dry-run de verdade, igual ao testTo do e-mail de entrega.
 // GET ?action=videoPromo&galeria=AG-…[&enviar=1]
-function videoPromo(galeriaId, nVideos, enviar) {
+function videoPromo(galeriaId, nVideos, enviar, para) {
   const g = _videoDadosGaleria(galeriaId);
   if (!g) throw new Error('galeria ' + galeriaId + ' não encontrada');
   const base = _r2Base();
@@ -352,7 +376,9 @@ function videoPromo(galeriaId, nVideos, enviar) {
   if (n < 1) throw new Error('nVideos inválido (' + nVideos + ') — quem chama informa');
   const gif = base + '/promo/' + galeriaId + '.gif';
   const html = _videoPromoHtml(g.primeiro, n, g.link, gif);
-  const destino = enviar ? g.email : CFG.ANDRE_EMAIL;
+  // `para` só vale no dry-run: com enviar=1 o destino é sempre a dona da galeria,
+  // para não existir caminho em que um envio real vá parar em outro endereço.
+  const destino = enviar ? g.email : (String(para || '').trim() || CFG.ANDRE_EMAIL);
   if (!destino) throw new Error('galeria sem e-mail cadastrado');
   const assunto = '5, 6, 7, 8 — tem vídeo nas suas fotos, ' + g.primeiro + (enviar ? '' : ' [TESTE]');
   const ok = _videoMail({ to: destino, bookingId: galeriaId, subject: assunto, htmlBody: html });
@@ -368,7 +394,12 @@ function videoTestarEmails(galeriaId) {
   const a = _videoMail({ to: CFG.ANDRE_EMAIL, subject: '[PRÉVIA 1/3] Pagamento confirmado', htmlBody: _videoEmailPago(g, v) });
   const b = _videoMail({ to: CFG.ANDRE_EMAIL, subject: '[PRÉVIA 2/3] Aviso interno de compra',
     htmlBody: _videoEmailInterno('Compra de vídeos confirmada', [['Cliente', _escapeHtml(g.nome)], ['Galeria', g.id], ['Vídeos', v.qtd + ' — fotos ' + v.fotos], ['Valor', 'R$ ' + v.valor]]) });
-  const c = _videoMail({ to: CFG.ANDRE_EMAIL, subject: '[PRÉVIA 3/3] Entrega', htmlBody: _videoEmailEntregue(g, v.qtd, g.link) });
+  // O link da entrega é a página do 4K (entregas/<token>), NÃO a galeria. Passar
+  // g.link aqui fazia a prévia mostrar um botão "Ver e baixar" apontando para a
+  // galeria — leitura errada do e-mail real, e foi o que confundiu o André em
+  // 01/09/2026. Um endereço de exemplo deixa claro para onde ele vai de verdade.
+  const linkExemplo = _r2Base() + '/entregas/exemplo0000000000/index.html';
+  const c = _videoMail({ to: CFG.ANDRE_EMAIL, subject: '[PRÉVIA 3/3] Entrega', htmlBody: _videoEmailEntregue(g, v.qtd, linkExemplo) });
   return { ok: a && b && c, para: CFG.ANDRE_EMAIL, hero: g.heroUrl };
 }
 
@@ -3265,7 +3296,8 @@ function doGet(e) {
       result = _videoAbandonados();
     } else if (action === 'videoPromo') {
       // enviar=1 manda para a CLIENTE; sem isso vai para o André (dry-run).
-      result = videoPromo(String(e.parameter.galeria || ''), e.parameter.n, String(e.parameter.enviar || '') === '1');
+      result = videoPromo(String(e.parameter.galeria || ''), e.parameter.n,
+                          String(e.parameter.enviar || '') === '1', e.parameter.para);
     } else if (action === 'videoTestarEmails') {
       result = videoTestarEmails(String(e.parameter.galeria || ''));
     } else if (action === 'ping') {
