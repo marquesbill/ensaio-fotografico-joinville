@@ -200,16 +200,28 @@ function _p(txt) { return '<p style="color:#6b7280;font-size:14px;margin:0 0 14p
 // Miniaturas das fotos compradas. Reaproveita as que a galeria já serve
 // (<base>/<pasta>/t/NNN.jpg, 640 px) — nenhum asset novo. Mostra até 4 e conta
 // o resto: uma linha com 20 imagens quebraria o layout em qualquer cliente.
-function _videoMiniaturas(g, fotos) {
+// `baseEntrega` (…/entregas/<token>/) transforma cada miniatura em link direto
+// para o 4K daquele número. Sem ela as miniaturas saem sem link — é o caso da
+// CONFIRMAÇÃO de pagamento, em que os 4K ainda não existem: são produzidos
+// depois e a página de entrega só nasce na hora do envio.
+function _videoMiniaturas(g, fotos, baseEntrega) {
   const nums = String(fotos || '').split(',').map(function (s) { return s.trim(); })
                  .filter(function (s) { return /^\d{3}$/.test(s); });
   if (!nums.length || !g.base) return '';
   const mostra = nums.slice(0, 4), resto = nums.length - mostra.length;
   const tds = mostra.map(function (n) {
-    return '<td style="padding:0 5px;" width="112" valign="top">'
-      + '<img src="' + g.base + '/' + g.pasta + '/t/' + n + '.jpg" width="112" alt="Foto ' + n + '"'
-      + ' style="display:block;width:112px;height:auto;border-radius:6px;border:0;outline:none;">'
-      + '<p style="margin:5px 0 0;color:#9ca3af;font-size:11px;text-align:center;font-family:Arial,sans-serif;">' + n + '</p></td>';
+    const img = '<img src="' + g.base + '/' + g.pasta + '/t/' + n + '.jpg" width="112" alt="Vídeo da foto ' + n + '"'
+      + ' style="display:block;width:112px;height:auto;border-radius:6px;border:0;outline:none;">';
+    const legenda = baseEntrega ? 'baixar ' + n : n;
+    const conteudo = baseEntrega
+      ? '<a href="' + baseEntrega + n + '.mp4" style="text-decoration:none;">' + img + '</a>'
+      : img;
+    return '<td style="padding:0 5px;" width="112" valign="top">' + conteudo
+      + '<p style="margin:5px 0 0;font-size:11px;text-align:center;font-family:Arial,sans-serif;">'
+      + (baseEntrega
+          ? '<a href="' + baseEntrega + n + '.mp4" style="color:#7a3f8f;font-weight:700;text-decoration:none;">' + legenda + '</a>'
+          : '<span style="color:#9ca3af;">' + legenda + '</span>')
+      + '</p></td>';
   }).join('');
   return '<table role="presentation" cellpadding="0" cellspacing="0" border="0" align="center" style="margin:2px auto 18px;">'
     + '<tr>' + tds + '</tr></table>'
@@ -228,9 +240,15 @@ function _videoEmailPago(g, v) {
     { url: g.link, texto: 'Ver minha galeria' });
 }
 // (4) Cliente: entrega — agradece e pede a marcação.
-function _videoEmailEntregue(g, qtd, link) {
+function _videoEmailEntregue(g, qtd, link, fotos) {
+  // Cada miniatura vira link direto para o 4K daquele número. A página de
+  // entrega guarda um <NNN>.mp4 por vídeo (entregar5678.py:107), então basta
+  // trocar o index.html pelo arquivo.
+  const baseEntrega = String(link || '').replace(/index\.html$/, '');
   return _videoEmailHtml(qtd === 1 ? 'Seu vídeo chegou!' : 'Seus vídeos chegaram!', g,
     _p((qtd === 1 ? 'Seu Vídeo5678 está pronto' : 'Seus ' + qtd + ' Vídeo5678 estão prontos') + ' — em 4K, sem marca d\'água.')
+    + (fotos ? _p(qtd === 1 ? 'Toque na foto para baixar:' : 'Toque em cada foto para baixar:', '10px')
+               + _videoMiniaturas(g, fotos, baseEntrega) : '')
     + _p('Foi um prazer produzir suas fotos lá em Joinville!')
     + _p('Se for postar, me marca que vou adorar! <a href="https://www.instagram.com/affotografia" style="color:#7a3f8f;font-weight:700;text-decoration:none;">@affotografia</a>')
     + _p('O link fica disponível até junho de 2027.'),
@@ -301,7 +319,7 @@ function videoEntregue(data) {
   const qtd = Number(data.qtd) || 1;
   const ok = _videoMail({ to: destino, bookingId: id,
     subject: (qtd === 1 ? 'Seu Vídeo5678 em 4K está pronto!' : 'Seus ' + qtd + ' Vídeo5678 em 4K estão prontos!') + (teste ? ' [TESTE]' : ''),
-    htmlBody: _videoEmailEntregue(g, qtd, String(data.link)) });
+    htmlBody: _videoEmailEntregue(g, qtd, String(data.link), data.fotos) });
   if (!ok) throw new Error('e-mail de entrega falhou (ver aba Log, EMAIL_ERRO)');
   addLog('VIDEO_ENTREGUE', id, data.galeria + '|' + qtd + '|' + data.link + '|' + destino + (teste ? '|TESTE' : ''), 'videoEntregue');
   return { ok: true, destino: destino };
@@ -399,7 +417,7 @@ function videoTestarEmails(galeriaId) {
   // galeria — leitura errada do e-mail real, e foi o que confundiu o André em
   // 01/09/2026. Um endereço de exemplo deixa claro para onde ele vai de verdade.
   const linkExemplo = _r2Base() + '/entregas/exemplo0000000000/index.html';
-  const c = _videoMail({ to: CFG.ANDRE_EMAIL, subject: '[PRÉVIA 3/3] Entrega', htmlBody: _videoEmailEntregue(g, v.qtd, linkExemplo) });
+  const c = _videoMail({ to: CFG.ANDRE_EMAIL, subject: '[PRÉVIA 3/3] Entrega', htmlBody: _videoEmailEntregue(g, v.qtd, linkExemplo, v.fotos) });
   return { ok: a && b && c, para: CFG.ANDRE_EMAIL, hero: g.heroUrl };
 }
 
