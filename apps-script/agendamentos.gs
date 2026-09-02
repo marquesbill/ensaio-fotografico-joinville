@@ -381,7 +381,7 @@ function _videoPromoHtml(primeiro, nVideos, link, gifUrl) {
 // Monta a peça para uma galeria. `paraTeste` desvia o envio para o André e não
 // grava nada — dry-run de verdade, igual ao testTo do e-mail de entrega.
 // GET ?action=videoPromo&galeria=AG-…[&enviar=1]
-function videoPromo(galeriaId, nVideos, enviar, para) {
+function videoPromo(galeriaId, nVideos, enviar, para, repetir) {
   const g = _videoDadosGaleria(galeriaId);
   if (!g) throw new Error('galeria ' + galeriaId + ' não encontrada');
   const base = _r2Base();
@@ -394,6 +394,18 @@ function videoPromo(galeriaId, nVideos, enviar, para) {
   if (n < 1) throw new Error('nVideos inválido (' + nVideos + ') — quem chama informa');
   const gif = base + '/promo/' + galeriaId + '.gif';
   const html = _videoPromoHtml(g.primeiro, n, g.link, gif);
+  // TRAVA DE REENVIO: campanha é envio único. Um lote reprocessado, um clique
+  // repetido ou um retry de rede não podem fazer a mesma cliente receber a peça
+  // duas vezes. O VIDEO_PROMO no Log é a marca; `repetir=1` é a saída consciente.
+  if (enviar && !repetir) {
+    const jaFoi = _videoLogRows().find(function (r) {
+      return r[1] === 'VIDEO_PROMO' && String(r[2]).trim() === galeriaId;
+    });
+    if (jaFoi) {
+      const quando = jaFoi[0] instanceof Date ? jaFoi[0].toISOString() : String(jaFoi[0]);
+      return { ok: true, jaEnviado: quando, destino: g.email, videos: Number(nVideos) || 0 };
+    }
+  }
   // `para` só vale no dry-run: com enviar=1 o destino é sempre a dona da galeria,
   // para não existir caminho em que um envio real vá parar em outro endereço.
   const destino = enviar ? g.email : (String(para || '').trim() || CFG.ANDRE_EMAIL);
@@ -3315,7 +3327,8 @@ function doGet(e) {
     } else if (action === 'videoPromo') {
       // enviar=1 manda para a CLIENTE; sem isso vai para o André (dry-run).
       result = videoPromo(String(e.parameter.galeria || ''), e.parameter.n,
-                          String(e.parameter.enviar || '') === '1', e.parameter.para);
+                          String(e.parameter.enviar || '') === '1', e.parameter.para,
+                          String(e.parameter.repetir || '') === '1');
     } else if (action === 'videoTestarEmails') {
       result = videoTestarEmails(String(e.parameter.galeria || ''));
     } else if (action === 'ping') {
