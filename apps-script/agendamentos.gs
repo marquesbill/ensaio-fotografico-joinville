@@ -351,11 +351,11 @@ function _videoPromoHtml(primeiro, nVideos, link, gifUrl) {
     + '<table role="presentation" width="560" cellpadding="0" cellspacing="0" border="0" style="width:560px;max-width:560px;background:#ffffff;border-radius:12px;overflow:hidden;box-shadow:0 2px 8px rgba(0,0,0,0.08);">'
     + '<tr><td bgcolor="' + ROXO + '" style="background-color:' + ROXO + ';background:linear-gradient(135deg,' + ROXO + ',' + CORAL + ');padding:28px 40px;text-align:center;">'
     +   '<h1 style="color:#ffffff;margin:0;font-size:20px;font-weight:800;font-family:Arial,sans-serif;">Ensaio Fotográfico em Joinville</h1>'
-    +   '<p style="color:rgba(255,255,255,0.85);margin:6px 0 0;font-size:13px;">Hotel Le Village · 20 Jul – 02 Ago 2026</p></td></tr>'
+    +   '<p style="color:#f0e4f5;margin:6px 0 0;font-size:13px;">Hotel Le Village · 20 Jul – 02 Ago 2026</p></td></tr>'
     + '<tr><td bgcolor="' + PRETO + '" style="background-color:' + PRETO + ';padding:34px 20px 26px;text-align:center;">'
     +   '<p style="margin:0 0 22px;color:#ffffff;font-family:Georgia,\'Times New Roman\',serif;font-size:30px;font-style:italic;line-height:1.15;letter-spacing:-0.01em;">5, 6, 7, 8&hellip;</p>'
     +   '<img src="' + gifUrl + '" width="260" alt="Prévia de um vídeo de ' + _escapeHtml(primeiro) + ' — o momento antes da foto"'
-    +   ' style="display:block;margin:0 auto;width:260px;max-width:80%;height:auto;border:0;outline:none;text-decoration:none;">'
+    +   ' style="color:#e8e2f0;font-family:Arial,sans-serif;font-size:13px;display:block;margin:0 auto;width:260px;max-width:80%;height:auto;border:0;outline:none;text-decoration:none;">'
     +   '<p style="margin:16px 0 0;color:#8b7fa0;font-size:12px;font-family:Arial,sans-serif;">um dos seus &middot; prévia, com marca d\'água</p></td></tr>'
     + '<tr><td style="padding:30px 40px 2px;">'
     +   '<p style="color:#1a1720;font-size:16px;margin:0 0 16px;">Olá, <strong>' + _escapeHtml(primeiro) + '</strong>!</p>'
@@ -375,6 +375,7 @@ function _videoPromoHtml(primeiro, nVideos, link, gifUrl) {
     +   '<p style="margin:0 0 18px;"><a href="' + link + '" style="color:' + ROXO + ';font-size:12px;word-break:break-all;">' + link + '</a></p>'
     +   '<p style="color:#4b4553;font-size:14px;margin:0;">Se for postar, me marca que vou adorar! '
     +   '<a href="https://www.instagram.com/affotografia" style="color:' + ROXO + ';font-weight:700;text-decoration:none;">@affotografia</a></p></td></tr>'
+    + '<tr><td style="padding:0 40px 24px;"><p style="color:#8b8494;font-size:11px;margin:0;line-height:1.5;">Você recebe este aviso porque fez o ensaio comigo em Joinville, em julho de 2026. Se não quiser mais e-mails sobre os vídeos, é só responder <strong>SAIR</strong> que eu tiro na hora.</p></td></tr>'
     + _emailFooter() + '</table></td></tr></table></body></html>';
 }
 
@@ -1475,7 +1476,7 @@ function _emailHeader(title) {
   return `
     <tr><td bgcolor="#7a3f8f" style="background-color:#7a3f8f;background:linear-gradient(135deg,#7a3f8f,#e87060);padding:28px 40px;text-align:center;">
       <h1 style="color:#ffffff;margin:0;font-size:20px;font-weight:800;">Ensaio Fotográfico em Joinville</h1>
-      <p style="color:rgba(255,255,255,0.85);margin:6px 0 0;font-size:13px;">Hotel Le Village · 20 Jul – 02 Ago 2026</p>
+      <p style="color:#f0e4f5;margin:6px 0 0;font-size:13px;">Hotel Le Village · 20 Jul – 02 Ago 2026</p>
       <p style="color:#ffe082;margin:8px 0 0;font-size:15px;font-weight:700;">${title}</p>
     </td></tr>`;
 }
