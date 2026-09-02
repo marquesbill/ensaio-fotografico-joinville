@@ -14,6 +14,7 @@
     "@google-analytics/data": "^6.0.0",
     "@mercadopago/sdk-react": "^1.0.7",
     "@tailwindcss/vite": "^4.1.14",
+    "@vercel/functions": "3.9.5",
     "@vitejs/plugin-react": "^5.0.4",
     "lucide-react": "^0.546.0",
     "motion": "^12.23.24",

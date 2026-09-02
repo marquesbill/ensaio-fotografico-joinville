@@ -2,7 +2,7 @@
 Disparar às 07:29 de 02/09/2026 o e-mail de promoção dos Vídeo5678 para as galerias que têm vídeo, e auditar cada etapa do que os destinatários vão receber e usar.
 
 ## Now
-INCIDENTE: clientes recebem erro ao pagar. Medido que ~metade das chamadas de registro do pedido estoura o timeout de 8 s. Correção pronta e commitada, NÃO publicada (falta o André pedir o push).
+Deploy do fix do timeout no ar e provado. INCIDENTE RESOLVIDO NA CAUSA: o PIX que falha no Mercado Pago é incidente do ASAAS (status.asaas.com, 31/08→02/09: troca do certificado de assinatura do QR; MP/Inter/PagSeguro ainda recusando em 02/09 08:40). Não é nosso código. Ação: avisar clientes (cartão no mesmo link, ou Pix por outro banco). O bug do timeout de 8 s (b60d553) é real, mas SEPARADO e não é a causa das reclamações de hoje.
 
 ## Next
 1. Tirar AG-MRKRQ2JJ de campanha/destinatarios.json (GIF de outra família + e-mail duplicado da Paula).
@@ -20,6 +20,7 @@ INCIDENTE: clientes recebem erro ao pagar. Medido que ~metade das chamadas de re
 - E-mail para cliente sai de andreffotografia, nunca de clawthelinuxbot.
 
 ## Decisions
+- DECISION (02/09/2026): o registro do pedido (VIDEO_PEDIDO) sai do caminho síncrono do checkout — começa já, espera no máximo 3 s, e segue em segundo plano via waitUntil (@vercel/functions 3.9.5); se falhar 2x, e-mail ao André com a linha pronta — porque a Vercel não tem escrita em R2/KV e o Google serializa o Apps Script (cauda 10–70 s). Risco aceito: pagamento antes da linha gravada → o webhook já manda o 🚨.
 - Um envio por galeria, não um lote único — reexecutar continua de onde parou; lote único morreria no limite de 6 min do Apps Script sem saber quem recebeu.
 - E-mails de venda saem do ponto idempotente do .gs (confirmBooking), não do webhook — o webhook estourava os 10 s do ASAAS.
 - Join pedido↔pagamento pela planilha, não pela API: GET /v3/checkouts/{id} não existe no ASAAS (404).
@@ -35,6 +36,7 @@ INCIDENTE: clientes recebem erro ao pagar. Medido que ~metade das chamadas de re
 - lint/typecheck do app: npm run lint (tsc --noEmit); não há test runner
 
 ## Done
+- Push de main para origin em 02/09/2026 ~12:25 (autorizado: "dá o push, sem aviso") — RESULT: b175f48..b60d553, 7 commits; para a Vercel só api/videos-checkout.ts e vercel.json mudam. Deploy confirmado: Vercel=success 02/09 12:18:56; prova ao vivo POST /api/videos-checkout → 200 em 40,15 s (retry executou).
 - Latência real do POST addLog do Apps Script (baseline limpo, 02/09/2026 ~03:35) — RESULT: mediana 6,77 s, 3 de 6 acima dos 8 s do timeout do checkout, máx 69,72 s (essa falhou). O custo está em abrir a planilha, não no addLog (que é só getSheet + appendRow). Sob concorrência piora muito: com carga minha as esperas foram de 50-73 s.
 - Auditoria adversarial wf_914efab2-600 — RESULT: 8 agentes, 0 erros; 3 bloqueadores, 1 deles (VIDEOS_GALERIA_TESTE) refutado por mim: checkout devolve valor 120, não 5.
 - Verificação própria do GIF de cada uma das 56 — RESULT: 1 errada (AG-MRKRQ2JJ aponta _MG_9959_(2), que não está no manifesto dela).

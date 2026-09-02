@@ -1,5 +1,7 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { createHmac } from 'crypto';
+import { waitUntil } from '@vercel/functions';
+import { Resend } from 'resend';
 
 // ── Checkout dos Vídeos 5678 ────────────────────────────────────────────────
 // POST { id, t, numeros: ["004","017",...] } → { url } (Checkout ASAAS).
@@ -8,6 +10,9 @@ import { createHmac } from 'crypto';
 // description do item; a entrega do 4K é manual, disparada pelo pagamento.
 
 const SCRIPT_URL = process.env.SHEETS_SCRIPT_URL!;
+const ANDRE_EMAIL = 'andreffotografia@gmail.com';
+const FROM_EMAIL  = 'Ensaio Joinville <confirmacao@ensaiofotograficoemjoinville.com>';
+const resend = new Resend(process.env.RESEND_API_KEY!);
 const R2_BASE    = 'https://pub-144050c98b964bdc95d46793863feff0.r2.dev';
 const SITE       = 'https://www.ensaiofotograficoemjoinville.com';
 
@@ -140,49 +145,63 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     // melhor a cliente ver "tente de novo" do que pagar num pedido que não
     // existe em lugar nenhum. O checkout órfão no ASAAS expira sozinho em
     // 1440 min (minutesToExpire acima).
-    // 8000 ms com UMA tentativa derrubava ~30% das compras. Medido em 02/09/2026,
-    // 10 chamadas sequenciais reais ao addLog: mediana 2,58 s, mas 3 em 10 acima de
-    // 8 s e uma de 18,97 s — cauda longa, não erro. Cada estouro virava HTTP 500 e a
-    // cliente lia "registro do pedido falhou" no lugar do PIX (Galeria.tsx:230).
-    // 25 s cobre a distribuição inteira medida; a 2ª tentativa é para o 404
-    // esporádico do redirect do Google (~1 em 6).
-    // Repetir pode duplicar a linha: o Apps Script GRAVA mesmo quando a resposta se
-    // perde (provado no mesmo dia — um POST que voltou vazio deixou a linha lá).
-    // Duplicata é inofensiva (confirmBooking casa por checkout.id e pega a primeira);
-    // compra perdida não é.
-    let ultimoErro = 'sem resposta';
-    let registrado = false;
-    for (const ms of [25000, 20000]) {
-      try {
-        const rl = await fetch(SCRIPT_URL, {
-          method: 'POST', headers: { 'Content-Type': 'text/plain' },
-          signal: AbortSignal.timeout(ms),
-          body: JSON.stringify({ action: 'addLog', logAction: 'VIDEO_PEDIDO',
-            bookingId: checkout.id,
-            detail:    `${id}|${lista}|${valor}|${n}${teste ? '|TESTE' : ''}`,
-            origin:    'videos5678' }),
-        });
-        // Apps Script devolve erro como HTTP 200 + {error} — checar os dois.
-        const jl = await rl.json().catch(() => ({ error: 'resposta inválida' })) as { error?: string };
-        if (rl.ok && !jl.error) { registrado = true; break; }
-        ultimoErro = jl.error || `HTTP ${rl.status}`;
-      } catch (e) {
-        ultimoErro = e instanceof Error ? e.message : String(e);
-      }
-    }
-    // Falha ALTA de propósito: sem esta linha a venda fica órfã em silêncio; melhor a
-    // cliente tentar de novo do que pagar num pedido que não existe em lugar nenhum.
-    // A mensagem é para ELA, não para o log — o erro técnico vai para o console.
-    if (!registrado) {
-      console.error('[videos-checkout] registro do pedido falhou:', ultimoErro);
-      return res.status(503).json({
-        error: 'Não consegui abrir o pagamento agora. Tente de novo em alguns segundos — '
-             + 'nada foi cobrado.' });
-    }
+    // A PLANILHA SAIU DO CAMINHO DA COMPRA. Medido em 02/09/2026: o addLog do
+    // Apps Script tem mediana de 2,6 s mas cauda de 10–70 s (o Google serializa
+    // execuções do mesmo script; sob concorrência as esperas foram de 50–73 s).
+    // Antes a cliente esperava essa cauda inteira olhando um spinner. Agora:
+    //   - a gravação começa já;
+    //   - se terminar em até 3 s, ela recebe o link com a linha já gravada;
+    //   - se não, recebe o link aos 3 s e a gravação continua em segundo plano
+    //     (waitUntil segura a função viva até o fim; maxDuration 60 no vercel.json).
+    // Se as duas tentativas falharem, e-mail para o André com a linha pronta
+    // para colar na aba Log — e, se ela pagar antes disso, o webhook já dispara
+    // o alerta 🚨 dele quando o confirmBooking não acha o VIDEO_PEDIDO.
+    const linha    = `${id}|${lista}|${valor}|${n}${teste ? '|TESTE' : ''}`;
+    const registro = registrarPedido(checkout.id, linha);
+    await Promise.race([registro, new Promise(r => setTimeout(r, 3000))]);
+    waitUntil(registro);
 
     return res.status(200).json({ url: checkout.link, valor });
   } catch (e) {
     console.error('[videos-checkout]', e);
     return res.status(500).json({ error: e instanceof Error ? e.message : 'Erro inesperado.' });
   }
+}
+
+
+// Grava o VIDEO_PEDIDO na aba Log. Nunca lança: quem chama já respondeu (ou vai
+// responder) à cliente. 25 s cobre toda a distribuição que teve sucesso na
+// medição de 02/09; a 2ª tentativa é para o 404 esporádico do redirect do
+// Google (~1 em 6). Repetir pode duplicar a linha — o Apps Script GRAVA mesmo
+// quando a resposta se perde — e duplicata é inofensiva: confirmBooking casa
+// por checkout.id e pega a primeira.
+async function registrarPedido(checkoutId: string, linha: string): Promise<void> {
+  let ultimoErro = 'sem resposta';
+  for (const ms of [25000, 20000]) {
+    try {
+      const rl = await fetch(SCRIPT_URL, {
+        method: 'POST', headers: { 'Content-Type': 'text/plain' },
+        signal: AbortSignal.timeout(ms),
+        body: JSON.stringify({ action: 'addLog', logAction: 'VIDEO_PEDIDO',
+          bookingId: checkoutId, detail: linha, origin: 'videos5678' }),
+      });
+      // Apps Script devolve erro como HTTP 200 + {error} — checar os dois.
+      const jl = await rl.json().catch(() => ({ error: 'resposta inválida' })) as { error?: string };
+      if (rl.ok && !jl.error) return;
+      ultimoErro = jl.error || `HTTP ${rl.status}`;
+    } catch (e) {
+      ultimoErro = e instanceof Error ? e.message : String(e);
+    }
+  }
+  console.error(`[videos-checkout] VIDEO_PEDIDO NÃO gravado ${checkoutId}: ${ultimoErro}`);
+  // Último recurso: a linha inteira no e-mail. Sem isto, a cliente paga e a
+  // venda fica órfã — ninguém sabe qual galeria nem quais vídeos.
+  const { error } = await resend.emails.send({
+    from: FROM_EMAIL, to: ANDRE_EMAIL,
+    subject: `⚠️ Vídeo5678: pedido NÃO registrado na planilha — ${checkoutId}`,
+    html: `<p>O Apps Script não respondeu em duas tentativas (<code>${ultimoErro}</code>). O checkout do ASAAS existe e a cliente pode pagar normalmente — mas sem esta linha a venda fica órfã.</p>
+<p><strong>Cole na aba Log</strong> (Ação · Booking ID · Detalhe · Origem):</p>
+<p><code>VIDEO_PEDIDO</code> · <code>${checkoutId}</code> · <code>${linha}</code> · <code>videos5678</code></p>`,
+  }).catch(e => ({ error: e }));
+  if (error) console.error('[videos-checkout] e-mail de pedido órfão falhou', error);
 }
