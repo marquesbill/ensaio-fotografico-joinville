@@ -3329,6 +3329,14 @@ function doGet(e) {
       result = videoPromo(String(e.parameter.galeria || ''), e.parameter.n,
                           String(e.parameter.enviar || '') === '1', e.parameter.para,
                           String(e.parameter.repetir || '') === '1');
+    } else if (action === 'videoPromoStatus') {
+      // Antes de um lote: quanto ainda dá para enviar hoje e quem já recebeu.
+      // 56 envios com cota de 40 falhariam na metade — melhor abortar antes.
+      const enviados = _videoLogRows()
+        .filter(function (r) { return r[1] === 'VIDEO_PROMO'; })
+        .map(function (r) { return String(r[2]).trim(); });
+      result = { cotaRestante: MailApp.getRemainingDailyQuota(),
+                 jaEnviados: enviados, total: enviados.length };
     } else if (action === 'videoTestarEmails') {
       result = videoTestarEmails(String(e.parameter.galeria || ''));
     } else if (action === 'ping') {
