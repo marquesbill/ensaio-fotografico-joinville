@@ -113,6 +113,18 @@ def parear(pastas, reservas):
     return pares, sem_par, faltando
 
 
+# Fotos que continuam no disco mas NÃO entram na galeria, porque uma versão
+# reeditada na mesma pasta as substitui. A exclusão mora aqui, e não numa
+# exclusão de arquivo, por duas razões: nada é escrito nos discos externos, e
+# entrega de cliente não se apaga — assim a decisão é reversível e fica escrita.
+# Chave: nome da pasta do ensaio (a mãe de jpgFinais).
+SUBSTITUIDAS = {
+    # André, 01/09/2026: a _MG_3526_Denoised.jpg substitui a _MG_3526_(2).jpg —
+    # eram o mesmo clique, e as duas juntas apareciam repetidas na galeria.
+    '36.Cassia Gargô 1b': {'_MG_3526_(2).jpg'},
+}
+
+
 def _fotos(pasta: Path) -> list:
     """Os JPEGs de verdade da pasta, em ordem.
 
@@ -120,8 +132,14 @@ def _fotos(pasta: Path) -> list:
     ao lado de cada arquivo (1.328 deles no SSD do J26). O sips morre neles com exit 13,
     e contá-los dobrava o número de fotos no relatório de pareamento.
     """
+    # NFC nos dois lados: o nome vindo do glob/iterdir chega em NFD ("Gargô"),
+    # o literal daqui é NFC ("Gargô"). Sem normalizar, o .get() nunca casa e o
+    # filtro não faz NADA — em silêncio, que é como essa armadilha sempre aparece
+    # neste projeto. Medido em 01/09/2026: casa=False antes, True depois.
+    fora = SUBSTITUIDAS.get(unicodedata.normalize('NFC', pasta.parent.name), set())
     return sorted(p for p in pasta.iterdir()
-                  if p.suffix.lower() in ('.jpg', '.jpeg') and not p.name.startswith('.'))
+                  if p.suffix.lower() in ('.jpg', '.jpeg') and not p.name.startswith('.')
+                  and p.name not in fora)
 
 
 def _sips(origem: Path, saida: Path, lado: int, qualidade: int):
@@ -222,6 +240,13 @@ def main():
         sys.exit(f'Pasta não encontrada: {RAIZ}  (o SSD está conectado?)')
 
     pastas = sorted(RAIZ.glob('*/jpgFinais'))
+    # Trava de sanidade: chave de SUBSTITUIDAS que não casa com pasta real seria
+    # um filtro morto passando por aplicado (ver o NFC em _fotos).
+    reais = {unicodedata.normalize('NFC', p.parent.name) for p in pastas}
+    orfas = set(SUBSTITUIDAS) - reais
+    if orfas:
+        sys.exit(f'SUBSTITUIDAS aponta para pasta inexistente: {sorted(orfas)}')
+
     reservas = carregar_reservas()
     print(f'{len(pastas)} pastas com jpgFinais · {len(reservas)} reservas ativas\n')
 

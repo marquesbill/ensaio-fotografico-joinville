@@ -41,7 +41,12 @@ def main():
         subprocess.run(['rclone', 'copy', str(v), f'r2:j26-galerias/{gid}/v', '--transfers', '8'], check=True)
 
     print(f'{len(casados)} vídeos subidos para {gid}/v/')
-    print('sem vídeo (esperado p/ G9 e 5D3):', ', '.join(sem_video) or 'nenhum')
+    # Sem causa chutada: "esperado p/ G9 e 5D3" estava impresso como explicação e
+    # escondeu 33 fotos R8 da Cassia que simplesmente não foram filmadas (a câmera
+    # parou no meio do ensaio). Motivo real: outro corpo, ou não localizada em
+    # nenhum run — quem decide é dados/mapa.json do videos5678.
+    print('sem vídeo (conferir a causa em videos5678/dados/mapa.json):',
+          ', '.join(sem_video) or 'nenhum')
     print('mp4 órfãos (sem foto na galeria):', ', '.join(orfaos) or 'nenhum')
 
 if __name__ == '__main__':
